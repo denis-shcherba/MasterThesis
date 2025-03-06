@@ -2,7 +2,7 @@ import numpy as np
 import robotic as ry
 
 
-def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 6], small_opening_dims: list[float]=[.21, .21, .21],  just_front: bool=False, base_quaternion: list[float]=[1,0,0,0]):
+def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 6], small_opening_dims: list[float]=[.21, .21, .21],  just_front: bool=False, base_quaternion: list[float]=[1,0,0,0], shelf_lip: bool=False):
     # TODO: More efficient piece building, don't repeat pieces!
     inner_wall_width = .005
 
@@ -68,11 +68,12 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 
                 p = -small_opening_dims[2]*.5
                 p *= 1. if s == 0 else -1.
-                C.addFrame(f"small_box_blocker_{s}_{i}_{j}", f"shelf_back_{s}") \
-                    .setRelativePosition(opening_pos - np.array([p, 0, small_opening_dims[1]*.5-.015])) \
-                    .setShape(ry.ST.ssBox, size=[inner_wall_width, small_opening_dims[0], .03, 0.005]) \
-                    .setColor([1., 1., 0.]) \
-                    .setContact(1)
+                if shelf_lip:
+                    C.addFrame(f"small_box_blocker_{s}_{i}_{j}", f"shelf_back_{s}") \
+                        .setRelativePosition(opening_pos - np.array([p, 0, small_opening_dims[1]*.5-.015])) \
+                        .setShape(ry.ST.ssBox, size=[inner_wall_width, small_opening_dims[0], .03, 0.005]) \
+                        .setColor([1., 1., 0.]) \
+                        .setContact(1)
                 
                 C.addFrame(f"small_box_inside_{s}_{i}_{j}", f"shelf_back_{s}") \
                     .setRelativePosition(opening_pos) \
@@ -103,11 +104,12 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 
                 p = w*.5
                 p *= 1. if s == 0 else -1.
-                C.addFrame(f"big_box_blocker_{s}_{j}", "shelf_base") \
-                    .setRelativePosition([0., p, base_height*.5 + j*small_opening_dims[1]+.015]) \
-                    .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., inner_wall_width, .03, 0.005]) \
-                    .setColor([1., 1., 0.]) \
-                    .setContact(1)
+                if shelf_lip:
+                    C.addFrame(f"big_box_blocker_{s}_{j}", "shelf_base") \
+                        .setRelativePosition([0., p, base_height*.5 + j*small_opening_dims[1]+.015]) \
+                        .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., inner_wall_width, .03, 0.005]) \
+                        .setColor([1., 1., 0.]) \
+                        .setContact(1)
                 
 
 def generate_target_box(C: ry.Config, pos: np.ndarray, box_dims: list[float]=[.15, .2, .15]):

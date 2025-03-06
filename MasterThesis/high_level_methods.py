@@ -1,0 +1,106 @@
+import MasterThesis.manipulation as manip
+import numpy as np
+import robotic as ry
+
+
+
+class RobotEnviroment:
+    def __init__(self,
+                 C: ry.Config,
+                 visuals: bool=False,
+                 verbose: int=0,
+                 compute_collisions: bool=True,
+                 on_real: bool=False):
+        self.C = C
+        if on_real:
+            self.bot = ry.BotOp(self.C, on_real)
+            self.bot.home(self.C)
+        self.visuals = visuals
+        self.verbose = verbose
+        self.grabbed_frame = ""
+        self.path = np.array([])
+        self.compute_collisions = compute_collisions
+
+    # KOMO implementation 
+    def push_komo(self, frame: str, relative_y: float, relative_x: float = 0) -> bool:    
+        komo = ry.KOMO()
+        komo.setConfig(self.C, True)
+
+        komo.setTiming(2, 20, 1., 2)
+
+        komo.addControlObjective([], 0, 1e-2)
+        komo.addControlObjective([], 1, 1e-1)
+        komo.addControlObjective([], 2, 1e0)
+        
+        delta /= np.linalg.norm(delta)
+        komo.addObjective([], ry.FS.accumulatedCollisions, [], ry.OT.eq)
+        komo.addObjective([], ry.FS.jointLimits, [], ry.OT.ineq)
+
+        #komo.addObjective([0,1], ry.FS.negDistance, ['l_gripper', 'mid_point'], ry.OT.ineq, [1], [-.1])
+        komo.addObjective([1], ry.FS.positionDiff, ['l_gripper', 'way_start'], ry.OT.eq, [1e1])
+        komo.addObjective([1,2], ry.FS.positionDiff, ['l_gripper', 'way_end'], ry.OT.eq, (np.eye(3)-np.outer(delta,delta)))
+
+        komo.addObjective([2], ry.FS.positionDiff, ['l_gripper', 'way_end'], ry.OT.eq, [1e1])
+
+        komo.addObjective([2], ry.FS.qItself, [], ry.OT.eq, [1e1], [], 1)   #no motion derivative of q vector ergo the velocity = 0 
+
+        komo.addObjective([1, 2], ry.FS.vectorX, ['l_gripper'], ry.OT.eq, delta.reshape(1,3))
+        komo.addObjective([1, 2], ry.FS.vectorZ, ['l_gripper'], ry.OT.eq, [1], [0,0,1])
+
+    #TODO Manip.py implementation
+    def push_manip(self, frame: str, relative_x: float, relative_y: float) -> bool:
+
+            obj_pos = self.C.getFrame(frame).getPosition()
+            target_pos = obj_pos + np.array([relative_x, relative_y, 0.])
+            
+            gripper = "l_gripper"
+            table = "table"
+            
+            M = manip.ManipulationModelling()
+            M.setup_pick_and_place_waypoints(self.C, gripper, frame, 1e-1, accumulated_collisions=False)
+            pushStart = M.straight_push([1.,2.], frame, gripper, table)
+            M.target_xy_position(2., frame, target_pos)
+            M.solve()
+            if not M.ret.feasible:
+                return False
+
+            M1 = M.sub_motion(0, accumulated_collisions=False)
+            M1.retractPush([.0, .15], gripper, .03)
+            M1.approachPush([.85, 1.], gripper, .03)
+            M1.no_collisions([.15,.85], [frame, 'l_finger1'], .02)
+            M1.no_collisions([.15,.85], [frame, 'l_finger2'], .02)
+            M1.no_collisions([.15,.85], [frame, 'l_palm'], .02)
+            M1.no_collisions([], [table, 'l_finger1'], .0)
+            M1.no_collisions([], [table, 'l_finger2'], .0)
+            path1 = M1.solve()
+            if not M1.ret.feasible:
+                return False
+
+            M2 = M.sub_motion(1, accumulated_collisions=False)
+            M2.komo.addObjective([], ry.FS.positionRel, [gripper, pushStart], ry.OT.eq, 1e1*np.array([[1,0,0],[0,0,1]]))
+            path2 = M2.solve()
+            if not M2.ret.feasible:
+                return False
+
+            if self.visuals:
+                M1.play(self.C, 1.)
+                self.C.attach(gripper, frame)
+                M2.play(self.C, 1.)
+                self.C.attach(table, frame)
+            else:
+                self.bot.move(path1, [3.])
+                while self.bot.getTimeToEnd() > 0:
+                    self.bot.sync(self.C)
+                self.bot.move(path2, [3.])
+                while self.bot.getTimeToEnd() > 0:
+                    self.bot.sync(self.C)
+
+            self.path = np.concatenate((path1, path2))
+
+            return True
+
+    def pull(self):
+        pass
+
+    def pivot(self):
+        pass

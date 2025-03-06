@@ -8,6 +8,9 @@ Policy Distillation for manipulation nowadays is most of the time done using vis
 
 ### Reconciling Reality through Simulation: A Real-to-Sim-to-Real Approach for Robust Manipulation [[link]](https://arxiv.org/pdf/2107.04034)
 
+- Novel policy distillation approach: Real world IL -> Sim world policy -> RL in SIM -> distillation to real again
+
+
 ### TRANSIC: Sim-to-Real Policy Transfer by Learning from Online Correction [[link]](https://arxiv.org/pdf/2405.10315)
 
 ![Pipeline](images/transicPipeline.png)
@@ -20,7 +23,7 @@ Policy Distillation for manipulation nowadays is most of the time done using vis
 
 - One of the most influential Policy Distillation papers using privileged training architecture
 
-### Look into Marco Hütter group more papers..
+### Look into Marco Hütters group for more papers..
 
 
 ### RMA: Rapid Motor Adaptation for Legged Robots [[link]](https://arxiv.org/pdf/2107.04034)
@@ -48,7 +51,10 @@ Policy Distillation for manipulation nowadays is most of the time done using vis
 
 
 
-## Papers on Robotic Manipulation in Cluttered Environments
+## Papers on Robotic Manipulation in Cluttered Environments [[link]](https://robotic-manipulation.sciencehub.uw.edu/static/preprints/2023-grotz_rss.pdf)
+
+### From Marius, highly confidential paper as still under submission [[link]](https://sites.google.com/view/swiperl-icra-2025?pli=1)
+- leverages non-prehensile manipulation inside the Amazon shelf to make objects graspable 
 
 ### Towards robustly picking unseen objects from densely packed shelves [[link]](https://robotic-manipulation.sciencehub.uw.edu/static/preprints/2023-grotz_rss.pdf)
 
