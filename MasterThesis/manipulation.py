@@ -207,12 +207,11 @@ class ManipulationModelling():
             markerSize (float, optional): The size of the visual marker to attach to the new frame. Default is -1 (no marker).
         """
         if isinstance(initFrame, str):
-            #initFrame = self.komo.getConfig().getFrame(initFrame)
-            f = self.komo.addStableFrame(name, parent, jointType, True, initFrame, None)
+            f = self.komo.addFrameDof(name, parent, jointType, True, initFrame, None)
         else:
-            f = self.komo.addStableFrame(name, parent, jointType, True, None, initFrame)
+            f = self.komo.addFrameDof(name, parent, jointType, True, None, initFrame)
         if markerSize>0.:
-            f.setShape(ry.ST.marker, [.2])
+            f.setShape(ry.ST.marker, [.1])
             f.setColor([1., 0., 1.])
         #f.joint.sampleSdv=1.
         #f.joint.setRandom(self.komo.timeSl
@@ -779,7 +778,7 @@ class ManipulationModelling():
         if self.komo:
             sol = ry.NLP_Solver()
             sol.setProblem(self.komo.nlp())
-            sol.setOptions(damping=1e-1, verbose=verbose-1, stopTolerance=1e-3, maxLambda=100., stopInners=20, stopEvals=200)
+            sol.setOptions(damping=1e-1, verbose=verbose-1, stopTolerance=1e-3, lambdaMax=100., stopInners=20, stopEvals=200)
             self.ret = sol.solve()
             if self.ret.feasible:
                 self.path = self.komo.getPath()

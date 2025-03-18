@@ -13,8 +13,8 @@ C.delFrame("panda_collCameraWrist")
 C.getFrame("table").setShape(ry.ST.ssBox, size=[1., 1., .1, .02])
 
 # Shelf
-pos = np.array([-1., 0., .5])
-generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1])
+pos = np.array([1., 0., .3])
+generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
 
 # for convenience, a few definitions:
 gripper = "l_gripper"
@@ -32,7 +32,7 @@ C.addFrame(f"target_book") \
     .setMass(.1)
 
 
-R = RobotEnviroment(C)
-R.push("target_book", .1, 0)
+#R = RobotEnviroment(C)
+#R.push("target_book", .1, 0)
 
 C.view(True)
