@@ -211,7 +211,7 @@ class ManipulationModelling():
         else:
             f = self.komo.addFrameDof(name, parent, jointType, True, None, initFrame)
         if markerSize>0.:
-            f.setShape(ry.ST.marker, [.1])
+            f.setShape(ry.ST.marker, [markerSize])
             f.setColor([1., 0., 1.])
         #f.joint.sampleSdv=1.
         #f.joint.setRandom(self.komo.timeSl

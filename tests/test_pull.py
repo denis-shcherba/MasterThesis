@@ -25,11 +25,10 @@ table = "table"
 
 C.view()
 
-def pull(object_, info) -> bool:
-    M = manip.ManipulationModelling(info)
+def pull_orthogonal(object_, placePosition) -> bool:
+    M = manip.ManipulationModelling()
     M.setup_pick_and_place_waypoints(C, gripper, object_, 1e-1)
     M.pull([1.,2.], object_, gripper, table)
-    placePosition = midpoint + np.random.uniform(-.1, .1, size=3)
     M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1*np.array([[1,0,0],[0,1,0]]), placePosition)
     M.solve()
     if not M.feasible:
@@ -52,25 +51,18 @@ def pull(object_, info) -> bool:
     M2.play(C, 1.)
     C.attach(table, object_)
 
-    # robot = robex.Robot(C, on_real=True)
-    # #robot.grasp(C)
-    # robot.execute_path_blocking(C, path1)
-    # C.attach(gripper, box)
-    # robot.execute_path_blocking(C, path2)
-    # C.attach(table, box)
-
     return True
 
 
-attempt_count = 3
+attempt_count = 0
 data = []
 for l in range(attempt_count):
     
     action = "pull"
     if action == "pull":
-        placePosition = [midpoint[0] + np.random.random()*.4 -.2, midpoint[1] + np.random.random()*.4 -.2]
         object_ = np.random.choice([box])
-        success = pull(object_, "")
+        success = pull_orthogonal(object_, placePosition = midpoint + np.random.uniform(-.1, .1, size=3)
+)
 
     else:
         raise Exception(f'Action "{action}" is not defined!')
@@ -80,9 +72,6 @@ print(data)
 
 
 del C
-exit()
-#TODO from here
-
 
 C = ry.Config()
 C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
@@ -91,8 +80,8 @@ C.delFrame("panda_collCameraWrist")
 C.getFrame("table").setShape(ry.ST.ssBox, size=[1., 1., .1, .02])
 
 # Shelf
-pos = np.array([-1., 0., .5])
-generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1])
+pos = np.array([1., 0., .3])
+generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
 
 # for convenience, a few definitions:
 gripper = "l_gripper"
@@ -101,19 +90,19 @@ palm = "l_palm"
 color = [1., 0., 0.]
 
 C.addFrame(f"target_book") \
-    .setPosition([-.64, .02, 1.2]) \
+    .setPosition([.64, .02, 1.18]) \
     .setShape(ry.ST.ssBox, size=[.12, .18, .04, 0.01]) \
     .setColor(color) \
     .setContact(1) \
     .setMass(.1)
 
 C.addFrame(f"push_waypoint") \
-    .setPosition([-.76, .02, 1.25]) \
+    .setPosition([.64, .02, 1.25]) \
     .setShape(ry.ST.marker, size=[.1]) \
 
 q0 = C.getJointState()
 C.view(True)
-
+success = pull_orthogonal("target_book", C.getFrame("target_book").getPosition() + np.array([-.1, 0, 0]))
 # compute a goal configuration
 komo = ry.KOMO()
 komo.setConfig(C, True)
@@ -158,21 +147,5 @@ for i, value in enumerate(path):
 C.setJointState(q0)
 C.view(True)
 
-komo = ry.KOMO(C, len(path), 10, 2, False)
-komo.addControlObjective([], 0, 1e-1) # what happens if you change weighting to 1e0? why?
-komo.addControlObjective([], 2, 1e0)
 
-for i, value in enumerate(path):
-    komo.addObjective([i+1], ry.FS.positionDiff, ['l_gripper', f'way{i}'], ry.OT.eq, [1e0])
-
-komo.addObjective([len(path)], ry.FS.jointState, [], ry.OT.eq, [1e1], [], order=1)
-
-ret = ry.NLP_Solver(komo.nlp(), verbose=0 ) .solve()
-print(ret)
-q = komo.getPath()
-print('size of path:', q.shape)
-
-for t in range(q.shape[0]):
-    C.setJointState(q[t])
-    C.view(False, f'waypoint {t}')
-    time.sleep(.01)
+#success = pull_orthogonal("target_book", C.getFrame("target_book").getPosition() + np.array([-.05, 0, 0]))

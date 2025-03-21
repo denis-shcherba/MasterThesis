@@ -99,8 +99,40 @@ class RobotEnviroment:
 
             return True
 
-    def pull(self):
-        pass
+    def pull(self, object_, placePosition, debug=False):
+        M = manip.ManipulationModelling()
+        M.setup_pick_and_place_waypoints(self.C, "l_gripper", object_, 1e-1)
+        M.pull([1.,2.], object_, "l_gripper", "table")
+        M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
+        M.solve()
+        if not M.feasible:
+            print("INFEASIBLE AT M")
+            #return False
+
+        M1 = M.sub_motion(0, accumulated_collisions=False)
+        M1.retractPush([.0, .15], "l_gripper", .03)
+        M1.approachPush([.85, 1.], "l_gripper", .03)
+        path1 = M1.solve()
+        if not M1.feasible:
+            print("INFEASIBLE AT M1")
+            #return False
+
+        M2 = M.sub_motion(1, accumulated_collisions=False)
+        path2 = M2.solve()
+        if not M2.feasible:
+            print("INFEASIBLE AT M2")
+            #return False
+
+        M1.play(self.C, 1.)
+        self.C.attach("l_gripper", object_)
+        if debug:
+            print(self.C.eval(ry.FS.negDistance, ["l_gripper", object_])[0])
+
+            self.C.view(True)
+        M2.play(self.C, 1.)
+        self.C.attach("table", object_)
+
+        return True
 
     def pivot(self):
         pass
