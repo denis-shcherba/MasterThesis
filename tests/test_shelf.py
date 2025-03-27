@@ -39,7 +39,9 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=100)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=100, allow_yaw=True)
+
+    
 
 target = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -49,11 +51,13 @@ C.addFrame(f"lower_shelf_corner") \
     .setPosition(target) \
     .setShape(ry.ST.marker, size=[.2]) \
     
-for i in range(0):
-    print(samples[i])
+for sample in samples:
+    print(sample)
+    q = ry.Quaternion().setRollPitchYaw(([0,0, sample[-1]]))
     C.addFrame(f"target_book") \
-        .setPosition(target + np.asarray(samples[i][3:6])) \
-        .setShape(ry.ST.ssBox, size=[samples[i][0], samples[i][1], samples[i][2], 0.005]) \
+        .setPosition(target + np.append(sample[3:5], (shelf_height+sample[2])/2)) \
+        .setQuaternion(q.getArr()) \
+        .setShape(ry.ST.ssBox, size=[sample[0], sample[1], sample[2], 0.005]) \
         .setColor(np.random.rand(3)) \
         .setContact(1) \
         .setMass(.1)
