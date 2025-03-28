@@ -142,11 +142,17 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 
                 if i == 0:
                     C.addFrame(f"big_xy_bottom_{s}_0", "shelf_base") \
-                        .setRelativePosition([0., p, base_height +.35]) \
+                        .setRelativePosition([0., p, base_height + floor_offsets[0]]) \
                         .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.005]) \
                         .setColor([1., 1., 0.]) \
                         .setContact(1)
                     
+                    C.addFrame(f"big_box_inside_{s}_0", f"big_xy_bottom_{s}_0") \
+                        .setRelativePosition([0., 0., -floor_offsets[1]/2+.5*base_height]) \
+                        .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, floor_offsets[1]-base_height, 0.005]) \
+                        .setColor([0., 1., 1., .0]) \
+                        .setContact(0)
+
                     # Wände links (und später recht von der Regalwand) auskommentiert weil TODO, nicht wirklich nötig grade
                     # C.addFrame(f"small_box_right_{s}_0", "shelf_base") \
                     #     .setRelativePosition([w*.375, p*2 + d - small_opening_dims[2]*4, base_height + .35 - floor_offsets[0]/2]) \
@@ -162,6 +168,12 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                         .setColor([1., 1., 0.]) \
                         .setContact(1)
                     
+                    C.addFrame(f"big_box_inside_{s}_{i}", f"big_xy_bottom_{s}_{i}") \
+                        .setRelativePosition([0., 0., -floor_offsets[i]/2]) \
+                        .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, floor_offsets[i], 0.005]) \
+                        .setColor([0., 1., 1., .0]) \
+                        .setContact(0)
+
                     # Wände links (und später recht von der Regalwand) auskommentiert weil TODO, nicht wirklich nötig grade
                     # C.addFrame(f"small_box_right_{s}_{i}", f"small_box_right_{s}_{i-1}") \
                     #     .setRelativePosition([0, 0 , floor_offsets[i]]) \

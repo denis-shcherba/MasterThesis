@@ -2,3 +2,6 @@ __pycache__/
 z.*
 MasterThesis.egg-info
 test.py
+graphics/
+environment.yaml
+*.npy
