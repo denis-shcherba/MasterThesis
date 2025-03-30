@@ -38,31 +38,15 @@ if __name__ == "__main__":
 
 
     # Oriented Bounding Box using Convex Hull
-    oriented_corners, Rot = minimum_bounding_box_from_convex_hull(pcl)
-    for i, corner in enumerate(oriented_corners):
-        C.addFrame(f"corner{i}").setShape(ry.ST.sphere, size=[.005]).setColor([.2,.3,.8]).setPosition(corner)
+    best_box, best_rotation = minimum_bounding_box_from_convex_hull(pcl)
+    com, sizes = cuboid_corners_to_size_com(best_box)           #  corner points to cuboid center and sizes in x, y, z
+    q=ry.Quaternion().setMatrix(best_rotation).getArr()         #  Rotation Matrix to  quaternion
+
+    print(com)
+    print("DIMS;", sizes)
+    C.addFrame("test_box").setShape(ry.ST.box, size=sizes).setPosition(com).setQuaternion(q).setColor([1,1,1,.4])
     C.view(True, "Oriented Bounding Box using Convex Hull")
-    for i in range(len(oriented_corners)):
-        C.delFrame(f"corner{i}")
-    C.view(False)
 
-    x = np.linalg.norm(oriented_corners[0]-oriented_corners[1], 2)
-    y = np.linalg.norm(oriented_corners[1]-oriented_corners[3], 2)
-    z = np.linalg.norm(oriented_corners[0]-oriented_corners[4], 2)
 
-    center=np.sum(oriented_corners, axis=0)/len(oriented_corners)
-    print(center)
-    print("DIMS;", x, y, z)
-    q=ry.Quaternion().setMatrix(Rot)
-    for i, corner in enumerate(oriented_corners):
-        C.addFrame(f"a{i}").setRotationMatrix(Rot)
-        C.addFrame(f"corner{i}").setShape(ry.ST.sphere, size=[.005]).setColor([1/7 * i, 1/7 * i, 1/7 * i]).setPosition(corner)
-    C.addFrame("test_box").setShape(ry.ST.box, size=[z, y, x]).setPosition(center).setQuaternion(q.getArr()).setColor([1,1,1,.4])
-    C.view(True, "Oriented Bounding Box using Convex Hull")
-    for i in range(len(oriented_corners)):
-        C.delFrame(f"corner{i}")
-    C.view(False)
-
-    #q = ry.Quaternion().setMatrix()
 
     

@@ -2,6 +2,9 @@ import numpy as np
 #import open3d as o3d 
 from scipy.spatial import ConvexHull
 import math
+import robotic as ry 
+from MasterThesis.utils import cuboid_corners_to_size_com
+
 
 def fit_aabb(points):
     """
@@ -162,5 +165,5 @@ def minimum_bounding_box_from_convex_hull(points):
             
             best_box = np.array(corners)
             best_rotation = rotation_matrix
-    
+
     return best_box, best_rotation

@@ -2,9 +2,8 @@ import numpy as np
 import robotic as ry
 from MasterThesis.shelf import generate_shelf
 from MasterThesis.book_spawning import generate_random_box_params
-from MasterThesis.utils import point_in_box_filtering, plot_box
-
-
+from MasterThesis.utils import point_in_box_filtering, plot_box, cuboid_corners_to_size_com
+from MasterThesis.cube_fitting import minimum_bounding_box_from_convex_hull
 
 
 
@@ -37,17 +36,16 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=100)
 
 target = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=1, allow_yaw=True)
-
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=10, allow_yaw=True)
 
 
 for sample in samples:
+    
     print(sample)
     q = ry.Quaternion().setRollPitchYaw(([0,0, sample[-1]]))
     C.addFrame(f"target_book") \
@@ -61,31 +59,43 @@ for sample in samples:
 
 
 
-pcl = C.addFrame('pcl')
-bot = ry.BotOp(C, useRealRobot=False)
+    pcl = C.addFrame('pcl')
+    bot = ry.BotOp(C, useRealRobot=False)
 
-pcl = C.getFrame("pcl")
-pcl.setShape(ry.ST.pointCloud, [2]) # the size here is pixel size for display
-bot.sync(C)
+    pcl = C.getFrame("pcl")
+    pcl.setShape(ry.ST.pointCloud, [2]) # the size here is pixel size for display
+    bot.sync(C)
 
 
 
-while bot.getKeyPressed()!=ord('q'):
-    image, depth, points = bot.getImageDepthPcl("cameraWrist", True)
-    pcl.setPointCloud(points, image)
-    point_cloud_ = points.reshape(-1, 3)
-    pcl.setColor([1,0,0])
-    bot.sync(C, .1)
-     
+    while bot.getKeyPressed()!=ord('q'):
+        image, depth, points = bot.getImageDepthPcl("cameraWrist", True)
+        pcl.setPointCloud(points, image)
+        point_cloud_ = points.reshape(-1, 3)
+        pcl.setColor([1,0,0])
+        bot.sync(C, .1)
+        
 
-# last minus accounts for inside box inaccuracy TODO
-point_cloud = point_in_box_filtering(point_cloud_, (C.getFrame("big_box_inside_0_2").getPosition(), C.getFrame("big_box_inside_0_2").getSize()[:3]-np.array([.01, .01, .01])))
+    # last minus accounts for inside box inaccuracy TODO
+    point_cloud = point_in_box_filtering(point_cloud_, (C.getFrame("big_box_inside_0_2").getPosition(), C.getFrame("big_box_inside_0_2").getSize()[:3]-np.array([.01, .01, .01])))
 
-import open3d as o3d
-point_cloud_o3d = o3d.geometry.PointCloud()
-point_cloud_o3d.points = o3d.utility.Vector3dVector(point_cloud)
 
-# Visualize the point cloud
-o3d.visualization.draw_geometries([point_cloud_o3d], window_name="Open3D Point Cloud")
-np.save("point_cloud.npy", point_cloud)
+    del bot
+    C.delFrame("pcl")
+    C.view(False)
 
+    np.save("point_cloud.npy", point_cloud)
+
+    oriented_corners, Rot = minimum_bounding_box_from_convex_hull(point_cloud)
+
+    C.delFrame("target_book")
+    C.view(False)
+
+    com, sizes = cuboid_corners_to_size_com(oriented_corners)
+    q=ry.Quaternion().setMatrix(Rot)
+
+    C.addFrame("fitted_box").setShape(ry.ST.box, size=sizes).setPosition(com).setQuaternion(q.getArr()).setColor([.6,.6,.6])
+    C.view(True, "Oriented Bounding Box using Convex Hull")
+
+    C.delFrame("fitted_box")
+    C.view(False)

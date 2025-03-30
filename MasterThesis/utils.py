@@ -25,6 +25,24 @@ def point_in_box_filtering(points, box_params):
     
     return points[mask]
 
+
+def cuboid_corners_to_size_com(corner_points):
+    """
+    Transforms cuboid corners to its size and COM
+
+    Parameters:
+    points (np.ndarray): 8x3 array of cuboid corner.
+    """
+
+    # Transform corner points to sizes in x, y, z
+    z = np.linalg.norm(corner_points[0]-corner_points[1], 2)
+    y = np.linalg.norm(corner_points[1]-corner_points[3], 2)
+    x = np.linalg.norm(corner_points[0]-corner_points[4], 2)
+    center=np.sum(corner_points, axis=0)/len(corner_points)
+
+    return center, [x, y, z]
+
+
 def plot_box(C, box_params):
     """
     Plots a box into current configuration for debug purposes

@@ -5,6 +5,8 @@ import MasterThesis.manipulation as manip
 from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
+import cmath
+
 
 C = ry.Config()
 C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
@@ -38,39 +40,41 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=10)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=50, allow_yaw=True)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
 
 for book_params in samples:
+    q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]])).getArr()
+
+    book_com = shelf_corner + np.append(book_params[3:5], (shelf_height+book_params[2])/2)
     C.addFrame(f"target_book") \
-        .setPosition(shelf_corner + np.append(book_params[3:5], (shelf_height+book_params[2])/2)) \
+        .setPosition(book_com) \
         .setShape(ry.ST.ssBox, size=[book_params[0], book_params[1], book_params[2], 0.005]) \
         .setColor(np.random.rand(3)) \
         .setContact(1) \
-        .setMass(.1)
+        .setMass(.1) \
+        .setQuaternion(q)
     C.view(True)
+
+
+    delta = complex(-book_params[0]/2, 0)*cmath.exp(1j * book_params[-1]) # dir to push push dir waypoint from com
+    C.addFrame("to_push_point").setShape(ry.ST.marker, size=[.5]).setPosition(book_com+np.array([delta.real, delta.imag, 0]))
+    # target at the middle of the shelf ending
+    target = np.array([
+        (shelfBottomFrame.getPosition()[:2] + np.array([-shelf_depth/2, 0])),
+    ])
+    target = np.append(target, C.getFrame("target_book").getPosition()[2])
+
+    C.addFrame("target").setShape(ry.ST.marker, [.1]).setPosition(target)
+    C.view(True)
+
+
+    roboenv = RobotEnviroment(C)
+    success = roboenv.pull("target_book", target)
+
     C.delFrame(f"target_book")
+    C.delFrame("to_push_point")
     C.view(False)
-
-C.addFrame(f"target_book") \
-    .setPosition([ 0.4757264, -0.05907275, 1.16879413]) \
-    .setShape(ry.ST.ssBox, size=[0.14610244, 0.22199346, 0.01758827, 0.005]) \
-    .setColor([1, 0, 0]) \
-    .setContact(1) \
-    .setMass(.1)
-    
-# target at the middle of the shelf ending
-target = np.array([
-    (shelfBottomFrame.getPosition()[:2] + np.array([-shelf_depth/2, 0])),
-])
-target = np.append(target, C.getFrame("target_book").getPosition()[2])
-
-C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
-C.view(True)
-
-
-roboenv = RobotEnviroment(C)
-success = roboenv.pull("target_book", target)
