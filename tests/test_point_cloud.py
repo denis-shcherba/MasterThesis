@@ -43,7 +43,7 @@ target = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=1, allow_yaw=True)
 
 
 
