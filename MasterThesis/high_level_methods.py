@@ -47,57 +47,50 @@ class RobotEnviroment:
         komo.addObjective([1, 2], ry.FS.vectorX, ['l_gripper'], ry.OT.eq, delta.reshape(1,3))
         komo.addObjective([1, 2], ry.FS.vectorZ, ['l_gripper'], ry.OT.eq, [1], [0,0,1])
 
-    #TODO Manip.py implementation
-    def push_manip(self, frame: str, relative_x: float, relative_y: float) -> bool:
 
-            obj_pos = self.C.getFrame(frame).getPosition()
-            target_pos = obj_pos + np.array([relative_x, relative_y, 0.])
-            
-            gripper = "l_gripper"
-            table = "table"
-            
-            M = manip.ManipulationModelling()
-            M.setup_pick_and_place_waypoints(self.C, gripper, frame, 1e-1, accumulated_collisions=False)
-            pushStart = M.straight_push([1.,2.], frame, gripper, table)
-            M.target_xy_position(2., frame, target_pos)
-            M.solve()
-            if not M.ret.feasible:
-                return False
+    def push_manip(self, object_: str, placePosition) -> bool:
+        gripper = "l_gripper"
+        table = "table"
 
-            M1 = M.sub_motion(0, accumulated_collisions=False)
-            M1.retractPush([.0, .15], gripper, .03)
-            M1.approachPush([.85, 1.], gripper, .03)
-            M1.no_collisions([.15,.85], [frame, 'l_finger1'], .02)
-            M1.no_collisions([.15,.85], [frame, 'l_finger2'], .02)
-            M1.no_collisions([.15,.85], [frame, 'l_palm'], .02)
-            M1.no_collisions([], [table, 'l_finger1'], .0)
-            M1.no_collisions([], [table, 'l_finger2'], .0)
-            path1 = M1.solve()
-            if not M1.ret.feasible:
-                return False
+        info = f'push 1'
+        print('===', info)
 
-            M2 = M.sub_motion(1, accumulated_collisions=False)
-            M2.komo.addObjective([], ry.FS.positionRel, [gripper, pushStart], ry.OT.eq, 1e1*np.array([[1,0,0],[0,0,1]]))
-            path2 = M2.solve()
-            if not M2.ret.feasible:
-                return False
+        M = ry.KOMO_ManipulationHelper(info)
+        M.setup_sequence(self.C, 2, 1e-1, accumulated_collisions=False)
+        M.komo.addFrameDof('obj_trans', table, ry.JT.transXY, False, object_) #a permanent moving(!) transXY joint table->trans, and a snap trans->obj
+        M.komo.addRigidSwitch(1., ['obj_trans', object_])
+        pushStart = M.straight_push([1.,2.], object_, gripper, table)
 
-            if self.visuals:
-                M1.play(self.C, 1.)
-                self.C.attach(gripper, frame)
-                M2.play(self.C, 1.)
-                self.C.attach(table, frame)
-            else:
-                self.bot.move(path1, [3.])
-                while self.bot.getTimeToEnd() > 0:
-                    self.bot.sync(self.C)
-                self.bot.move(path2, [3.])
-                while self.bot.getTimeToEnd() > 0:
-                    self.bot.sync(self.C)
+        M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1*np.array([[1,0,0],[0,1,0]]), placePosition)
+        M.solve()
+        if not M.ret.feasible:
+            return False
 
-            self.path = np.concatenate((path1, path2))
+        M1 = M.sub_motion(0, accumulated_collisions=False)
+        M1.retractPush([.0, .15], gripper, .03)
+        M1.approachPush([.85, 1.], gripper, .03)
+        M1.no_collisions([.15,.85], [object_, 'l_finger1'], .02)
+        M1.no_collisions([.15,.85], [object_, 'l_finger2'], .02)
+        M1.no_collisions([.15,.85], [object_, 'l_palm'], .02)
+        M1.no_collisions([], [table, 'l_finger1'], .0)
+        M1.no_collisions([], [table, 'l_finger2'], .0)
+        M1.solve()
+        if not M1.ret.feasible:
+            return False
 
-            return True
+        M2 = M.sub_motion(1, accumulated_collisions=False)
+
+        M2.solve()
+        if not M2.ret.feasible:
+            return False
+
+
+        M1.play(self.C, 1.)
+        self.C.attach(gripper, object_)
+        M2.play(self.C, 1.)
+        self.C.attach(table, object_)
+
+        return True
 
     def pull(self, object_, placePosition, debug=False):
         M = manip.ManipulationModelling()

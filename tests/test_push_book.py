@@ -5,8 +5,7 @@ import MasterThesis.manipulation as manip
 from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
-import cmath
-
+from MasterThesis.utils import find_nearest_cuboid_edge_center, sample_equiangular_cuboid_edges
 
 C = ry.Config()
 C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
@@ -46,8 +45,11 @@ shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
 
-for book_params in samples:
-    q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]])).getArr()
+for i, book_params in enumerate(samples):
+    yaw = book_params[-1]
+    #yaw = 2*np.pi*i/ len(samples)
+    q = ry.Quaternion().setRollPitchYaw(([0,0, yaw])).getArr()
+
 
     book_com = shelf_corner + np.append(book_params[3:5], (shelf_height+book_params[2])/2)
     C.addFrame(f"target_book") \
@@ -57,11 +59,17 @@ for book_params in samples:
         .setContact(1) \
         .setMass(.1) \
         .setQuaternion(q)
+
     C.view(True)
 
+    nearest_cuboid_edge_center = find_nearest_cuboid_edge_center(C, "target_book", yaw)
+    
+    points = sample_equiangular_cuboid_edges(C, "target_book", yaw,  samples=20)
 
-    delta = complex(-book_params[0]/2, 0)*cmath.exp(1j * book_params[-1]) # dir to push push dir waypoint from com
-    C.addFrame("to_push_point").setShape(ry.ST.marker, size=[.5]).setPosition(book_com+np.array([delta.real, delta.imag, 0]))
+    for j, point in enumerate(points):
+        C.addFrame(f"sample{j}").setShape(ry.ST.sphere, size=[.01]).setPosition(point)
+
+    C.addFrame("to_push_point").setShape(ry.ST.marker, size=[.5]).setPosition(nearest_cuboid_edge_center)
     # target at the middle of the shelf ending
     target = np.array([
         (shelfBottomFrame.getPosition()[:2] + np.array([-shelf_depth/2, 0])),
@@ -77,4 +85,7 @@ for book_params in samples:
 
     C.delFrame(f"target_book")
     C.delFrame("to_push_point")
+    for j in range(len(points)):
+        C.delFrame(f"sample{j}")
+
     C.view(False)
