@@ -12,9 +12,10 @@ C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
 
 C.delFrame("panda_collCameraWrist")
 C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)   # Real size [1.1, 1.2, .02, .005]
+C.getFrame('l_panda_finger_joint1').setJointState(np.array([.01]))
 
 # Shelf
-pos = np.array([.8, 0., .3])
+pos = np.array([1, 0., .3])
 generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
 
 # for convenience, a few definitions:
@@ -64,8 +65,7 @@ for i, book_params in enumerate(samples):
 
     nearest_cuboid_edge_center = find_nearest_cuboid_edge_center(C, "target_book", yaw)
     
-    points = sample_cuboid_edges(C, "target_book", yaw, samples=100, sides_rel=True, sides_to_sample=[True, True, False, True])
-    print(type(points), type(points[0]))
+    points = sample_cuboid_edges(C, "target_book", yaw, samples=30, sides_rel=True, sides_to_sample=[True, True, False, True])
 
     # filter every point that has no bigger x coord than nearest_cuboid_edge_center
     points = [point for point in points if point[0]>nearest_cuboid_edge_center[0]]
@@ -74,22 +74,26 @@ for i, book_params in enumerate(samples):
         C.addFrame(f"sample{j}").setShape(ry.ST.sphere, size=[.01]).setPosition(point)
 
     C.addFrame("to_push_point").setShape(ry.ST.marker, size=[.5]).setPosition(nearest_cuboid_edge_center)
-    # target at the middle of the shelf ending
-    target = np.array([
-        (shelfBottomFrame.getPosition()[:2] + np.array([-shelf_depth/2, 0])),
-    ])
-    target = np.append(target, C.getFrame("target_book").getPosition()[2])
 
-    C.addFrame("target").setShape(ry.ST.marker, [.1]).setPosition(target)
     C.view(True)
 
-
     roboenv = RobotEnviroment(C)
-    success = roboenv.pull("target_book", target)
+
+    for j, point in enumerate(points):
+        success, path = roboenv.move_to_point_path(point)
+
+        if success:
+            C.getFrame(f"sample{j}").setColor([0, 1, 0])
+        else:
+            C.getFrame(f"sample{j}").setColor([1, 0, 0])
+
+        C.view(False, "Calculating success score for push proposal")
+    C.view(True, "All success samples")
 
     C.delFrame(f"target_book")
     C.delFrame("to_push_point")
     for j in range(len(points)):
         C.delFrame(f"sample{j}")
+
 
     C.view(False)

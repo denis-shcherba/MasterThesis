@@ -14,7 +14,6 @@ class RobotEnviroment:
                  sim: bool=False):
         self.C = C
         self.visuals = visuals
-        self.verbose = verbose
         self.sim = sim
         self.grabbed_frame = ""
         self.path = np.array([])
@@ -92,7 +91,7 @@ class RobotEnviroment:
         return True
 
 
-    def move_to_point(self, point, relPos=None, straight_line = False, useRRT = False) -> bool:
+    def move_to_point_path(self, point, relPos=None, straight_line = False, useRRT = False) -> bool:
         if relPos:
             if self.C.getFrame("_tmp_way") is None:
                 self.C.addFrame('_tmp_way') \
@@ -120,13 +119,9 @@ class RobotEnviroment:
         path = man.path
         print('    IK:', ret)
         
-        if ret.feasible:
-            if self.verbose>0:
-                self.C.setJointState(man.path[0])
-                self.C.view(True)
-        else:
+        if not ret.feasible:
             print('  -- infeasible')
-            return False
+            return False, None
             
 
         man = ry.KOMO_ManipulationHelper()
@@ -134,27 +129,34 @@ class RobotEnviroment:
         
         ret = man.solve()
         print('  path:', ret)
+        if not ret.feasible:
+            print('  -- infeasible')
+            return False, None
+        
+        return True, man.path
 
-        if ret.feasible:
+    def move_to_point(self, point, relPos=None, straight_line = False, useRRT = False) -> bool:
+        
+        feasible, path = self.move_to_point_path(point, relPos, straight_line, useRRT) 
+        if feasible:
             if self.sim == True:
                 #TODO prolly
                 C2 = ry.Config()
                 C2.addConfigurationCopy(self.C)
                 sim = Simulator(C2)
-                xs, qs, xdots, qdots = sim.run_trajectory(man.path, 2, real_time=True)
+                xs, qs, xdots, qdots = sim.run_trajectory(path, 2, real_time=True)
 
                 self.C.setJointState(qs[-1])
 
-            for t in range(man.path.shape[0]):
-                self.C.setJointState(man.path[t])
+            for t in range(path.shape[0]):
+                self.C.setJointState(path[t])
                 self.C.view(False)
                 time.sleep(.05)
-            self.C.view(self.verbose>0, f'path done')
+            
+            return True
         else:
             print('  -- infeasible')
             return False
-
-        return True
 
     def pull(self, object_, placePosition, debug=False):
         M = manip.ManipulationModelling()

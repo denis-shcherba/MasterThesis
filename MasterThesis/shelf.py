@@ -184,7 +184,6 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
             p = w*.5
             p *= 1. if s == 0 else -1.
 
-            print(base_height)
             if shelf_lip:
                 #TODO
                 pass
