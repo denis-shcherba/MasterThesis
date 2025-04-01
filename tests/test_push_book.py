@@ -5,7 +5,7 @@ import MasterThesis.manipulation as manip
 from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
-from MasterThesis.utils import find_nearest_cuboid_edge_center, sample_equiangular_cuboid_edges
+from MasterThesis.utils import find_nearest_cuboid_edge_center, sample_cuboid_edges
 
 C = ry.Config()
 C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
@@ -64,7 +64,11 @@ for i, book_params in enumerate(samples):
 
     nearest_cuboid_edge_center = find_nearest_cuboid_edge_center(C, "target_book", yaw)
     
-    points = sample_equiangular_cuboid_edges(C, "target_book", yaw,  samples=20)
+    points = sample_cuboid_edges(C, "target_book", yaw, samples=100, sides_rel=True, sides_to_sample=[True, True, False, True])
+    print(type(points), type(points[0]))
+
+    # filter every point that has no bigger x coord than nearest_cuboid_edge_center
+    points = [point for point in points if point[0]>nearest_cuboid_edge_center[0]]
 
     for j, point in enumerate(points):
         C.addFrame(f"sample{j}").setShape(ry.ST.sphere, size=[.01]).setPosition(point)

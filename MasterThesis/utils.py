@@ -1,6 +1,7 @@
 import numpy as np
 import robotic as ry
 import cmath 
+from collections import deque
 
 def point_in_box_filtering(points, box_params):
     """
@@ -42,93 +43,105 @@ def cuboid_corners_to_size_com(corner_points):
 
     return center, [x, y, z]
 
-def sample_equiangular_cuboid_edges(C, box_frame, yaw, angle_interval=[0, 2 * np.pi], samples=10):
+def sample_cuboid_edges(C, box_frame, yaw, sides_to_sample=[True, True, True, True], sides_rel=False, samples=10):
     """
-    Samples equiangular points from edges of a cuboid considering its yaw rotation.
+    Samples points from the edges of a cuboid except for specified sides.
     
     Parameters:
     C (ry.Config): Configuration
     box_frame (string): Frame name of the box
     yaw (float): Yaw rotation of the cuboid in radians
-    angle_interval (list): Angle interval [start, end] in radians
-    samples (int): Number of samples to be drawn
+    sides_to_sample (list): List of four booleans indicating which sides to sample:
+                           [right, top, left, bottom] - True to sample that side
+    samples (int): Total number of samples to be drawn
     
     Returns:
-    List of 3D points on the cuboid edges
+    List of 3D points on the selected cuboid edges
     """
     x_size = C.getFrame(box_frame).getSize()[0]
     y_size = C.getFrame(box_frame).getSize()[1]
     box_com = C.getFrame(box_frame).getPosition()
     
-    # Generate equiangular samples
-    angles = np.linspace(angle_interval[0], angle_interval[1], samples, endpoint=False)
+    if sides_rel:
+        index = int((yaw + np.pi / 4) // (np.pi / 2)) % 4
+        sides_to_sample = shift_list(sides_to_sample, index)
+
+    # Check if we have at least one side to sample
+    if not any(sides_to_sample):
+        raise ValueError("At least one side must be selected for sampling")
+    
+    # Count how many sides we're sampling
+    sides_count = sum(sides_to_sample)
+    
+    # Calculate samples per side (distribute evenly)
+    samples_per_side = [0, 0, 0, 0]
+    base_samples = samples // sides_count
+    remainder = samples % sides_count
+    
+    side_index = 0
+    for i in range(4):
+        if sides_to_sample[i]:
+            samples_per_side[i] = base_samples
+            if side_index < remainder:
+                samples_per_side[i] += 1
+            side_index += 1
+    
     edge_points = []
     
-    for angle in angles:
-        # Adjust the angle to account for the yaw rotation of the box
-        adjusted_angle = (angle - yaw) % (2 * np.pi)
-        
-        # Determine which edge to sample based on the angle
-        if 0 <= adjusted_angle < np.pi/2:  # First quadrant (0° to 90°)
-            # Interpolate between right edge and top edge
-            if adjusted_angle < np.pi/4:
-                # Closer to right edge (0°)
-                t = adjusted_angle / (np.pi/4)
-                x = x_size/2
-                y = -y_size/2 + t * y_size
-            else:
-                # Closer to top edge (90°)
-                t = (adjusted_angle - np.pi/4) / (np.pi/4)
-                x = x_size/2 - t * x_size
-                y = y_size/2
-                
-        elif np.pi/2 <= adjusted_angle < np.pi:  # Second quadrant (90° to 180°)
-            # Interpolate between top edge and left edge
-            if adjusted_angle < 3*np.pi/4:
-                # Closer to top edge (90°)
-                t = (adjusted_angle - np.pi/2) / (np.pi/4)
-                x = -x_size/2 + t * x_size
-                y = y_size/2
-            else:
-                # Closer to left edge (180°)
-                t = (adjusted_angle - 3*np.pi/4) / (np.pi/4)
-                x = -x_size/2
-                y = y_size/2 - t * y_size
-                
-        elif np.pi <= adjusted_angle < 3*np.pi/2:  # Third quadrant (180° to 270°)
-            # Interpolate between left edge and bottom edge
-            if adjusted_angle < 5*np.pi/4:
-                # Closer to left edge (180°)
-                t = (adjusted_angle - np.pi) / (np.pi/4)
-                x = -x_size/2
-                y = -y_size/2 + t * y_size
-            else:
-                # Closer to bottom edge (270°)
-                t = (adjusted_angle - 5*np.pi/4) / (np.pi/4)
-                x = -x_size/2 + t * x_size
-                y = -y_size/2
-                
-        else:  # Fourth quadrant (270° to 360°)
-            # Interpolate between bottom edge and right edge
-            if adjusted_angle < 7*np.pi/4:
-                # Closer to bottom edge (270°)
-                t = (adjusted_angle - 3*np.pi/2) / (np.pi/4)
-                x = x_size/2 - t * x_size
-                y = -y_size/2
-            else:
-                # Closer to right edge (360°/0°)
-                t = (adjusted_angle - 7*np.pi/4) / (np.pi/4)
-                x = x_size/2
-                y = -y_size/2 + t * y_size
-        
-        # Rotate the local coordinates by yaw before adding to box_com
-        rotated_x = x * np.cos(yaw) - y * np.sin(yaw)
-        rotated_y = x * np.sin(yaw) + y * np.cos(yaw)
-        
-        # Add point to the list
-        edge_points.append(box_com + np.array([rotated_x, rotated_y, 0]))
+    # Sample the right side (x = x_size/2, y ranges from -y_size/2 to y_size/2)
+    if sides_to_sample[0] and samples_per_side[0] > 0:
+        y_values = np.linspace(-y_size/2, y_size/2, samples_per_side[0])
+        for y in y_values:
+            local_point = np.array([x_size/2, y, 0])
+            rotated_point = rotate_point(local_point, yaw)
+            edge_points.append(box_com + rotated_point)
+    
+    # Sample the top side (y = y_size/2, x ranges from x_size/2 to -x_size/2)
+    if sides_to_sample[1] and samples_per_side[1] > 0:
+        x_values = np.linspace(x_size/2, -x_size/2, samples_per_side[1])
+        for x in x_values:
+            local_point = np.array([x, y_size/2, 0])
+            rotated_point = rotate_point(local_point, yaw)
+            edge_points.append(box_com + rotated_point)
+    
+    # Sample the left side (x = -x_size/2, y ranges from y_size/2 to -y_size/2)
+    if sides_to_sample[2] and samples_per_side[2] > 0:
+        y_values = np.linspace(y_size/2, -y_size/2, samples_per_side[2])
+        for y in y_values:
+            local_point = np.array([-x_size/2, y, 0])
+            rotated_point = rotate_point(local_point, yaw)
+            edge_points.append(box_com + rotated_point)
+    
+    # Sample the bottom side (y = -y_size/2, x ranges from -x_size/2 to x_size/2)
+    if sides_to_sample[3] and samples_per_side[3] > 0:
+        x_values = np.linspace(-x_size/2, x_size/2, samples_per_side[3])
+        for x in x_values:
+            local_point = np.array([x, -y_size/2, 0])
+            rotated_point = rotate_point(local_point, yaw)
+            edge_points.append(box_com + rotated_point)
     
     return edge_points
+
+def shift_list(lst, shift):
+    d = deque(lst)
+    d.rotate(-shift)  # Negative rotates left, positive rotates right
+    return list(d)
+
+def rotate_point(point, yaw):
+    """
+    Rotates a 2D point by the given yaw angle
+    
+    Parameters:
+    point (np.array): Local coordinates [x, y, z]
+    yaw (float): Rotation angle in radians
+    
+    Returns:
+    np.array: Rotated coordinates
+    """
+    x, y, z = point
+    rotated_x = x * np.cos(yaw) - y * np.sin(yaw)
+    rotated_y = x * np.sin(yaw) + y * np.cos(yaw)
+    return np.array([rotated_x, rotated_y, z])
 
 def find_nearest_cuboid_edge_center(C, box_frame, yaw):
     """

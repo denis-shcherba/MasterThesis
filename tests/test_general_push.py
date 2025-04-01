@@ -23,4 +23,4 @@ C.getFrame("box").setRelativeQuaternion([1.,0,0,0])
 
 for i in range(10):
     roboenv = RobotEnviroment(C)
-    success = roboenv.push_manip("box", [.0, .35, 0])
+    success = roboenv.push_frame_to("box", [.0, .35, 0])

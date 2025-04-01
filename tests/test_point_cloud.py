@@ -2,7 +2,7 @@ import numpy as np
 import robotic as ry
 from MasterThesis.shelf import generate_shelf
 from MasterThesis.book_spawning import generate_random_box_params
-from MasterThesis.utils import point_in_box_filtering, plot_box, cuboid_corners_to_size_com
+from MasterThesis.utils import point_in_box_filtering, cuboid_corners_to_size_com
 from MasterThesis.cube_fitting import minimum_bounding_box_from_convex_hull
 
 

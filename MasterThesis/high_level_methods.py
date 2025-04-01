@@ -1,7 +1,8 @@
 import MasterThesis.manipulation as manip
+from MasterThesis.simulator import Simulator
 import numpy as np
 import robotic as ry
-
+import time
 
 
 class RobotEnviroment:
@@ -10,13 +11,11 @@ class RobotEnviroment:
                  visuals: bool=False,
                  verbose: int=0,
                  compute_collisions: bool=True,
-                 on_real: bool=False):
+                 sim: bool=False):
         self.C = C
-        if on_real:
-            self.bot = ry.BotOp(self.C, on_real)
-            self.bot.home(self.C)
         self.visuals = visuals
         self.verbose = verbose
+        self.sim = sim
         self.grabbed_frame = ""
         self.path = np.array([])
         self.compute_collisions = compute_collisions
@@ -48,7 +47,7 @@ class RobotEnviroment:
         komo.addObjective([1, 2], ry.FS.vectorZ, ['l_gripper'], ry.OT.eq, [1], [0,0,1])
 
 
-    def push_manip(self, object_: str, placePosition) -> bool:
+    def push_frame_to(self, object_: str, placePosition) -> bool:
         gripper = "l_gripper"
         table = "table"
 
@@ -92,6 +91,71 @@ class RobotEnviroment:
 
         return True
 
+
+    def move_to_point(self, point, relPos=None, straight_line = False, useRRT = False) -> bool:
+        if relPos:
+            if self.C.getFrame("_tmp_way") is None:
+                self.C.addFrame('_tmp_way') \
+                    .setShape(ry.ST.marker, [.1]) \
+                    .setPosition(point)
+            else:
+                self.C.getFrame('_tmp_way') \
+                    .setPosition(point) \
+
+        gripper = "l_gripper"
+
+        man = ry.KOMO_ManipulationHelper()
+        man.setup_inverse_kinematics(self.C, accumulated_collisions=True)
+        if relPos is None:
+            man.komo.addObjective([1], ry.FS.position, [gripper], ry.OT.eq, 1, point)
+        else:
+            man.komo.addObjective([1], ry.FS.positionRel, [gripper, '_tmp_way'], ry.OT.eq, 1, relPos)
+
+        if straight_line:
+            #TODO
+            # calucluate delta ...
+            pass
+
+        ret = man.solve()
+        path = man.path
+        print('    IK:', ret)
+        
+        if ret.feasible:
+            if self.verbose>0:
+                self.C.setJointState(man.path[0])
+                self.C.view(True)
+        else:
+            print('  -- infeasible')
+            return False
+            
+
+        man = ry.KOMO_ManipulationHelper()
+        man.setup_point_to_point_motion(self.C, path[0])
+        
+        ret = man.solve()
+        print('  path:', ret)
+
+        if ret.feasible:
+            if self.sim == True:
+                #TODO prolly
+                C2 = ry.Config()
+                C2.addConfigurationCopy(self.C)
+                sim = Simulator(C2)
+                xs, qs, xdots, qdots = sim.run_trajectory(man.path, 2, real_time=True)
+
+                self.C.setJointState(qs[-1])
+
+            for t in range(man.path.shape[0]):
+                self.C.setJointState(man.path[t])
+                self.C.view(False)
+                time.sleep(.05)
+            self.C.view(self.verbose>0, f'path done')
+        else:
+            print('  -- infeasible')
+            return False
+
+        return True
+
     def pull(self, object_, placePosition, debug=False):
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, "l_gripper", object_, 1e-1)
@@ -100,7 +164,7 @@ class RobotEnviroment:
         M.solve()
         if not M.feasible:
             print("INFEASIBLE AT M")
-            #return False
+            return False
 
         M1 = M.sub_motion(0, accumulated_collisions=False)
         M1.retractPush([.0, .15], "l_gripper", .03)
@@ -108,13 +172,13 @@ class RobotEnviroment:
         path1 = M1.solve()
         if not M1.feasible:
             print("INFEASIBLE AT M1")
-            #return False
+            return False
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
         path2 = M2.solve()
         if not M2.feasible:
             print("INFEASIBLE AT M2")
-            #return False
+            return False
 
         M1.play(self.C, 1.)
         self.C.attach("l_gripper", object_)
