@@ -5,7 +5,7 @@ import MasterThesis.manipulation as manip
 from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
-from MasterThesis.utils import find_nearest_cuboid_edge_center, sample_cuboid_edges
+from MasterThesis.utils import find_nearest_cuboid_edge_center, sample_cuboid_edges, choose_starting_point
 
 C = ry.Config()
 C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
@@ -65,30 +65,37 @@ for i, book_params in enumerate(samples):
 
     nearest_cuboid_edge_center = find_nearest_cuboid_edge_center(C, "target_book", yaw)
     
-    points = sample_cuboid_edges(C, "target_book", yaw, samples=30, sides_rel=True, sides_to_sample=[True, True, False, True])
+    points = sample_cuboid_edges(C, "target_book", yaw, samples=10, sides_rel=True, sides_to_sample=[True, True, False, True])
 
     # filter every point that has no bigger x coord than nearest_cuboid_edge_center
     points = [point for point in points if point[0]>nearest_cuboid_edge_center[0]]
 
     for j, point in enumerate(points):
-        C.addFrame(f"sample{j}").setShape(ry.ST.sphere, size=[.01]).setPosition(point)
+        C.addFrame(f"sample{j}").setShape(ry.ST.sphere, size=[.01]).setPosition(point).setContact(0)
 
     C.addFrame("to_push_point").setShape(ry.ST.marker, size=[.5]).setPosition(nearest_cuboid_edge_center)
 
     C.view(True)
 
-    roboenv = RobotEnviroment(C)
+    roboenv = RobotEnviroment(C, sim=True)
 
+    success_pushstart_proposal = []
     for j, point in enumerate(points):
         success, path = roboenv.move_to_point_path(point)
 
         if success:
             C.getFrame(f"sample{j}").setColor([0, 1, 0])
+            success_pushstart_proposal.append(point)
         else:
             C.getFrame(f"sample{j}").setColor([1, 0, 0])
 
         C.view(False, "Calculating success score for push proposal")
     C.view(True, "All success samples")
+
+
+    starting_point = choose_starting_point(success_pushstart_proposal)
+    roboenv.move_to_point(starting_point)
+    roboenv.move_to_point(nearest_cuboid_edge_center, straight_line=True, accumulated_collisions=False)
 
     C.delFrame(f"target_book")
     C.delFrame("to_push_point")

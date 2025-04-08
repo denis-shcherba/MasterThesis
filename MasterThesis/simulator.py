@@ -71,8 +71,9 @@ class Simulator:
             xs[i], qs[i], xdots[i], qdots[i] = self._sim.getState()
             if real_time:
                 time.sleep(1e-2)
+            self.config.view()
 
-        # Reset simulation and environments
-        self.reset()
+        # Reset simulation and environments (no need yet) 
+        # self.reset()
 
         return xs, qs, xdots, qdots

@@ -4,7 +4,7 @@ import robotic as ry
 
 def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 6], small_opening_dims: list[float]=[.21, .21, .21],  just_front: bool=False, base_quaternion: list[float]=[1,0,0,0], shelf_lip: bool=False, equidistant=True):
     # TODO: More efficient piece building, don't repeat pieces!
-    inner_wall_width = .005
+    inner_wall_width = .02
 
     w = small_opening_dims[0]*openings_small[0]
     d = w
@@ -143,7 +143,7 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 if i == 0:
                     C.addFrame(f"big_xy_bottom_{s}_0", "shelf_base") \
                         .setRelativePosition([0., p, base_height + floor_offsets[0]]) \
-                        .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.005]) \
+                        .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.001]) \
                         .setColor([1., 1., 0.]) \
                         .setContact(1)
                     
@@ -164,8 +164,8 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 else:
                     C.addFrame(f"big_xy_bottom_{s}_{i}", f"big_xy_bottom_{s}_{i-1}") \
                         .setRelativePosition([0., 0, offset]) \
-                        .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.005]) \
-                        .setColor([1., 1., 0.]) \
+                        .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.001]) \
+                        .setColor([1., 1., 1.]) \
                         .setContact(1)
                     
                     C.addFrame(f"big_box_inside_{s}_{i}", f"big_xy_bottom_{s}_{i}") \

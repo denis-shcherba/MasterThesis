@@ -2,6 +2,24 @@ import numpy as np
 import robotic as ry
 import cmath 
 from collections import deque
+import random
+
+
+def choose_starting_point(point_list, metric=""):
+    """
+    Chooses a starting point from a list based on the metric.
+    - If metric is "cost", selects the point with the lowest cost.
+    - Otherwise, picks a random point.
+    """
+    if metric == "cost":
+        if isinstance(point_list, dict):  # Expecting {point: cost, ...}
+            return min(point_list, key=point_list.get)  # Get point with lowest cost
+        else:
+            raise ValueError("Expected a dictionary of {point: cost} for metric='cost'")
+    
+    else:
+        return random.choice(point_list)  # Random choice if no metric
+    
 
 def point_in_box_filtering(points, box_params):
     """

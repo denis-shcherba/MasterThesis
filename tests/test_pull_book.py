@@ -9,7 +9,6 @@ from MasterThesis.book_spawning import generate_random_box_params
 C = ry.Config()
 C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
 
-C.delFrame("panda_collCameraWrist")
 C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)   # Real size [1.1, 1.2, .02, .005]
 
 # Shelf
