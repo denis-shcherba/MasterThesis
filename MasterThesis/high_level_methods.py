@@ -160,7 +160,8 @@ class RobotEnviroment:
             return False
 
     def pull(self, object_, placePosition, debug=False):
-        
+        self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
+
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, "l_gripper", object_, 1e-1, accumulated_collisions=False)
         M.pull([1.,2.], object_, "l_gripper", "big_xy_bottom_0_1")
@@ -184,6 +185,12 @@ class RobotEnviroment:
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
 
+        target = self.C.getFrame("target").getPosition()
+        delta = np.array(target) - self.C.getFrame(object_).getPosition()
+        delta /= np.linalg.norm(delta)
+        projection_matrix = np.eye(3) - np.outer(delta, delta)
+        M2.komo.addObjective([.1,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
+
         path2 = M2.solve()
         #M.komo.report(plotOverTime=True)
 
@@ -206,6 +213,7 @@ class RobotEnviroment:
 
         self.C.attach("table", object_)
 
+        self.C.delFrame("tmp")
         return True
 
     def pivot(self):
