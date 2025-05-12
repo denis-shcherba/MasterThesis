@@ -84,10 +84,10 @@ for i, book_params in enumerate(samples):
         success, path = roboenv.move_to_point_path(point)
 
         if success:
-            C.getFrame(f"sample{j}").setColor([0, 1, 0])
+            C.getFrame(f"sample{j}").setColor([0, 1, 0, .9])
             success_pushstart_proposal.append(point)
         else:
-            C.getFrame(f"sample{j}").setColor([1, 0, 0])
+            C.getFrame(f"sample{j}").setColor([1, 0, 0, .9])
 
         C.view(False, "Calculating success score for push proposal")
     C.view(True, "All success samples")

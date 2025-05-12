@@ -5,19 +5,27 @@ from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
 
+ROBOT_MODE = "floating"  # or "floating"
 
 C = ry.Config()
-C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
 
-C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)   # Real size [1.1, 1.2, .02, .005]
+gripper = "l_gripper"
+palm = "l_palm"
+
+if ROBOT_MODE == "normal":
+    C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
+    C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)   # Real size [1.1, 1.2, .02, .005]
+    C.getFrame("l_finger1").setAttribute("friction", 1e3)
+    C.getFrame("l_finger2").setAttribute("friction", 1e3)
+elif ROBOT_MODE == "floating":
+    C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
+    gripper = "gripper"
+    palm = "palm"
 
 # Shelf
 pos = np.array([.8, 0., .3])
 generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
 
-# for convenience, a few definitions:
-gripper = "l_gripper"
-palm = "l_palm"
 
 color = [1., 0., 0.]
 
@@ -52,7 +60,9 @@ for book_params in samples:
         .setShape(ry.ST.ssBox, size=[book_params[0], book_params[1], book_params[2], 0.005]) \
         .setColor(np.random.rand(3)) \
         .setContact(1) \
-        .setMass(.1)
+        .setMass(.1) \
+        .setAttribute("friction", 1) \
+    
     C.view(True)
 
     
@@ -63,11 +73,10 @@ for book_params in samples:
     target = np.append(target, C.getFrame("target_book").getPosition()[2])
 
     C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
-    C.view(True)
 
 
-    roboenv = RobotEnviroment(C)
-    success = roboenv.pull("target_book", target)
+    roboenv = RobotEnviroment(C, sim=True, gripper=gripper)
+    success = roboenv.pull("target_book", target, accumulated_collisions=False)
 
     C.delFrame(f"target_book")
     C.view(False)
