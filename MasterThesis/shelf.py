@@ -117,7 +117,7 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
             p = w*.25
             p *= 1. if s == 0 else -1.
             
-            floor_offsets = [.35, .43, .41, .18, .15, .2, .15, .15, .15, .12]  # Last 2 entries TODO
+            floor_offsets = [.35, .43, .51, .18, .15, .2, .15, .15, .15, .12]  # Last 2 entries TODO
 
 
             opening_pos = np.array([
@@ -145,8 +145,9 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                         .setRelativePosition([0., p, base_height + floor_offsets[0]]) \
                         .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.001]) \
                         .setColor([1., 1., 0.]) \
-                        .setContact(1)
-                    
+                        .setContact(1) \
+
+
                     C.addFrame(f"big_box_inside_{s}_0", f"big_xy_bottom_{s}_0") \
                         .setRelativePosition([0., 0., -floor_offsets[1]/2+.5*base_height]) \
                         .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, floor_offsets[1]-base_height, 0.005]) \
@@ -166,12 +167,13 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                         .setRelativePosition([0., 0, offset]) \
                         .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.001]) \
                         .setColor([1., 1., 1.]) \
-                        .setContact(1)
+                        .setContact(1) \
+                        .setAttribute("friction", .0001) \
                     
                     C.addFrame(f"big_box_inside_{s}_{i}", f"big_xy_bottom_{s}_{i}") \
                         .setRelativePosition([0., 0., -floor_offsets[i]/2]) \
                         .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, floor_offsets[i], 0.005]) \
-                        .setColor([0., 1., 1., .0]) \
+                        .setColor([0., 1., 1., 0]) \
                         .setContact(0)
 
                     # Wände links (und später recht von der Regalwand) auskommentiert weil TODO, nicht wirklich nötig grade

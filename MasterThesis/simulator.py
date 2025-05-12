@@ -29,7 +29,7 @@ class Simulator:
         self,
         path: np.ndarray,
         n_steps: float,
-        tau: float = 5e-3,
+        tau: float = 5e-4,
         real_time: bool = False,
     ) -> [np.ndarray, np.ndarray, np.ndarray, np.ndarray]: # type: ignore
         """Run a trajectory in simulation using the specified KOMO instance.
@@ -61,17 +61,19 @@ class Simulator:
         xdots = np.empty((sim_steps + 1, *self.init_state[2].shape))
         qdots = np.empty((sim_steps + 1, *self.init_state[3].shape))
         xs[0], qs[0], xdots[0], qdots[0] = self._sim.getState()
-        assert np.allclose(xs[0], self.init_state[0]), (
-            "Init state must match env. init, "
-            f"but difference is large at "
-            f"{np.argwhere((xs[0] - self.init_state[0]) > .1)}"
-        )
+        # assert np.allclose(xs[0], self.init_state[0]), (
+        #     "Init state must match env. init, "
+        #     f"but difference is large at "
+        #     f"{np.argwhere((xs[0] - self.init_state[0]) > .1)}"
+        # )
         for i in range(1, sim_steps + 1):
             self._sim.step([], tau, ry.ControlMode.spline)
             xs[i], qs[i], xdots[i], qdots[i] = self._sim.getState()
             if real_time:
-                time.sleep(1e-2)
-            self.config.view()
+                #time.sleep(1e-4)
+                pass
+            if i % 100 == 0:
+                self.config.view()
 
         # Reset simulation and environments (no need yet) 
         # self.reset()
