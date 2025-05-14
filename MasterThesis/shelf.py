@@ -166,9 +166,9 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                     C.addFrame(f"big_xy_bottom_{s}_{i}", f"big_xy_bottom_{s}_{i-1}") \
                         .setRelativePosition([0., 0, offset]) \
                         .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.001]) \
-                        .setColor([1., 1., 1.]) \
+                        .setColor([1., 1., 0.]) \
                         .setContact(1) \
-                        .setAttribute("friction", .0001) \
+                        .setAttribute("friction", 1e-4) \
                     
                     C.addFrame(f"big_box_inside_{s}_{i}", f"big_xy_bottom_{s}_{i}") \
                         .setRelativePosition([0., 0., -floor_offsets[i]/2]) \

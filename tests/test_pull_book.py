@@ -5,7 +5,9 @@ from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
 
-ROBOT_MODE = "floating"  # or "floating"
+ROBOT_MODE = "normal" 
+SIMULATE = True
+prefix = "l_"
 
 C = ry.Config()
 
@@ -15,13 +17,21 @@ palm = "l_palm"
 if ROBOT_MODE == "normal":
     C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
     C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)   # Real size [1.1, 1.2, .02, .005]
-    C.getFrame("l_finger1").setAttribute("friction", 1e3)
-    C.getFrame("l_finger2").setAttribute("friction", 1e3)
+    C.delFrame("panda_collCameraWrist")
+
 elif ROBOT_MODE == "floating":
     C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
     gripper = "gripper"
     palm = "palm"
+    C.setJointState(C.getJointState() + np.array([.3, 0, .2, 0, 0, 0, 0]))
+    C.getFrame('panda_finger_joint1').setJointState(np.array([.01]))
+    prefix = ""
 
+
+C.getFrame(prefix+"finger1").setAttribute("friction", 1e5)
+C.getFrame(prefix+"finger2").setAttribute("friction", 1e5)
+
+q0 = C.getJointState()
 # Shelf
 pos = np.array([.8, 0., .3])
 generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
@@ -45,38 +55,43 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=50, allow_yaw=True)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=50, num_boxes= 3, allow_yaw=True)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
 
-for book_params in samples:
-    q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]]))
+for sample in samples:
+    for book_params in sample:
+        q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]]))
 
 
-    C.addFrame(f"target_book") \
-        .setPosition(shelf_corner + np.append(book_params[3:5], (shelf_height+book_params[2])/2)) \
-        .setShape(ry.ST.ssBox, size=[book_params[0], book_params[1], book_params[2], 0.005]) \
-        .setColor(np.random.rand(3)) \
-        .setContact(1) \
-        .setMass(.1) \
-        .setAttribute("friction", 1) \
-    
-    C.view(True)
+        for i, box in enumerate(sample):
+            q = ry.Quaternion().setRollPitchYaw(([0,0, box[-1]]))
+            C.addFrame(f"target_book_{i}") \
+                .setPosition(shelf_corner + np.append(box[3:5], (shelf_height+box[2])/2)) \
+                .setQuaternion(q.getArr()) \
+                .setShape(ry.ST.ssBox, size=[box[0], box[1], box[2], 0.005]) \
+                .setColor(np.random.rand(3)) \
+                .setContact(1) \
+                .setMass(.1)
+        C.view(True)
 
-    
-    # target at the middle of the shelf ending
-    target = np.array([
-        (shelfBottomFrame.getPosition()[:2] + np.array([-shelf_depth/2, 0])),
-    ])
-    target = np.append(target, C.getFrame("target_book").getPosition()[2])
+        
+        # target at the middle of the shelf ending
+        target = np.array([
+            (shelfBottomFrame.getPosition()[:2] + np.array([-shelf_depth/2, 0])),
+        ])
+        target = np.append(target, C.getFrame("target_book_0").getPosition()[2])
 
-    C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
+        C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
 
-    roboenv = RobotEnviroment(C, sim=True, gripper=gripper)
-    success = roboenv.pull("target_book", target, accumulated_collisions=False)
+        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper)
+        success = roboenv.pull("target_book_0", target, accumulated_collisions=True)
 
-    C.delFrame(f"target_book")
-    C.view(False)
+        C.delFrame(f"target_book_0")
+        C.view(False)
+        C.setJointState(q0)
+        
+        C.getFrame(prefix+'panda_finger_joint1').setJointState(np.array([.01]))

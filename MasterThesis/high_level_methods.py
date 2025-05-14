@@ -90,7 +90,6 @@ class RobotEnviroment:
             delta /= np.linalg.norm(delta)
             man.komo.addObjective([], ry.FS.positionDiff, [self.gripper, '_tmp_way'], ry.OT.eq, [3e1*(np.eye(3)-np.outer(delta,delta))])
 
-        self.C.view(True)
         ret = man.solve()
 
         path = man.path
@@ -135,7 +134,6 @@ class RobotEnviroment:
 
     def pull(self, object_, placePosition, accumulated_collisions=True):
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
-
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
         M.pull([1.,2.], object_, self.gripper, "big_xy_bottom_0_1")
@@ -163,7 +161,8 @@ class RobotEnviroment:
         delta = np.array(target) - self.C.getFrame(object_).getPosition()
         delta /= np.linalg.norm(delta)
         projection_matrix = np.eye(3) - np.outer(delta, delta)
-        M2.komo.addObjective([.1,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
+        M2.komo.addObjective([1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
+        #M2.komo.addObjective([.5,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * np.array([0, 0, 1]))
 
         path2 = M2.solve()
 
@@ -184,7 +183,7 @@ class RobotEnviroment:
 
             M2.play(self.C, 1.)
 
-            self.C.attach("table", object_)
+            self.C.attach("big_xy_bottom_0_1", object_)
 
         self.C.delFrame("tmp")
         return True
