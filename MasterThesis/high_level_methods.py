@@ -136,15 +136,23 @@ class RobotEnviroment:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
-        M.pull([1.,2.], object_, self.gripper, "big_xy_bottom_0_1")
+        
+        M.add_stable_frame(ry.JT.transXYPhi, "big_xy_bottom_0_1", '_pull_end', object_)
+        M.komo.addObjective([1], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
+        M.komo.addObjective([2], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
+        M.komo.addObjective([1], ry.FS.vectorZ, [object_], ry.OT.eq, [1e1], np.array([0,0,1]))
+        M.komo.addObjective([2], ry.FS.vectorZ, [object_], ry.OT.eq, [1e1], np.array([0,0,1]))
+        M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1])
+        print(self.C.getFrame(object_).getSize()[2])
+        M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([0, 0, .01-.5*self.C.getFrame(object_).getSize()[2]]))
 
-        #TODO straight line and better gripper to book stick
         M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
         M.komo.addObjective([1,2], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1], [self.C.getFrame(object_).getSize()[2]+self.C.getFrame(object_).getPosition()[2]])   
 
         M.solve()
         if not M.feasible:
             print("INFEASIBLE AT M")
+            self.C.delFrame("tmp")
             return False
 
         M1 = M.sub_motion(0, accumulated_collisions=accumulated_collisions)
@@ -153,27 +161,30 @@ class RobotEnviroment:
         path1 = M1.solve()
         if not M1.feasible:
             print("INFEASIBLE AT M1")
+            self.C.delFrame("tmp")
             return False
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
 
-        target = self.C.getFrame("target").getPosition()
-        delta = np.array(target) - self.C.getFrame(object_).getPosition()
-        delta /= np.linalg.norm(delta)
-        projection_matrix = np.eye(3) - np.outer(delta, delta)
-        M2.komo.addObjective([1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
-        #M2.komo.addObjective([.5,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * np.array([0, 0, 1]))
+        #target = self.C.getFrame("target").getPosition()
+        # delta = np.array(target) - self.C.getFrame(object_).getPosition()
+        # delta /= np.linalg.norm(delta)
+        # projection_matrix = np.eye(3) - np.outer(delta, delta)
+        # M2.komo.addObjective([1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
+        # M2.komo.addObjective([.5,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * np.array([0, 0, 1]))
 
         path2 = M2.solve()
 
         if not M2.feasible:
             print("INFEASIBLE AT M2")
+            self.C.delFrame("tmp")
+
             return False
         
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose)
-            xs, qs, xdots, qdots = sim.run_trajectory(path1, 2, real_time=True)
-            xs, qs, xdots, qdots = sim.run_trajectory(path2, 2, real_time=True)
+            sim.run_trajectory(path1, 2)
+            sim.run_trajectory(path2, 2)
             
         else:
             M1.play(self.C, 1.)

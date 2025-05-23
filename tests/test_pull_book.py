@@ -5,7 +5,7 @@ from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
 
-ROBOT_MODE = "normal" 
+ROBOT_MODE = "floating" 
 SIMULATE = True
 prefix = "l_"
 
@@ -24,12 +24,15 @@ elif ROBOT_MODE == "floating":
     gripper = "gripper"
     palm = "palm"
     C.setJointState(C.getJointState() + np.array([.3, 0, .2, 0, 0, 0, 0]))
-    C.getFrame('panda_finger_joint1').setJointState(np.array([.01]))
+    #C.getFrame('panda_finger_joint1').setJointState(np.array([.01]))
     prefix = ""
 
 
 C.getFrame(prefix+"finger1").setAttribute("friction", 1e5)
 C.getFrame(prefix+"finger2").setAttribute("friction", 1e5)
+
+# ry.params_add({'physx/gripperKp': 0})
+# ry.params_add({'physx/gripperKd': 0})
 
 q0 = C.getJointState()
 # Shelf
@@ -55,7 +58,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=50, num_boxes= 3, allow_yaw=True)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=50, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -88,10 +91,12 @@ for sample in samples:
 
 
         roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper)
-        success = roboenv.pull("target_book_0", target, accumulated_collisions=True)
 
+        success = roboenv.pull("target_book_0", target, accumulated_collisions=False)
+
+        
         C.delFrame(f"target_book_0")
-        C.view(False)
+        C.view(True)
         C.setJointState(q0)
         
         C.getFrame(prefix+'panda_finger_joint1').setJointState(np.array([.01]))

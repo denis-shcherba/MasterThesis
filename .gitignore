@@ -5,3 +5,8 @@ test.py
 graphics/
 environment.yaml
 *.npy
+.obsidian/
+test_panda.py
+
+
+point_net.md
