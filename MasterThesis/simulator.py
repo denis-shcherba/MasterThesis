@@ -14,11 +14,32 @@ class Simulator:
         config: ry.Config,
         engine: SimulationEngine = SimulationEngine.physx,
         verbose: int = 0,
+        camera: str = "camera",
     ):
         self._sim = ry.Simulation(config, engine, verbose=verbose)
         self.config = config
         self.init_state = self._sim.getState()
+        self.camera = camera
 
+    def getPoints(self, n_samples=1000):
+        depth, rgb = self._sim.getImageAndDepth()
+
+        CameraView = ry.CameraView(self.config)
+        CameraView.setCamera(self.config.getFrame("camera"))
+        fx, fy, cx, cy = CameraView.getFxycxy()
+        point_cloud = self._sim.depthData2pointCloud(depth, [fx, fy, cx, cy])
+        
+        # Reshape to get all points
+        points = point_cloud.reshape(-1, 3) 
+
+        # randomply sample points if more than n_samples        
+        if len(points) > n_samples:
+            indices = np.random.choice(len(points), n_samples, replace=False)
+            sampled_points = points[indices]
+            
+            return sampled_points
+        else:
+            return points  
 
 
     def run_trajectory(
@@ -26,6 +47,7 @@ class Simulator:
         path: np.ndarray,
         n_steps: float,
         tau: float = 5e-4,
+        capture_points: bool = False,
     ) -> [np.ndarray, np.ndarray, np.ndarray, np.ndarray]: # type: ignore
         """Run a trajectory in simulation using the specified KOMO instance.
 
@@ -50,7 +72,7 @@ class Simulator:
         times = np.linspace(n_steps / path.shape[-2], n_steps, path.shape[-2])
         self._sim.setSplineRef(path=path, times=times)
         # self._sim.moveGripper("gripper", .01)
-
+        # TODO think about control mode, capture points every path 
         for i in range(1, sim_steps + 1):
             self._sim.step([], tau, ry.ControlMode.spline)
             if i % 100 == 0:

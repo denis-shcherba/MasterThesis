@@ -21,7 +21,7 @@ class RobotEnviroment:
         self.path = np.array([])
         self.compute_collisions = compute_collisions
         self.gripper = gripper
-
+        self.points = []
 
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"
@@ -132,7 +132,7 @@ class RobotEnviroment:
             print('  -- infeasible')
             return False
 
-    def pull(self, object_, placePosition, accumulated_collisions=True):
+    def pull(self, object_, placePosition, accumulated_collisions=True) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
@@ -183,9 +183,10 @@ class RobotEnviroment:
         
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose)
-            sim.run_trajectory(path1, 2)
-            sim.run_trajectory(path2, 2)
-            
+            sim.run_trajectory(path1, 2, capture_points=True)
+            sim.run_trajectory(path2, 2, capture_points=True)
+            self.points.append(sim.getPoints())
+
         else:
             M1.play(self.C, 1.)
             self.C.view(True)
@@ -197,6 +198,8 @@ class RobotEnviroment:
             self.C.attach("big_xy_bottom_0_1", object_)
 
         self.C.delFrame("tmp")
+
+        self.path = np.concatenate((path1, path2), axis=0)
         return True
 
     def pivot(self):

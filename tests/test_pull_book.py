@@ -1,5 +1,6 @@
 import numpy as np
 import robotic as ry
+import h5py
 import MasterThesis.manipulation as manip
 from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
@@ -27,7 +28,6 @@ elif ROBOT_MODE == "floating":
     #C.getFrame('panda_finger_joint1').setJointState(np.array([.01]))
     prefix = ""
 
-
 C.getFrame(prefix+"finger1").setAttribute("friction", 1e5)
 C.getFrame(prefix+"finger2").setAttribute("friction", 1e5)
 
@@ -39,6 +39,9 @@ q0 = C.getJointState()
 pos = np.array([.8, 0., .3])
 generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
 
+# C.addFrame("cameraMarker", "camera").setShape(ry.ST.marker, .1)
+# C.view(True)
+# quit()
 
 color = [1., 0., 0.]
 
@@ -64,6 +67,7 @@ shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
 
+demo_id = 0
 for sample in samples:
     for book_params in sample:
         q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]]))
@@ -94,7 +98,26 @@ for sample in samples:
 
         success = roboenv.pull("target_book_0", target, accumulated_collisions=False)
 
-        
+        if success:
+            print(roboenv.path.shape)
+            np.save("pc.npy", roboenv.points)
+            print(len(roboenv.points))
+                  
+            print(roboenv.points[0].shape)
+            quit()
+            with h5py.File("variable_demo.h5", "w") as f:
+
+                demo_group = f.create_group(f"demo_{demo_id}")
+
+                demo_group.create_dataset("path", data=roboenv.path)
+
+                pcl_group = demo_group.create_group("point_clouds")
+
+                pcl_group.create_dataset(f"{i:03d}", data=pcl)
+                demo_id += 1
+            
+            quit()
+
         C.delFrame(f"target_book_0")
         C.view(True)
         C.setJointState(q0)
