@@ -14,24 +14,28 @@ class Simulator:
         config: ry.Config,
         engine: SimulationEngine = SimulationEngine.physx,
         verbose: int = 0,
-        camera: str = "camera",
+        camera: str = "cameraStatic",
     ):
         self._sim = ry.Simulation(config, engine, verbose=verbose)
         self.config = config
         self.init_state = self._sim.getState()
         self.camera = camera
+        self.points = []
+        self._sim.selectSensor(camera)
 
-    def getPoints(self, n_samples=1000):
-        depth, rgb = self._sim.getImageAndDepth()
+    def getPoints(self, n_samples=1000, vis=True):
+        rbg, depth = self._sim.getImageAndDepth()
 
         CameraView = ry.CameraView(self.config)
-        CameraView.setCamera(self.config.getFrame("camera"))
+        CameraView.setCamera(self.config.getFrame(self.camera))
         fx, fy, cx, cy = CameraView.getFxycxy()
+        print([fx, fy, cx, cy])
         point_cloud = self._sim.depthData2pointCloud(depth, [fx, fy, cx, cy])
         
-        # Reshape to get all points
         points = point_cloud.reshape(-1, 3) 
 
+        if vis:        
+            self.config.getFrame(self.camera).setPointCloud(point_cloud)
         # randomply sample points if more than n_samples        
         if len(points) > n_samples:
             indices = np.random.choice(len(points), n_samples, replace=False)
@@ -71,9 +75,15 @@ class Simulator:
         sim_steps = int(n_steps // tau)
         times = np.linspace(n_steps / path.shape[-2], n_steps, path.shape[-2])
         self._sim.setSplineRef(path=path, times=times)
-        # self._sim.moveGripper("gripper", .01)
-        # TODO think about control mode, capture points every path 
+
+        # TODO think about this, maybe change control mode, and then better capture points every path
+        interval = max(1, sim_steps // 32)
+        points_captured = 0
         for i in range(1, sim_steps + 1):
+            if capture_points and ((i - 1) % interval == 0) and (points_captured < path.shape[-2]):
+                points = self.getPoints()
+                self.points.append(points)
+                points_captured += 1
             self._sim.step([], tau, ry.ControlMode.spline)
             if i % 100 == 0:
                 self.config.view()

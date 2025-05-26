@@ -183,12 +183,22 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                     #     .setColor([1., 1., 0.]) \
                     #     .setContact(1)
                     
+
+
             p = w*.5
             p *= 1. if s == 0 else -1.
-
+            
             if shelf_lip:
                 #TODO
                 pass
+            
+
+    C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
+        .setPosition(C.getFrame("big_xy_bottom_0_1").getPosition()+np.array([-.25*w, 0, 0]) + np.array([-.25, 0, .8*floor_offsets[2]])) \
+        .setQuaternion([np.cos(np.deg2rad(125/2)), 0, np.sin(np.deg2rad(125/2)), 0]) \
+        .setAttribute("focalLength", 2) \
+        .setAttribute("width", 640) \
+        .setAttribute("height", 360) 
 
 if __name__ == "__main__":
     C = ry.Config()

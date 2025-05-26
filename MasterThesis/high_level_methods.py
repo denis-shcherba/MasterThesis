@@ -21,7 +21,6 @@ class RobotEnviroment:
         self.path = np.array([])
         self.compute_collisions = compute_collisions
         self.gripper = gripper
-        self.points = []
 
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"
@@ -185,7 +184,7 @@ class RobotEnviroment:
             sim = Simulator(self.C, verbose=self.verbose)
             sim.run_trajectory(path1, 2, capture_points=True)
             sim.run_trajectory(path2, 2, capture_points=True)
-            self.points.append(sim.getPoints())
+            self.points = sim.points
 
         else:
             M1.play(self.C, 1.)

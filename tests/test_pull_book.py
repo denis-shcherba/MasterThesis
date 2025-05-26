@@ -7,9 +7,11 @@ from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" 
+COLLECT_DATA = True
+PATH_MODE = "JOINTS7D" # or "SE38D" or "SE39D"  
 SIMULATE = True
+CAMERA = "cameraStatic"  # or "cameraWrist"
 prefix = "l_"
-
 C = ry.Config()
 
 gripper = "l_gripper"
@@ -22,6 +24,8 @@ if ROBOT_MODE == "normal":
 
 elif ROBOT_MODE == "floating":
     C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
+    #C.addFile("../MasterThesis/configs/pandaFloatingFixGripper.g")
+
     gripper = "gripper"
     palm = "palm"
     C.setJointState(C.getJointState() + np.array([.3, 0, .2, 0, 0, 0, 0]))
@@ -39,9 +43,8 @@ q0 = C.getJointState()
 pos = np.array([.8, 0., .3])
 generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
 
-# C.addFrame("cameraMarker", "camera").setShape(ry.ST.marker, .1)
-# C.view(True)
-# quit()
+C.addFrame("cameraWP", CAMERA).setShape(ry.ST.marker, [.1]) 
+C.view(True)
 
 color = [1., 0., 0.]
 
@@ -61,13 +64,18 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=50, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=10, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
 
 demo_id = 0
+
+if COLLECT_DATA:
+    h5file = h5py.File("variable_demo.h5", "w")
+
+
 for sample in samples:
     for book_params in sample:
         q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]]))
@@ -98,28 +106,20 @@ for sample in samples:
 
         success = roboenv.pull("target_book_0", target, accumulated_collisions=False)
 
-        if success:
-            print(roboenv.path.shape)
-            np.save("pc.npy", roboenv.points)
-            print(len(roboenv.points))
-                  
-            print(roboenv.points[0].shape)
-            quit()
-            with h5py.File("variable_demo.h5", "w") as f:
+        if success and COLLECT_DATA:
+            np.save("pc.npy", roboenv.points[0])
 
-                demo_group = f.create_group(f"demo_{demo_id}")
+            demo_group = h5file.create_group(f"demo_{demo_id}")
+            demo_group.create_dataset("path", data=roboenv.path)
+            demo_group.create_dataset("points", data=roboenv.points)
+            demo_id += 1
 
-                demo_group.create_dataset("path", data=roboenv.path)
-
-                pcl_group = demo_group.create_group("point_clouds")
-
-                pcl_group.create_dataset(f"{i:03d}", data=pcl)
-                demo_id += 1
-            
-            quit()
 
         C.delFrame(f"target_book_0")
         C.view(True)
         C.setJointState(q0)
         
         C.getFrame(prefix+'panda_finger_joint1').setJointState(np.array([.01]))
+
+if COLLECT_DATA:
+    h5file.close()
