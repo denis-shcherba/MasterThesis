@@ -6,11 +6,12 @@ from MasterThesis.shelf import generate_shelf
 from MasterThesis.high_level_methods import RobotEnviroment
 from MasterThesis.book_spawning import generate_random_box_params
 
-ROBOT_MODE = "floating" 
-COLLECT_DATA = True
-PATH_MODE = "JOINTS7D" # or "SE38D" or "SE39D"  
-SIMULATE = True
+ROBOT_MODE = "floating" # "normal" or "floating"
+COLLECT_DATA = False
+PATH_MODE = "SE39D" # "JOINT7D", "SE38D" or "SE39D" 
+SIMULATE = False
 CAMERA = "cameraStatic"  # or "cameraWrist"
+
 prefix = "l_"
 C = ry.Config()
 
@@ -24,21 +25,16 @@ if ROBOT_MODE == "normal":
 
 elif ROBOT_MODE == "floating":
     C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
-    #C.addFile("../MasterThesis/configs/pandaFloatingFixGripper.g")
-
     gripper = "gripper"
     palm = "palm"
     C.setJointState(C.getJointState() + np.array([.3, 0, .2, 0, 0, 0, 0]))
-    #C.getFrame('panda_finger_joint1').setJointState(np.array([.01]))
     prefix = ""
 
 C.getFrame(prefix+"finger1").setAttribute("friction", 1e5)
 C.getFrame(prefix+"finger2").setAttribute("friction", 1e5)
 
-# ry.params_add({'physx/gripperKp': 0})
-# ry.params_add({'physx/gripperKd': 0})
-
 q0 = C.getJointState()
+
 # Shelf
 pos = np.array([.8, 0., .3])
 generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
@@ -46,9 +42,7 @@ generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equ
 C.addFrame("cameraWP", CAMERA).setShape(ry.ST.marker, [.1]) 
 C.view(True)
 
-color = [1., 0., 0.]
-
-# Frame in use for our book manipulations
+# Frame in use for book manipulations
 shelfBottomFrame = C.getFrame("big_xy_bottom_0_1")
 
 shelf_depth = shelfBottomFrame.getSize()[1]
@@ -104,13 +98,32 @@ for sample in samples:
 
         roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper)
 
-        success = roboenv.pull("target_book_0", target, accumulated_collisions=False)
+        success = roboenv.pull("target_book_0", target, accumulated_collisions=False, capture_points=COLLECT_DATA)
 
         if success and COLLECT_DATA:
             np.save("pc.npy", roboenv.points[0])
 
             demo_group = h5file.create_group(f"demo_{demo_id}")
-            demo_group.create_dataset("path", data=roboenv.path)
+
+            if PATH_MODE == "JOINT7D":
+                demo_group.create_dataset("path", data=roboenv.path)
+            if PATH_MODE == "SE39D":
+                se3_path = np.zeros((roboenv.path.shape[0], 9))
+                
+                for i in range(roboenv.path.shape[0]):
+                    q = ry.Quaternion().set(roboenv.path[i][3:])
+                    R = q.getMatrix()
+                    # Combine position (3D) with first two rotation matrix columns (6D)
+                    se3_path[i, :3] = roboenv.path[i][:3]  # Position
+                    se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+                
+                # Now use se3_path instead of the original path
+                demo_group.create_dataset("path", data=se3_path)
+
+            elif PATH_MODE == "SE38D":
+                # NOT IMPLEMENTED YET and arguably not needed
+                raise(NotImplementedError)
+                
             demo_group.create_dataset("points", data=roboenv.points)
             demo_id += 1
 

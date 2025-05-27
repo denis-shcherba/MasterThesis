@@ -131,7 +131,7 @@ class RobotEnviroment:
             print('  -- infeasible')
             return False
 
-    def pull(self, object_, placePosition, accumulated_collisions=True) -> bool:
+    def pull(self, object_, placePosition, accumulated_collisions=True, capture_points=False) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
@@ -182,8 +182,8 @@ class RobotEnviroment:
         
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose)
-            sim.run_trajectory(path1, 2, capture_points=True)
-            sim.run_trajectory(path2, 2, capture_points=True)
+            sim.run_trajectory(path1, 2, capture_points=capture_points)
+            sim.run_trajectory(path2, 2, capture_points=capture_points)
             self.points = sim.points
 
         else:
