@@ -1,11 +1,11 @@
 import numpy as np
 import robotic as ry
 import time
-import MasterThesis.manipulation as manip
-from MasterThesis.shelf import generate_shelf
-from MasterThesis.high_level_methods import RobotEnviroment
-from MasterThesis.book_spawning import generate_random_box_params
-from MasterThesis.utils import find_nearest_cuboid_edge_center, sample_cuboid_edges, choose_starting_point
+import manipulation as manip
+from shelf import generate_shelf
+from high_level_methods import RobotEnviroment
+from book_spawning import generate_random_box_params
+from utils import find_nearest_cuboid_edge_center, sample_cuboid_edges, choose_starting_point
 
 ROBOT_MODE = "floating" 
 

@@ -1,5 +1,5 @@
 import robotic as ry
-from MasterThesis.high_level_methods import RobotEnviroment
+from high_level_methods import RobotEnviroment
 
 C = ry.Config()
 C.addFile(ry.raiPath('scenarios/pandaSingle.g'))

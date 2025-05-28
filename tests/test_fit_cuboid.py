@@ -1,4 +1,4 @@
-from MasterThesis.cube_fitting import *
+from cube_fitting import *
 import robotic as ry
 from scipy.spatial.transform import Rotation
 

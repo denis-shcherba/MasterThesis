@@ -3,6 +3,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+import h5py
+
+def load_demo(h5_path):
+    with h5py.File(h5_path, 'r') as f:
+        demos = []
+        for key in f.keys():
+            path = f[f'{key}/path'][()]        # (64, 9)
+            point_clouds = f[f'{key}/point_cloud'][()]  # (64, 9, 1000)
+            demos.append((point_clouds, path))
+    return demos
+
+
 class PointNet(nn.Module):
     """
     Simple PointNet implementation for point cloud feature extraction.
@@ -126,6 +138,8 @@ def preprocess_point_cloud(points, target_num_points=1024):
     return points
 
 if __name__ == "__main__":
+
+
 
     batch_size = 4
     num_points = 1024

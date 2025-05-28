@@ -1,6 +1,6 @@
 import robotic as ry
 import numpy as np
-from MasterThesis.shelf import generate_shelf
+from shelf import generate_shelf
 
 if __name__ == "__main__":
     C = ry.Config()

@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial import ConvexHull
 import math
 import robotic as ry 
-from MasterThesis.utils import cuboid_corners_to_size_com
+from utils import cuboid_corners_to_size_com
 
 
 def fit_aabb(points):

@@ -23,7 +23,7 @@ class Simulator:
         self.points = []
         self._sim.selectSensor(camera)
 
-    def getPoints(self, n_samples=1000, vis=True):
+    def getPoints(self, n_samples=1000, vis=False):
         rbg, depth = self._sim.getImageAndDepth()
 
         CameraView = ry.CameraView(self.config)
@@ -81,7 +81,7 @@ class Simulator:
         points_captured = 0
         for i in range(1, sim_steps + 1):
             if capture_points and ((i - 1) % interval == 0) and (points_captured < path.shape[-2]):
-                points = self.getPoints()
+                points = self.getPoints(vis=True)
                 self.points.append(points)
                 points_captured += 1
             self._sim.step([], tau, ry.ControlMode.spline)

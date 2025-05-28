@@ -10,3 +10,7 @@ test_panda.py
 *.h5
 
 point_net.md
+data/
+
+configs/
+policy_network/

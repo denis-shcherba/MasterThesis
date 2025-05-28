@@ -1,5 +1,5 @@
-import MasterThesis.manipulation as manip
-from MasterThesis.simulator import Simulator
+import manipulation as manip
+from simulator import Simulator
 import numpy as np
 import robotic as ry
 import time
@@ -131,7 +131,7 @@ class RobotEnviroment:
             print('  -- infeasible')
             return False
 
-    def pull(self, object_, placePosition, accumulated_collisions=True) -> bool:
+    def pull(self, object_, placePosition, accumulated_collisions=True, capture_points=False) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
@@ -181,9 +181,26 @@ class RobotEnviroment:
             return False
         
         if self.sim == True:
+            # TODO calculate offset for fix force given PD properties
+            offset = -.001
+            # same as path2 + np.array([0, 0, offset, 0, 0, 0, 0]) for floating gripper
+            path2_after_offset = []       
+            C2 = ry.Config()
+            C2.addConfigurationCopy(self.C)
+            
+            delta_x = np.array([0, 0, offset])  
+            
+            for q in path2:
+                C2.setJointState(q)
+                _, J = C2.eval(ry.FS.position, ['gripper'])
+                delta_q = np.linalg.pinv(J) @ delta_x
+                path2_after_offset.append(q + delta_q)
+            
+            del C2
+
             sim = Simulator(self.C, verbose=self.verbose)
-            sim.run_trajectory(path1, 2, capture_points=True)
-            sim.run_trajectory(path2, 2, capture_points=True)
+            sim.run_trajectory(np.array(path1), 2, capture_points=capture_points)
+            sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_points=capture_points)
             self.points = sim.points
 
         else:

@@ -3,8 +3,8 @@
 import numpy as np
 import robotic as ry
 import time
-import MasterThesis.manipulation as manip
-from MasterThesis.shelf import generate_shelf
+import manipulation as manip
+from shelf import generate_shelf
 
 
 C = ry.Config()
