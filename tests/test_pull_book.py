@@ -99,11 +99,32 @@ for sample in samples:
         roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper)
 
         success = roboenv.pull("target_book_0", target, accumulated_collisions=False, capture_points=COLLECT_DATA)
+        success = roboenv.pull("target_book_0", target, accumulated_collisions=False, capture_points=COLLECT_DATA)
 
         if success and COLLECT_DATA:
             np.save("pc.npy", roboenv.points[0])
 
             demo_group = h5file.create_group(f"demo_{demo_id}")
+
+            if PATH_MODE == "JOINT7D":
+                demo_group.create_dataset("path", data=roboenv.path)
+            if PATH_MODE == "SE39D":
+                se3_path = np.zeros((roboenv.path.shape[0], 9))
+                
+                for i in range(roboenv.path.shape[0]):
+                    q = ry.Quaternion().set(roboenv.path[i][3:])
+                    R = q.getMatrix()
+                    # Combine position (3D) with first two rotation matrix columns (6D)
+                    se3_path[i, :3] = roboenv.path[i][:3]  # Position
+                    se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+                
+                # Now use se3_path instead of the original path
+                demo_group.create_dataset("path", data=se3_path)
+
+            elif PATH_MODE == "SE38D":
+                # NOT IMPLEMENTED YET and arguably not needed
+                raise(NotImplementedError)
+                
 
             if PATH_MODE == "JOINT7D":
                 demo_group.create_dataset("path", data=roboenv.path)
