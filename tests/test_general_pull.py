@@ -1,7 +1,7 @@
 import robotic as ry
 import manipulation as manip
 import numpy as np
-from shelf import generate_shelf
+from envs.shelf import generate_shelf
 import time
 
 C = ry.Config()

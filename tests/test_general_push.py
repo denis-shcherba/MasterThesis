@@ -1,8 +1,8 @@
 import robotic as ry
 import manipulation as manip
 import numpy as np
-from shelf import generate_shelf
-from high_level_methods import RobotEnviroment
+from envs.shelf import generate_shelf
+from envs.high_level_methods import RobotEnviroment
 
 C = ry.Config()
 C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))

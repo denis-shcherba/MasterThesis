@@ -1,10 +1,9 @@
 import numpy as np
 import robotic as ry
 import h5py
-import manipulation as manip
-from shelf import generate_shelf
-from high_level_methods import RobotEnviroment
-from book_spawning import generate_random_box_params
+from envs.shelf import generate_shelf
+from envs.high_level_methods import RobotEnviroment
+from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
 COLLECT_DATA = False
@@ -74,12 +73,11 @@ for sample in samples:
     for book_params in sample:
         q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]]))
 
-
         for i, box in enumerate(sample):
             q = ry.Quaternion().setRollPitchYaw(([0,0, box[-1]]))
             C.addFrame(f"target_book_{i}") \
                 .setPosition(shelf_corner + np.append(box[3:5], (shelf_height+box[2])/2)) \
-                .setQuaternion(q.getArr()) \
+                .setQuaternion(q.asArr()) \
                 .setShape(ry.ST.ssBox, size=[box[0], box[1], box[2], 0.005]) \
                 .setColor(np.random.rand(3)) \
                 .setContact(1) \

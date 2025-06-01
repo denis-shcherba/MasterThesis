@@ -1,7 +1,5 @@
 import numpy as np
 
-import numpy as np
-
 def get_corners(box):
     """Returns the 4 corners of the box in the x-y plane, given (X, Y, Z, x, y, z, yaw)."""
     X, Y, _, x_c, y_c, _, yaw = box

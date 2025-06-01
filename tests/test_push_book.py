@@ -2,10 +2,10 @@ import numpy as np
 import robotic as ry
 import time
 import manipulation as manip
-from shelf import generate_shelf
-from high_level_methods import RobotEnviroment
-from book_spawning import generate_random_box_params
-from utils import find_nearest_cuboid_edge_center, sample_cuboid_edges, choose_starting_point
+from envs.shelf import generate_shelf
+from envs.high_level_methods import RobotEnviroment
+from envs.book_spawning import generate_random_box_params
+from envs.utils import find_nearest_cuboid_edge_center, sample_cuboid_edges, choose_starting_point
 
 ROBOT_MODE = "floating" 
 
@@ -57,7 +57,7 @@ for sample in samples:
     for book_params in sample:
         yaw = book_params[-1]
         #yaw = 2*np.pi*i/ len(samples)
-        q = ry.Quaternion().setRollPitchYaw(([0,0, yaw])).getArr()
+        q = ry.Quaternion().setRollPitchYaw(([0,0, yaw])).asArr()
 
 
         book_com = shelf_corner + np.append(book_params[3:5], (shelf_height+book_params[2])/2)

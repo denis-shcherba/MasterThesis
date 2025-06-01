@@ -2,9 +2,9 @@ import numpy as np
 import robotic as ry
 import time
 import manipulation as manip
-from shelf import generate_shelf
-from high_level_methods import RobotEnviroment
-from book_spawning import generate_random_box_params
+from envs.shelf import generate_shelf
+from envs.high_level_methods import RobotEnviroment
+from envs.book_spawning import generate_random_box_params
 
 C = ry.Config()
 #C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
@@ -55,7 +55,7 @@ for sample in samples:
         q = ry.Quaternion().setRollPitchYaw(([0,0, box[-1]]))
         C.addFrame(f"target_book_{i}") \
             .setPosition(target + np.append(box[3:5], (shelf_height+box[2])/2)) \
-            .setQuaternion(q.getArr()) \
+            .setQuaternion(q.asArr()) \
             .setShape(ry.ST.ssBox, size=[box[0], box[1], box[2], 0.005]) \
             .setColor(np.random.rand(3)) \
             .setContact(1) \
