@@ -6,7 +6,7 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
-COLLECT_DATA = False
+COLLECT_DATA = True
 PATH_MODE = "SE39D" # "JOINT7D", "SE38D" or "SE39D" 
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
