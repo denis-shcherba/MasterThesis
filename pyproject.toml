@@ -27,7 +27,9 @@ dependencies = [
     "robotic",
     "omegaconf",
     "lxml",
-    "trimesh"
+    "trimesh",
+    "wandb",
+    "tqdm"
 ]
 
 [project.urls]

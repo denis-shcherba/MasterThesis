@@ -1,0 +1,15 @@
+defaults:
+  - _self_  
+  - model: pointnet
+  - loss: default_9d
+  - optimizer: adam
+  - data: single_step
+
+train:
+  batch_size: 32
+  epochs: 100
+  device: cuda
+
+# Global settings
+seed: 42
+experiment_name: "SimpleSingleStepBC"

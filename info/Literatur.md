@@ -13,7 +13,6 @@ Policy Distillation for manipulation nowadays is most of the time done using vis
 
 ### TRANSIC: Sim-to-Real Policy Transfer by Learning from Online Correction [[link]](https://arxiv.org/pdf/2405.10315)
 
-![Pipeline](images/transicPipeline.png)
 
 ### A System for General In-Hand Object Re-Orientation [[link]](https://arxiv.org/pdf/2107.04034)
 
@@ -62,7 +61,6 @@ Policy Distillation for manipulation nowadays is most of the time done using vis
 
 - System Components: Shelf inventory tracking, Object re-identification, Autonomous picking
 
-![Pipeline](images/towardsRobustlyPickingPipeline.png)
 
 ### Efficient push-grasping for multiple target objects in clutter environments [[link]](https://www.frontiersin.org/journals/neurorobotics/articles/10.3389/fnbot.2023.1188468/full) 
 
@@ -89,7 +87,6 @@ Policy Distillation for manipulation nowadays is most of the time done using vis
 ### FoAR: Force-Aware Reactive Policy for Contact-Rich Robotic Manipulation [[link]](https://arxiv.org/pdf/2411.15753l)
 
 
-![Pipeline](images/foarPipeline.png)
 
 ### Precise Object Placement Using Force-Torque Feedback [[link]](https://arxiv.org/pdf/2404.17668)
 

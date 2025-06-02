@@ -398,61 +398,98 @@ def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     return torch.utils.data.dataloader.default_collate(batch)
 
 
+
+def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
+    """
+    Create dataloaders from Hydra config.
+    
+    Args:
+        cfg: Hydra config object with data section
+        
+    Returns:
+        Tuple of (train_loader, val_loader)
+    """
+    data_cfg = cfg.data
+    return create_dataloaders(
+        h5_file_path=data_cfg.h5_file_path,
+        batch_size=data_cfg.batch_size,
+        sequence_length=data_cfg.sequence_length,
+        action_dim=data_cfg.action_dim,
+        num_points=data_cfg.num_points,
+        train_split=data_cfg.train_split,
+        normalize_points=data_cfg.normalize_points,
+        augment_data=data_cfg.augment_data,
+        num_workers=data_cfg.num_workers,
+        subsample_demos=data_cfg.get('subsample_demos', None),
+        random_seed=data_cfg.random_seed
+    )
+
+
 # Example usage and testing
 if __name__ == "__main__":
-    # Test the dataset
-    h5_path = "variable_demo.h5"
+    import hydra
+    from omegaconf import DictConfig
     
-    try:
-        # Create dataloaders
-        train_loader, val_loader = create_dataloaders(
-            h5_file_path=h5_path,
-            batch_size=8,
-            sequence_length=1,
-            action_dim=9,
-            num_points=1000,
-            train_split=0.8,
-            normalize_points=True,
-            augment_data=True,
-            num_workers=2
-        )
-        
-        print("Dataset created successfully!")
-        print(f"Train samples: {len(train_loader.dataset)}")
-        print(f"Val samples: {len(val_loader.dataset)}")
-        
-        # Test loading a batch
-        for batch in train_loader:
-            print(f"Batch shapes:")
-            for key, value in batch.items():
-                print(f"  {key}: {value.shape}")
-            break
-        
-    except Exception as e:
-        print(f"Error testing dataset: {e}")
-        # Create a dummy dataset for testing
-        print("Creating dummy test data...")
-        
-        import h5py
-        dummy_path = "dummy_data.h5"
-        
-        with h5py.File(dummy_path, 'w') as f:
-            for i in range(5):
-                demo_group = f.create_group(f'demo_{i}')
-                demo_group.create_dataset('path', data=np.random.randn(64, 9))
-                demo_group.create_dataset('points', data=np.random.randn(64, 1000, 3))
-        
-        # Test with dummy data
-        train_loader, val_loader = create_dataloaders(
-            h5_file_path=dummy_path,
-            batch_size=4,
-            num_workers=0
-        )
-        
-        print(f"Dummy dataset - Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
-        
-        for batch in train_loader:
-            print("Dummy batch loaded successfully!")
-            for key, value in batch.items():
-                print(f"  {key}: {value.shape}")
-            break
+    @hydra.main(config_path="../../configs", config_name="config", version_base=None)
+    def main(cfg: DictConfig):
+        # Extract data config
+        data_cfg = cfg.data
+
+        try:
+            # Create dataloaders using config values
+            train_loader, val_loader = create_dataloaders(
+                h5_file_path=data_cfg.h5_file_path,
+                batch_size=data_cfg.batch_size,
+                sequence_length=data_cfg.sequence_length,
+                action_dim=data_cfg.action_dim,
+                num_points=data_cfg.num_points,
+                train_split=data_cfg.train_split,
+                normalize_points=data_cfg.normalize_points,
+                augment_data=data_cfg.augment_data,
+                num_workers=data_cfg.num_workers,
+                subsample_demos=data_cfg.get('subsample_demos', None),
+                random_seed=data_cfg.random_seed
+            )
+            
+            print("Dataset created successfully!")
+            print(f"Train samples: {len(train_loader.dataset)}")
+            print(f"Val samples: {len(val_loader.dataset)}")
+            
+            # Test loading a batch
+            for batch in train_loader:
+                print(f"Batch shapes:")
+                for key, value in batch.items():
+                    print(f"  {key}: {value.shape}")
+                break
+            
+        except Exception as e:
+            print(f"Error testing dataset: {e}")
+            # Create a dummy dataset for testing
+            print("Creating dummy test data...")
+            
+            import h5py
+            dummy_path = "dummy_data.h5"
+            
+            with h5py.File(dummy_path, 'w') as f:
+                for i in range(5):
+                    demo_group = f.create_group(f'demo_{i}')
+                    demo_group.create_dataset('path', data=np.random.randn(64, 9))
+                    demo_group.create_dataset('points', data=np.random.randn(64, 1000, 3))
+            
+            # Test with dummy data
+            train_loader, val_loader = create_dataloaders(
+                h5_file_path=dummy_path,
+                batch_size=4,
+                num_workers=0
+            )
+            
+            print(f"Dummy dataset - Train: {len(train_loader.dataset)}, Val: {len(val_loader.dataset)}")
+            
+            for batch in train_loader:
+                print("Dummy batch loaded successfully!")
+                for key, value in batch.items():
+                    print(f"  {key}: {value.shape}")
+                break
+
+    # Call the main function
+    main()

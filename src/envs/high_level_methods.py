@@ -1,4 +1,5 @@
 from envs.simulator import Simulator
+import envs.manipulation as manip
 import numpy as np
 import robotic as ry
 import time
@@ -132,7 +133,7 @@ class RobotEnviroment:
 
     def pull(self, object_, placePosition, accumulated_collisions=True, capture_points=False) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
-        M = ry.KOMO_ManipulationHelper()
+        M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
         
         M.add_stable_frame(ry.JT.transXYPhi, "big_xy_bottom_0_1", '_pull_end', object_)
@@ -141,6 +142,7 @@ class RobotEnviroment:
         M.komo.addObjective([1], ry.FS.vectorZ, [object_], ry.OT.eq, [1e1], np.array([0,0,1]))
         M.komo.addObjective([2], ry.FS.vectorZ, [object_], ry.OT.eq, [1e1], np.array([0,0,1]))
         M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1])
+        print(self.C.getFrame(object_).getSize()[2])
         M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([0, 0, .01-.5*self.C.getFrame(object_).getSize()[2]]))
 
         M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
@@ -155,8 +157,7 @@ class RobotEnviroment:
         M1 = M.sub_motion(0, accumulated_collisions=accumulated_collisions)
         M1.retractPush([.0, .15], self.gripper, .03)
         M1.approachPush([.85, 1.], self.gripper, .03)
-        M1.solve()
-        path1 = M1.path
+        path1 = M1.solve()
         if not M1.feasible:
             print("INFEASIBLE AT M1")
             self.C.delFrame("tmp")
@@ -171,9 +172,7 @@ class RobotEnviroment:
         # M2.komo.addObjective([1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
         # M2.komo.addObjective([.5,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * np.array([0, 0, 1]))
 
-        M2.solve()
-        path2 = M2.path
-
+        path2 = M2.solve()
 
         if not M2.feasible:
             print("INFEASIBLE AT M2")
