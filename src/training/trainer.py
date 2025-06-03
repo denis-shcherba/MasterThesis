@@ -83,6 +83,7 @@ class Trainer:
         
         # Create output directory
         self.output_dir = Path(cfg.get('output_dir', 'outputs'))
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize wandb if enabled
@@ -134,6 +135,7 @@ class Trainer:
                     pred_actions = self.model(point_clouds)
             
             # Compute loss
+            
             loss = self.criterion(pred_actions, actions)
             
             # Backward pass

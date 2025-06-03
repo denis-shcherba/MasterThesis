@@ -23,6 +23,7 @@ def train_policy(cfg: DictConfig) -> None:
     Args:
         cfg: Hydra configuration object
     """
+    
     log.info("Starting policy training...")
     log.info(f"Experiment: {cfg.experiment_name}")
     log.info(f"Config: {cfg}")

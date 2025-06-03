@@ -10,6 +10,6 @@ test_panda.py
 *.h5
 
 point_net.md
-data/
+demos/
 
 outputs/

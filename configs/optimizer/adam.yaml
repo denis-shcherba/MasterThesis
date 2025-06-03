@@ -1,0 +1,18 @@
+type: adam
+lr: 1.0e-3
+weight_decay: 1.0e-4
+betas: [0.9, 0.999]
+
+# # Learning rate scheduler
+# scheduler:
+#   use: false
+#   type: reduce_on_plateau
+#   # Parameters for ReduceLROnPlateau
+#   factor: 0.5
+#   patience: 10
+#   # Parameters for StepLR
+#   step_size: 30
+#   gamma: 0.1
+#   # Parameters for CosineAnnealingLR
+#   T_max: 100
+#   eta_min: 1.0e-6

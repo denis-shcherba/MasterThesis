@@ -307,7 +307,7 @@ def create_model(model_cfg):
         policy_type=model_cfg.get('type', 'pointcloud'),
         num_points=model_cfg.get('num_points', 1024),
         feature_dim=model_cfg.get('feature_dim', 256),
-        action_dim=model_cfg.get('action_dim', 6),
+        action_dim=model_cfg.get('action_dim', 7),
         hidden_dims=model_cfg.get('hidden_dims', [256, 128]),
         dropout_rate=model_cfg.get('dropout_rate', 0.3),
         use_residual=model_cfg.get('use_residual', False),
