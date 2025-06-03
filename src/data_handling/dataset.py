@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple, Optional, Union
 import logging
 from pathlib import Path
 import random
-
+from src.data_handling.processing import normalize_point_cloud_to_unit_sphere 
 
 class ManipulationDataset(Dataset):
     """
@@ -166,7 +166,6 @@ class ManipulationDataset(Dataset):
         # Center the point cloud
         centroid = np.mean(points, axis=0)
         points_centered = points - centroid
-        
         # Scale to unit sphere
         max_dist = np.max(np.linalg.norm(points_centered, axis=1))
         if max_dist > 1e-8:  # Avoid division by zero
@@ -253,6 +252,8 @@ class ManipulationDataset(Dataset):
             
             # Apply normalization
             if self.normalize_points:
+                
+                points = normalize_point_cloud_to_unit_sphere(points) # Use the utility function
                 points = self._normalize_point_cloud(points)
             
             # Apply augmentation

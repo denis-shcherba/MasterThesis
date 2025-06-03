@@ -1,0 +1,14 @@
+defaults:
+  - _self_  
+  - model: pointnet
+  - data: single_step
+  - inference: default
+  - env: default_9d
+train:
+  batch_size: 32
+  epochs: 100
+  device: cuda
+
+experiment_name: "SimpleSingleStepBC Inference"
+
+output_subdir: null

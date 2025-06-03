@@ -43,6 +43,7 @@ class Simulator:
             
             return sampled_points
         else:
+            self.config.view(True)
             return points  
 
 

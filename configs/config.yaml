@@ -4,7 +4,7 @@ defaults:
   - loss: default_9d
   - optimizer: adam
   - data: single_step
-
+  - inference: default
 train:
   batch_size: 32
   epochs: 100
@@ -14,3 +14,4 @@ train:
 seed: 42
 experiment_name: "SimpleSingleStepBC"
 output_dir: ${hydra:runtime.output_dir}
+

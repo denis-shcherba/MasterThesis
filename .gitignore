@@ -8,8 +8,11 @@ environment.yaml
 .obsidian/
 test_panda.py
 *.h5
+.log
+TODOS.txt
 
 point_net.md
 demos/
 
 outputs/
+checkpoints/

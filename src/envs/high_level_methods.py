@@ -22,6 +22,7 @@ class RobotEnviroment:
         self.compute_collisions = compute_collisions
         self.gripper = gripper
 
+
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"
 
@@ -218,5 +219,11 @@ class RobotEnviroment:
         self.path = np.concatenate((path1, path2), axis=0)
         return True
 
-    def pivot(self):
-        pass
+    def render(self):
+        if self.sim:
+            sim = Simulator(self.C, verbose=self.verbose)
+            points = sim.getPoints(1000, vis=True)
+            return points
+        else:
+            #TODO? maybe, maybe not
+            self.C.view(True)

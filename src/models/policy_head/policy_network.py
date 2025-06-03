@@ -186,92 +186,6 @@ class MultiModalPolicy(nn.Module):
         return actions
 
 
-class EnsemblePolicy(nn.Module):
-    """
-    Ensemble policy that combines multiple PointCloudPolicy networks.
-    Useful for uncertainty estimation and improved robustness.
-    """
-    
-    def __init__(self, num_models=3, num_points=1024, feature_dim=256, 
-                 action_dim=6, hidden_dims=None, dropout_rate=0.3):
-        """
-        Initialize Ensemble Policy.
-        
-        Args:
-            num_models (int): Number of models in the ensemble
-            num_points (int): Number of points in input point cloud
-            feature_dim (int): Dimension of PointNet features
-            action_dim (int): Dimension of output actions
-            hidden_dims (list): Hidden layer dimensions for policy heads
-            dropout_rate (float): Dropout rate for regularization
-        """
-        super(EnsemblePolicy, self).__init__()
-        
-        self.num_models = num_models
-        self.action_dim = action_dim
-        
-        # Create ensemble of policies
-        self.policies = nn.ModuleList([
-            PointCloudPolicy(
-                num_points=num_points,
-                feature_dim=feature_dim,
-                action_dim=action_dim,
-                hidden_dims=hidden_dims,
-                dropout_rate=dropout_rate
-            ) for _ in range(num_models)
-        ])
-    
-    def forward(self, point_cloud, return_individual=False):
-        """
-        Forward pass through ensemble.
-        
-        Args:
-            point_cloud: Point cloud tensor of shape (batch_size, num_points, 3)
-            return_individual: Whether to return individual model predictions
-            
-        Returns:
-            If return_individual is False:
-                mean_actions: Mean action predictions (batch_size, action_dim)
-                std_actions: Standard deviation of predictions (batch_size, action_dim)
-            If return_individual is True:
-                all_actions: All model predictions (batch_size, num_models, action_dim)
-        """
-        # Get predictions from all models
-        all_actions = []
-        for policy in self.policies:
-            actions = policy(point_cloud)
-            all_actions.append(actions.unsqueeze(1))  # Add model dimension
-        
-        all_actions = torch.cat(all_actions, dim=1)  # (batch_size, num_models, action_dim)
-        
-        if return_individual:
-            return all_actions
-        else:
-            # Compute ensemble statistics
-            mean_actions = torch.mean(all_actions, dim=1)
-            std_actions = torch.std(all_actions, dim=1)
-            return mean_actions, std_actions
-    
-    def sample_action(self, point_cloud, temperature=1.0):
-        """
-        Sample action from ensemble with temperature scaling.
-        
-        Args:
-            point_cloud: Point cloud tensor of shape (batch_size, num_points, 3)
-            temperature: Temperature for uncertainty-based sampling
-            
-        Returns:
-            sampled_actions: Sampled actions (batch_size, action_dim)
-        """
-        mean_actions, std_actions = self.forward(point_cloud)
-        
-        # Sample from Gaussian distribution
-        noise = torch.randn_like(mean_actions)
-        sampled_actions = mean_actions + temperature * std_actions * noise
-        
-        return sampled_actions
-
-
 def create_policy(policy_type='pointcloud', **kwargs):
     """
     Factory function to create different types of policies.
@@ -287,8 +201,6 @@ def create_policy(policy_type='pointcloud', **kwargs):
         return PointCloudPolicy(**kwargs)
     elif policy_type == 'multimodal':
         return MultiModalPolicy(**kwargs)
-    elif policy_type == 'ensemble':
-        return EnsemblePolicy(**kwargs)
     else:
         raise ValueError(f"Unknown policy type: {policy_type}")
     
@@ -315,7 +227,5 @@ def create_model(model_cfg):
         # For multimodal policy
         # state_dim=model_cfg.get('state_dim', 0),
         # fusion_method=model_cfg.get('fusion_method', 'concat'),
-        # For ensemble policy
-        # num_models=model_cfg.get('num_models', 3)
     )
     return model
