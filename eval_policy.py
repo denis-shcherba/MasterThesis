@@ -1,4 +1,3 @@
-# eval_policy.py
 # TODO hard
 
 import hydra
@@ -8,14 +7,9 @@ import numpy as np
 import logging
 import os # For path joining
 from envs.create_env import ShelfPullDataCollector 
-# Adjust imports based on your project structure
-# Assuming 'src' is in your PYTHONPATH or you run from the project root
 from models.policy_head.policy_network import create_model # From your project
-from data_handling.processing import normalize_point_cloud_to_unit_sphere_torch, pose_9d_to_7d
+from data_handling.processing import normalize_point_cloud_to_unit_sphere_torch, pose_9d_to_7d, pose_7d_to_9d
 
-# You will likely need preprocessing functions from here:
-# from src.data_handling.processing import your_specific_preprocess_function
-# from src.data_handling.dataset import YOUR_DATA_NORMALIZATION_CONSTANTS # if any
 
 log = logging.getLogger(__name__)
 
@@ -163,19 +157,17 @@ def eval_policy(cfg: DictConfig) -> None:
 
     # --- 1. Setup Device and Environment---
     default_device_str = "cuda" if torch.cuda.is_available() else "cpu"
-    # Allow overriding device via inference config or command line
     device_str = cfg.get("inference", {}).get("device", default_device_str)
     device = torch.device(device_str)
     log.info(f"Using device: {device}")
 
     collector = ShelfPullDataCollector(**cfg.env)
-    collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
-    collector.C.view(False) # Enable visualization if needed, or set to False for headless execution
-
+    collector.spawn_books_scene()
+    collector.C.view(True)
+    collector.C.view(False) 
 
     # --- 2. Initialize Model ---
     log.info("Initializing model...")
-    # The model architecture is defined by cfg.model
     model = create_model(cfg.model).to(device)
     log.info(f"Model created: {type(model).__name__}")
 
@@ -185,12 +177,6 @@ def eval_policy(cfg: DictConfig) -> None:
     # Option 2: Construct from training output directory (more robust if following a pattern)
     checkpoint_path_cfg = cfg.get("inference", {}).get("checkpoint_path", None)
     if checkpoint_path_cfg is None:
-        # Try to infer from hydra's output directory if not specified
-        # This assumes your train_policy.py saves checkpoints in a standard location
-        # within its hydra run directory.
-        # Example: <hydra_run_dir>/checkpoints/best_model.pth or <hydra_run_dir>/checkpoints/epoch_X.pth
-        # You might need to adjust this logic based on how your Trainer saves models.
-        # For now, let's require it in the config.
         log.error("Checkpoint path not found. Please specify `inference.checkpoint_path` in your config or command line.")
         log.error("Example: python eval_policy.py inference.checkpoint_path=outputs/YYYY-MM-DD/HH-MM-SS/checkpoints/model_epoch_N.pth")
         return
@@ -223,80 +209,74 @@ def eval_policy(cfg: DictConfig) -> None:
     model.eval() # IMPORTANT: Set the model to evaluation mode
     log.info("Model set to evaluation mode.")
 
-    # --- 4. Prepare Input Data for Inference ---
-    pc = collector.render()
-    raw_inference_data = {"point_cloud": pc, "robot_state": None} # Initialize with empty data
-    # EXAMPLE: Replace this with your actual data source
-    # log.warning("USING DUMMY RAW INPUT DATA. Replace with your actual data source.")
-    # example_num_points = cfg.model.get("num_points", 1024) # Example: if your model uses a fixed number of points
-    # example_point_dim = cfg.model.get("point_feature_dim", 3) # Example
-    # example_state_dim = cfg.model.get("state_dim", 6) # Example
+    for i in range (10):
+        # --- 4. Prepare Input Data for Inference ---
+        pc = collector.render()
+        robot_state = pose_7d_to_9d(collector.C.getJointState())
+        raw_inference_data = {"point_cloud": pc, "robot_state": robot_state}
+        # EXAMPLE: Replace this with your actual data source
+        # log.warning("USING DUMMY RAW INPUT DATA. Replace with your actual data source.")
+        # example_num_points = cfg.model.get("num_points", 1024) # Example: if your model uses a fixed number of points
+        # example_point_dim = cfg.model.get("point_feature_dim", 3) # Example
+        # example_state_dim = cfg.model.get("state_dim", 6) # Example
 
-    # raw_inference_data = {
-    #     'point_cloud': np.random.rand(example_num_points, example_point_dim).astype(np.float32),
-    #     'robot_state': np.random.rand(example_state_dim).astype(np.float32)
-    #     # Add other raw data parts your `preprocess_inference_input` expects
-    # }
-    # --- End Example Data ---
+        # raw_inference_data = {
+        #     'point_cloud': np.random.rand(example_num_points, example_point_dim).astype(np.float32),
+        #     'robot_state': np.random.rand(example_state_dim).astype(np.float32)
+        #     # Add other raw data parts your `preprocess_inference_input` expects
+        # }
+        # --- End Example Data ---
 
-    # Preprocess the raw data
-    # The `cfg` object is passed in case preprocessing needs access to config values
-    # (e.g., normalization stats, image sizes, etc.)
-    input_for_model = preprocess_inference_input(raw_inference_data, cfg, device)
+        # Preprocess the raw data
+        # The `cfg` object is passed in case preprocessing needs access to config values
+        # (e.g., normalization stats, image sizes, etc.)
+        input_for_model = preprocess_inference_input(raw_inference_data, cfg, device)
 
-    if not input_for_model:
-        log.error("Preprocessing did not return any data. Aborting.")
-        return
+        if not input_for_model:
+            log.error("Preprocessing did not return any data. Aborting.")
+            return
 
-    # --- 5. Perform Inference ---
-    log.info("Running model inference...")
-    with torch.no_grad(): # Disable gradient calculations
-        # The structure of input_for_model (e.g. dictionary, single tensor)
-        # must match what your model's forward() method expects.
-        # If your model's forward method is `def forward(self, observation, state):`
-        # then you would call it as `output = model(observation=input_for_model['observation'], state=input_for_model['state'])`
-        # or if it's `def forward(self, batch_dict):` then `output = model(input_for_model)`
-        #
-        # Check your model's `forward` signature in `src/models/policy_head/policy_network.py`
-        # Let's assume it takes a dictionary, similar to your training loop.
-        try:
-            output = model(input_for_model["point_cloud"],)
-        except Exception as e:
-            log.error(f"Error during model forward pass: {e}")
-            log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
-            log.error(f"Input keys: {input_for_model.keys()}")
-            for k, v in input_for_model.items():
+        # --- 5. Perform Inference ---
+        log.info("Running model inference...")
+        with torch.no_grad(): # Disable gradient calculations
+            # The structure of input_for_model (e.g. dictionary, single tensor)
+            # must match what your model's forward() method expects.
+            # If your model's forward method is `def forward(self, observation, state):`
+            # then you would call it as `output = model(observation=input_for_model['observation'], state=input_for_model['state'])`
+            # or if it's `def forward(self, batch_dict):` then `output = model(input_for_model)`
+            #
+            # Check your model's `forward` signature in `src/models/policy_head/policy_network.py`
+            # Let's assume it takes a dictionary, similar to your training loop.
+            try:
+                output = model(input_for_model["point_cloud"],)
+            except Exception as e:
+                log.error(f"Error during model forward pass: {e}")
+                log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
+                log.error(f"Input keys: {input_for_model.keys()}")
+                for k, v in input_for_model.items():
+                    if isinstance(v, torch.Tensor):
+                        log.error(f"  {k}: shape {v.shape}, dtype {v.dtype}, device {v.device}")
+                raise
+
+        log.info(f"Inference output raw: {output}")
+    
+        pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
+        log.info("pose7d:", pose7d)
+        collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
+        collector.C.setJointState(pose7d)
+        collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
+
+        if isinstance(output, torch.Tensor):
+            log.info(f"Output tensor shape: {output.shape}")
+        elif isinstance(output, dict):
+            log.info(f"Output dictionary keys: {output.keys()}")
+            for k,v in output.items():
                 if isinstance(v, torch.Tensor):
-                    log.error(f"  {k}: shape {v.shape}, dtype {v.dtype}, device {v.device}")
-            raise
+                    log.info(f"  {k} shape: {v.shape}")
 
-    log.info(f"Inference output raw: {output}")
-   
-    pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
-    log.info("pose7d:", pose7d)
-    collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
-    collector.C.setJointState(pose7d)
-    collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
-
-    if isinstance(output, torch.Tensor):
-        log.info(f"Output tensor shape: {output.shape}")
-    elif isinstance(output, dict):
-        log.info(f"Output dictionary keys: {output.keys()}")
-        for k,v in output.items():
-            if isinstance(v, torch.Tensor):
-                log.info(f"  {k} shape: {v.shape}")
-
-
-    # --- 6. Post-process Output (Optional) ---
-    # Depending on your task, you might need to convert the output.
-    # E.g., apply softmax, convert to specific actions, denormalize, etc.
-    # final_action = postprocess_model_output(output, cfg)
-    # log.info(f"Post-processed action: {final_action}")
 
     log.info("Policy evaluation/inference finished.")
 
 
 if __name__ == "__main__":
-    # Optional: Basic logging setup if Hydra doesn't handle it to your liking for standalone script runs
-    # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     eval_policy()

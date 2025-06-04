@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: pointnet
+  - model: multi_modal
   - loss: default_9d
   - optimizer: adam
   - data: single_step

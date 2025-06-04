@@ -88,6 +88,33 @@ def pose_9d_to_7d(pose: np.ndarray) -> np.ndarray:
     
     return pose_7d.astype(np.float32)
 
+def pose_7d_to_9d(pose: np.ndarray) -> np.ndarray:
+    """
+    Convert a 7D pose (position + quaternion) to a 9D pose (position + 6D rotation from first two columns).
+    
+    Args:
+        pose: A NumPy array of shape (7,) representing the 7D pose [px, py, pz, qx, qy, qz, qw].
+        
+    Returns:
+        A NumPy array of shape (9,) representing the 9D pose 
+        [px, py, pz, R00, R10, R20, R01, R11, R21].
+    """
+    
+    # Extract position (first 3 elements)
+    position = pose[:3]
+    
+    quat_values = pose[3:] 
+    
+    q = ry.Quaternion().set(quat_values) 
+    R = q.getMatrix() 
+    
+    col1 = R[:, 0] 
+    col2 = R[:, 1] 
+    
+    pose_9d = np.concatenate((position, col1, col2))
+    
+    return pose_9d.astype(np.float32)
+
 
 def normalize_point_cloud_to_unit_sphere(points: np.ndarray) -> np.ndarray:
     """

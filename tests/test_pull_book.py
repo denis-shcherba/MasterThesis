@@ -39,7 +39,7 @@ pos = np.array([.8, 0., .3])
 generate_shelf(C, pos, base_quaternion=[1, 0, 0, 1], openings_small=[4, 11], equidistant=False)
 
 C.addFrame("cameraWP", CAMERA).setShape(ry.ST.marker, [.1]) 
-C.view(True)
+C.view(False)
 
 # Frame in use for book manipulations
 shelfBottomFrame = C.getFrame("big_xy_bottom_0_1")
@@ -57,7 +57,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=10, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -82,7 +82,7 @@ for sample in samples:
                 .setColor(np.random.rand(3)) \
                 .setContact(1) \
                 .setMass(.1)
-        C.view(True)
+        C.view(False)
 
         
         # target at the middle of the shelf ending
@@ -127,7 +127,7 @@ for sample in samples:
 
 
         C.delFrame(f"target_book_0")
-        C.view(True)
+        C.view(False)
         C.setJointState(q0)
         
         C.getFrame(prefix+'panda_finger_joint1').setJointState(np.array([.01]))

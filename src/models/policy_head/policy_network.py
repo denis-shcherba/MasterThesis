@@ -6,6 +6,7 @@ import numpy as np
 from models.perception.pointnet import PointNet
 from models.policy_head.mlp_head import MLPHead, ResidualMLPHead
 
+import inspect
 
 class PointCloudPolicy(nn.Module):
     """
@@ -97,7 +98,7 @@ class MultiModalPolicy(nn.Module):
     Currently supports point clouds and optional additional state information.
     """
     
-    def __init__(self, num_points=1024, pointnet_feature_dim=256, 
+    def __init__(self, num_points=1024, feature_dim=256, 
                  state_dim=0, action_dim=6, hidden_dims=None, 
                  dropout_rate=0.3, fusion_method='concat'):
         """
@@ -115,7 +116,7 @@ class MultiModalPolicy(nn.Module):
         super(MultiModalPolicy, self).__init__()
         
         self.num_points = num_points
-        self.pointnet_feature_dim = pointnet_feature_dim
+        self.pointnet_feature_dim = feature_dim
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.fusion_method = fusion_method
@@ -123,7 +124,7 @@ class MultiModalPolicy(nn.Module):
         # PointNet feature extractor
         self.pointnet = PointNet(
             num_points=num_points,
-            feature_dim=pointnet_feature_dim,
+            feature_dim=feature_dim,
             dropout_rate=dropout_rate
         )
         
@@ -133,19 +134,19 @@ class MultiModalPolicy(nn.Module):
             self.state_encoder = nn.Sequential(
                 nn.Linear(state_dim, 64),
                 nn.ReLU(inplace=True),
-                nn.Linear(64, pointnet_feature_dim)
+                nn.Linear(64, feature_dim)
             )
         
         # Determine input dimension for policy head
         if state_dim > 0:
             if fusion_method == 'concat':
-                policy_input_dim = pointnet_feature_dim + pointnet_feature_dim
+                policy_input_dim = feature_dim + feature_dim
             elif fusion_method == 'add':
-                policy_input_dim = pointnet_feature_dim
+                policy_input_dim = feature_dim
             else:
                 raise ValueError(f"Unknown fusion method: {fusion_method}")
         else:
-            policy_input_dim = pointnet_feature_dim
+            policy_input_dim = feature_dim
         
         # Policy head
         self.policy_head = MLPHead(
@@ -186,25 +187,24 @@ class MultiModalPolicy(nn.Module):
         return actions
 
 
+def filter_kwargs(func, kwargs):
+    sig = inspect.signature(func)
+    return {k: v for k, v in kwargs.items() if k in sig.parameters}
+
 def create_policy(policy_type='pointcloud', **kwargs):
     """
     Factory function to create different types of policies.
-    
-    Args:
-        policy_type (str): Type of policy to create
-        **kwargs: Additional arguments for policy initialization
-        
-    Returns:
-        policy: Initialized policy network
+    Filters kwargs according to the policy constructor's expected arguments.
     """
     if policy_type == 'pointcloud':
-        return PointCloudPolicy(**kwargs)
+        filtered = filter_kwargs(PointCloudPolicy.__init__, kwargs)
+        return PointCloudPolicy(**filtered)
     elif policy_type == 'multimodal':
-        return MultiModalPolicy(**kwargs)
+        filtered = filter_kwargs(MultiModalPolicy.__init__, kwargs)
+        return MultiModalPolicy(**filtered)
     else:
         raise ValueError(f"Unknown policy type: {policy_type}")
     
-
 def create_model(model_cfg):
     """
     Create model based on configuration.

@@ -154,6 +154,20 @@ class ShelfPullDataCollector:
             spawned_book_frames.append(frame_name)
         return spawned_book_frames
 
+    def spawn_books_scene(self, num_boxes=1, allow_yaw=False):
+        """ Spawn a single book scene  """
+
+        samples = generate_random_box_params(
+            shelf_size=self.shelf_dims_for_spawning, # (shelf_width, shelf_depth, shelf_plate_thickness)
+            box_size_ranges=self.box_size_ranges,
+            num_samples=1,
+            num_boxes=num_boxes,
+            allow_yaw=allow_yaw
+        )
+
+        spawned_book_names = self._spawn_books(samples[0])
+
+
     def run_experiment(self, view_simulation_steps=True):
         """Runs the data collection experiment."""
         if view_simulation_steps:

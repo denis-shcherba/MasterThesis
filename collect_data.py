@@ -1,18 +1,21 @@
 # HARD TODO
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from envs.create_env import ShelfPullDataCollector 
+import logging
 
+log = logging.getLogger(__name__)
 
-@hydra.main(config_path="configs", config_name="inference", version_base=None)
+@hydra.main(config_path="configs", config_name="data_collection", version_base=None)
 def main(cfg: DictConfig):
-    print(OmegaConf.to_yaml(cfg))  # for debug
 
-    experiment_config = OmegaConf.to_container(cfg, resolve=True)
-    
-    # Now you can use experiment_config like before
-    run_data_collection(experiment_config)
+    log.info("Starting policy evaluation/inference...")
+
+    collector = ShelfPullDataCollector(**cfg.env)
+    collector.spawn_books_scene()
+    collector.C.view(True) 
+
 
 def run_data_collection(config: dict):
     # your existing logic here
