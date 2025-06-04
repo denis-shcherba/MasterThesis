@@ -209,7 +209,7 @@ def eval_policy(cfg: DictConfig) -> None:
     model.eval() # IMPORTANT: Set the model to evaluation mode
     log.info("Model set to evaluation mode.")
 
-    for i in range (10):
+    for i in range (20):
         # --- 4. Prepare Input Data for Inference ---
         pc = collector.render()
         robot_state = pose_7d_to_9d(collector.C.getJointState())
@@ -248,7 +248,7 @@ def eval_policy(cfg: DictConfig) -> None:
             # Check your model's `forward` signature in `src/models/policy_head/policy_network.py`
             # Let's assume it takes a dictionary, similar to your training loop.
             try:
-                output = model(input_for_model["point_cloud"],)
+                output = model(input_for_model["point_cloud"],input_for_model["state"] )
             except Exception as e:
                 log.error(f"Error during model forward pass: {e}")
                 log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")

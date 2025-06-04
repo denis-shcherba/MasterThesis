@@ -225,7 +225,7 @@ def create_model(model_cfg):
         use_residual=model_cfg.get('use_residual', False),
         output_activation=model_cfg.get('output_activation', None),
         # For multimodal policy
-        # state_dim=model_cfg.get('state_dim', 0),
+        state_dim=model_cfg.get('state_dim', 0),
         # fusion_method=model_cfg.get('fusion_method', 'concat'),
     )
     return model

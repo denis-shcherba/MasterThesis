@@ -124,15 +124,12 @@ class Trainer:
             self.optimizer.zero_grad()
             
             # Handle different policy types
-            if hasattr(self.model, 'policies'):  # Ensemble policy
-                pred_actions, _ = self.model(point_clouds)
+
+            if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
+                state = batch['previous_action'].to(self.device)
+                pred_actions = self.model(point_clouds, state)
             else:
-                # Check if we have additional state information
-                if 'state' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
-                    state = batch['state'].to(self.device)
-                    pred_actions = self.model(point_clouds, state)
-                else:
-                    pred_actions = self.model(point_clouds)
+                pred_actions = self.model(point_clouds)
             
             # Compute loss
             
@@ -178,15 +175,13 @@ class Trainer:
                 point_clouds = batch['point_cloud'].to(self.device)
                 actions = batch['action'].to(self.device)
                 
-                # Forward pass
-                if hasattr(self.model, 'policies'):  # Ensemble policy
-                    pred_actions, _ = self.model(point_clouds)
+
+
+                if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
+                    state = batch['previous_action'].to(self.device)
+                    pred_actions = self.model(point_clouds, state)
                 else:
-                    if 'state' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
-                        state = batch['state'].to(self.device)
-                        pred_actions = self.model(point_clouds, state)
-                    else:
-                        pred_actions = self.model(point_clouds)
+                    pred_actions = self.model(point_clouds)
                 
                 # Compute loss
                 loss = self.criterion(pred_actions, actions)
