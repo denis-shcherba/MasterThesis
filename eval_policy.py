@@ -214,22 +214,7 @@ def eval_policy(cfg: DictConfig) -> None:
         pc = collector.render()
         robot_state = pose_7d_to_9d(collector.C.getJointState())
         raw_inference_data = {"point_cloud": pc, "robot_state": robot_state}
-        # EXAMPLE: Replace this with your actual data source
-        # log.warning("USING DUMMY RAW INPUT DATA. Replace with your actual data source.")
-        # example_num_points = cfg.model.get("num_points", 1024) # Example: if your model uses a fixed number of points
-        # example_point_dim = cfg.model.get("point_feature_dim", 3) # Example
-        # example_state_dim = cfg.model.get("state_dim", 6) # Example
 
-        # raw_inference_data = {
-        #     'point_cloud': np.random.rand(example_num_points, example_point_dim).astype(np.float32),
-        #     'robot_state': np.random.rand(example_state_dim).astype(np.float32)
-        #     # Add other raw data parts your `preprocess_inference_input` expects
-        # }
-        # --- End Example Data ---
-
-        # Preprocess the raw data
-        # The `cfg` object is passed in case preprocessing needs access to config values
-        # (e.g., normalization stats, image sizes, etc.)
         input_for_model = preprocess_inference_input(raw_inference_data, cfg, device)
 
         if not input_for_model:
@@ -239,14 +224,6 @@ def eval_policy(cfg: DictConfig) -> None:
         # --- 5. Perform Inference ---
         log.info("Running model inference...")
         with torch.no_grad(): # Disable gradient calculations
-            # The structure of input_for_model (e.g. dictionary, single tensor)
-            # must match what your model's forward() method expects.
-            # If your model's forward method is `def forward(self, observation, state):`
-            # then you would call it as `output = model(observation=input_for_model['observation'], state=input_for_model['state'])`
-            # or if it's `def forward(self, batch_dict):` then `output = model(input_for_model)`
-            #
-            # Check your model's `forward` signature in `src/models/policy_head/policy_network.py`
-            # Let's assume it takes a dictionary, similar to your training loop.
             try:
                 output = model(input_for_model["point_cloud"],input_for_model["state"] )
             except Exception as e:

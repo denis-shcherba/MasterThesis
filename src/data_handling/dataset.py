@@ -8,20 +8,9 @@ from pathlib import Path
 import random
 # Assuming src.data_handling.processing.normalize_point_cloud_to_unit_sphere exists
 # For self-contained example, let's define a placeholder if it's not critical for this change
-try:
-    from src.data_handling.processing import normalize_point_cloud_to_unit_sphere
-except ImportError:
-    print("Warning: src.data_handling.processing.normalize_point_cloud_to_unit_sphere not found. Using a placeholder.")
-    def normalize_point_cloud_to_unit_sphere(points: np.ndarray) -> np.ndarray:
-        """Placeholder for normalize_point_cloud_to_unit_sphere."""
-        centroid = np.mean(points, axis=0)
-        points_centered = points - centroid
-        max_dist = np.max(np.linalg.norm(points_centered, axis=1))
-        if max_dist > 1e-8:
-            points_normalized = points_centered / max_dist
-        else:
-            points_normalized = points_centered
-        return points_normalized.astype(np.float32)
+
+from data_handling.processing import normalize_point_cloud_to_unit_sphere
+
 
 class ManipulationDataset(Dataset):
     """
@@ -164,19 +153,7 @@ class ManipulationDataset(Dataset):
             if demo_idx in selected_demos
         ]
 
-    def _normalize_point_cloud_internal(self, points: np.ndarray) -> np.ndarray:
-        """
-        Normalize point cloud to unit sphere. (Internal version if the external one has issues or for specific logic)
-        """
-        centroid = np.mean(points, axis=0)
-        points_centered = points - centroid
-        max_dist = np.max(np.linalg.norm(points_centered, axis=1))
-        if max_dist > 1e-8:
-            points_normalized = points_centered / max_dist
-        else:
-            points_normalized = points_centered
-        return points_normalized.astype(np.float32)
-
+    # TODO, maybe drop
     def _augment_point_cloud(self, points: np.ndarray) -> np.ndarray:
         """Apply data augmentation to point cloud."""
         if not self.augment_data:
@@ -261,9 +238,7 @@ class ManipulationDataset(Dataset):
             if self.normalize_points:
                 # Using the imported normalize_point_cloud_to_unit_sphere function first
                 points = normalize_point_cloud_to_unit_sphere(points)
-                # Then, optionally, the internal one if it serves a different purpose or as a fallback
-                # If they do the same, choose one. Let's assume the external one is preferred.
-                # points = self._normalize_point_cloud_internal(points) # Commenting out potential double normalization
+
 
             points = self._augment_point_cloud(points)
 

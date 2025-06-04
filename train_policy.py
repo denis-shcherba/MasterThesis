@@ -2,8 +2,6 @@ import hydra
 from omegaconf import DictConfig
 import logging
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import numpy as np
 
 from data_handling.dataset import create_dataloaders_from_config
@@ -12,7 +10,6 @@ from training.trainer import Trainer
 from training.losses import create_loss_function
 from training.optimizer import create_optimizer
 
-# Set up logging
 log = logging.getLogger(__name__)
 
 
@@ -56,9 +53,26 @@ def train_policy(cfg: DictConfig) -> None:
 
         # Initialize model
         log.info("Initializing model...")
-        model = create_model(cfg.model).to(device)
+        model = create_model(cfg.model).to(device) # Assuming create_model returns your MultiModalPolicy
         log.info(f"Model created: {type(model).__name__}")
-        log.info(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+        # --- Parameter Counting for Different Components ---
+        total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        log.info(f"Total trainable parameters: {total_params:,}")
+
+        pointnet_params = sum(p.numel() for p in model.pointnet.parameters() if p.requires_grad)
+        log.info(f"  - PointNet parameters: {pointnet_params:,} ({pointnet_params/total_params*100:.2f}%)")
+
+        policy_head_params = sum(p.numel() for p in model.policy_head.parameters() if p.requires_grad)
+        log.info(f"  - Policy Head parameters: {policy_head_params:,} ({policy_head_params/total_params*100:.2f}%)")
+
+        if model.state_encoder is not None:
+            state_encoder_params = sum(p.numel() for p in model.state_encoder.parameters() if p.requires_grad)
+            log.info(f"  - State Encoder parameters: {state_encoder_params:,} ({state_encoder_params/total_params*100:.2f}%)")
+            if abs(total_params - (pointnet_params + policy_head_params + state_encoder_params)) > 10: # allow for small discrepancies if any non-component params exist
+                log.warning("Parameter count mismatch. There might be other parameters in the main model not in these components.")
+        elif abs(total_params - (pointnet_params + policy_head_params)) > 10:
+            log.warning("Parameter count mismatch (no state encoder). There might be other parameters in the main model not in these components.")
 
         # Initialize optimizer
         log.info("Initializing optimizer...")
