@@ -331,7 +331,6 @@ class ShelfPullDataCollector:
     def render(self):
         roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper_name)
         points = roboenv.render()
-        self.C.view(True)
         return points
 
     def close(self):

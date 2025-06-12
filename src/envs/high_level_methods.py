@@ -222,7 +222,7 @@ class RobotEnviroment:
     def render(self):
         if self.sim:
             sim = Simulator(self.C, verbose=self.verbose)
-            points = sim.getPoints(1000, vis=True)
+            points = sim.getPoints(1000, vis=False)
             return points
         else:
             #TODO? maybe, maybe not

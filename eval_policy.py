@@ -9,7 +9,7 @@ import os # For path joining
 from envs.create_env import ShelfPullDataCollector 
 from models.policy_head.policy_network import create_model # From your project
 from data_handling.processing import normalize_point_cloud_to_unit_sphere_torch, pose_9d_to_7d, pose_7d_to_9d
-
+import time 
 
 log = logging.getLogger(__name__)
 
@@ -209,7 +209,7 @@ def eval_policy(cfg: DictConfig) -> None:
     model.eval() # IMPORTANT: Set the model to evaluation mode
     log.info("Model set to evaluation mode.")
 
-    for i in range (20):
+    for i in range (64):
         # --- 4. Prepare Input Data for Inference ---
         pc = collector.render()
         robot_state = None
@@ -231,7 +231,7 @@ def eval_policy(cfg: DictConfig) -> None:
         log.info("Running model inference...")
         with torch.no_grad(): # Disable gradient calculations
             try:
-                output = model(input_for_model["point_cloud"],input_for_model["state"] )
+                output = model(input_for_model["point_cloud"], input_for_model["state"], torch.tensor(i).reshape(1))
             except Exception as e:
                 log.error(f"Error during model forward pass: {e}")
                 log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
@@ -247,16 +247,14 @@ def eval_policy(cfg: DictConfig) -> None:
             pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
             log.info("pose7d:", pose7d)
             
-            collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
             collector.C.setJointState(pose7d)
         elif cfg["model"]["action_dim"] == 3:
             pos = output.squeeze().cpu().numpy()
 
             collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0])) # Assuming a fixed orientation for the gripper
 
-       
-        collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
-
+        collector.C.view(False)
+        time.sleep(.1)
         if isinstance(output, torch.Tensor):
             log.info(f"Output tensor shape: {output.shape}")
         elif isinstance(output, dict):
