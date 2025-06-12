@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import logging
 
 def create_individual_loss_function(loss_cfg):
     """
@@ -168,7 +169,34 @@ class PoseLoss9D(nn.Module):
         # return total_loss, {"pos_loss": loss_pos.item(), "rot_loss": loss_rot.item()}
         return total_loss
 
+class MSELoss(nn.Module):
+    """
+    Computes a simple Mean Squared Error (MSE) loss.
+    This class can be used for any tensor input where MSE is desired.
+    """
+    def __init__(self):
+        super().__init__()
+        # Initialize the Mean Squared Error loss function
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            prediction (torch.Tensor): The predicted tensor.
+            target (torch.Tensor): The ground truth tensor.
+        
+        Returns:
+            torch.Tensor: Scalar tensor representing the MSE loss.
+        """
+        loss = self.mse_loss(prediction, target)
+        
+        return loss
+
+
+
 # --- Main Loss Creation Function (Factory) ---
+log = logging.getLogger(__name__)
+
 def create_loss_function(loss_cfg_global):
     """
     Create the main loss function based on the global loss configuration.
@@ -182,30 +210,47 @@ def create_loss_function(loss_cfg_global):
         
     Returns:
         criterion: An nn.Module loss function.
+    
+    Raises:
+        ValueError: If the loss configuration is invalid or the specified loss name is unknown.
     """
-    # Determine the primary loss name/type from the configuration
-    # Default to 'PoseLoss9D' if 'name' is not specified but structure matches,
-    # or handle simple losses if 'name' indicates one.
-    loss_name = loss_cfg_global.get('name', None)
+    loss_name = loss_cfg_global.get("loss").get("name", None)
 
     if loss_name == 'PoseLoss9D':
-        # Pass the entire loss_cfg_global to PoseLoss9D, as it contains nested configs
+        # PoseLoss9D expects the full configuration, as it processes nested configs.
+        log.info("Creating PoseLoss9D.")
         return PoseLoss9D(loss_cfg_global)
-    elif loss_name is None and all(k in loss_cfg_global for k in ['lambda_pos', 'lambda_rot', 'position_loss', 'rotation_loss']):
-        # If name is not specified, but it looks like a PoseLoss9D config, assume it is.
-        print("Warning: 'name: PoseLoss9D' not explicitly set in loss config, but structure matches. Assuming PoseLoss9D.")
-        return PoseLoss9D(loss_cfg_global)
-    elif loss_name is not None and loss_name not in ['PoseLoss9D']:
-        # If a name is given and it's not PoseLoss9D, assume it's a simple loss type.
-        # The config itself should be structured for create_individual_loss_function.
-        # e.g., loss_cfg_global = {type: 'mse'}
-        print(f"Warning: 'name: {loss_name}' is specified. Assuming it's an individual loss type. "
-              f"Ensure config structure matches: {{'type': '{loss_name}', ...}}.")
-        temp_cfg = {'type': loss_name} # Create a temporary config
-        for k, v in loss_cfg_global.items(): # Copy other relevant params like delta, beta
-            if k not in ['name']:
-                temp_cfg[k] = v
-        return create_individual_loss_function(temp_cfg)
-    else:
-        return create_individual_loss_function(loss_cfg_global)
+    
+    elif loss_name == "MSELoss":
+        # If the name is 'MSELoss', we create a simple MSE loss function.
+        log.info("Creating MSELoss.")
+        return MSELoss()
 
+    elif loss_name is not None:
+        # If a name is given and it's not PoseLoss9D, assume it's an individual loss type.
+        # The 'name' field here corresponds to the 'type' field expected by create_individual_loss_function.
+        # We construct a new config dict to match the expected input for create_individual_loss_function.
+        # This assumes create_individual_loss_function expects a config like {'type': 'mse', 'param1': val1, ...}
+        
+        # Make a copy to avoid modifying the original config if it's shared
+        individual_loss_cfg = dict(loss_cfg_global) 
+        
+        # Use the 'name' from global config as 'type' for individual loss
+        individual_loss_cfg['type'] = loss_name 
+        
+        # Remove the 'name' field if it's not expected by individual_loss_cfg
+        # (This is optional, depends on how create_individual_loss_function handles extra keys)
+        del individual_loss_cfg['name'] 
+
+        log.info(f"Creating individual loss function of type '{loss_name}'.")
+        return create_individual_loss_function(individual_loss_cfg)
+    else:
+        # If 'name' is not specified at all, it's ambiguous.
+        # It's better to explicitly require 'name' for clarity or define a clear default.
+        # For now, let's raise an error, forcing explicit configuration.
+        # Alternatively, if you *must* have a default, decide what it is (e.g., 'mse').
+        raise ValueError(
+            "Loss configuration is missing a 'name' field. "
+            "Please specify 'name: PoseLoss9D' or 'name: <individual_loss_type>'."
+            f"Provided config: {loss_cfg_global}"
+        )

@@ -2,7 +2,7 @@
 type: multimodal         # Options: pointcloud, multimodal, ensemble
 num_points: 1000         # Number of points in each point cloud
 feature_dim: 256         # Feature dimension from PointNet
-action_dim: 9            # Dimension of action space (SE3 9D representation)
+action_dim: 3            # Dimension of action space (SE3 9D representation)
 hidden_dims: [256, 128]  # Hidden dimensions for policy MLP head
 dropout_rate: 0.2        # Dropout rate for regularization
 use_residual: false      # Whether to use residual connections in MLP
@@ -12,7 +12,7 @@ output_activation: null  # Output activation function (null for linear output)
 # Uncomment these sections as needed
 
 # Multimodal policy specific settings
-state_dim: 9             # Same as action_dim for now (maybe change/omit)
+state_dim: 3            # Same as action_dim for now (maybe change/omit)
 # fusion_method: concat  # Method to fuse modalities (concat, add) 
 
 # Ensemble policy specific settings

@@ -7,7 +7,7 @@ from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
 COLLECT_DATA = True
-PATH_MODE = "SE39D" # "JOINT7D", "SE38D" or "SE39D" 
+PATH_MODE = "POS3D" # "JOINT7D", "SE38D", "SE39D" or "POS3D" 
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 
@@ -57,7 +57,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=2000, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -121,7 +121,10 @@ for sample in samples:
             elif PATH_MODE == "SE38D":
                 # NOT IMPLEMENTED YET and arguably not needed
                 raise(NotImplementedError)
-                
+            
+            elif PATH_MODE == "POS3D":
+                demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
+
             demo_group.create_dataset("points", data=roboenv.points)
             demo_id += 1
 

@@ -1,7 +1,7 @@
 defaults:
   - _self_  
   - model: multi_modal
-  - loss: default_9d
+  - loss: default_3d
   - optimizer: adam
   - data: single_step
   - inference: default

@@ -212,7 +212,13 @@ def eval_policy(cfg: DictConfig) -> None:
     for i in range (20):
         # --- 4. Prepare Input Data for Inference ---
         pc = collector.render()
-        robot_state = pose_7d_to_9d(collector.C.getJointState())
+        robot_state = None
+        #if cfg.get() 
+        if cfg["model"]["action_dim"] == 9:
+            robot_state = pose_7d_to_9d(collector.C.getJointState())
+        elif cfg["model"]["action_dim"] == 3:
+            # if floatin
+            robot_state = collector.C.getJointState()[:3] 
         raw_inference_data = {"point_cloud": pc, "robot_state": robot_state}
 
         input_for_model = preprocess_inference_input(raw_inference_data, cfg, device)
@@ -237,10 +243,18 @@ def eval_policy(cfg: DictConfig) -> None:
 
         log.info(f"Inference output raw: {output}")
     
-        pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
-        log.info("pose7d:", pose7d)
-        collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
-        collector.C.setJointState(pose7d)
+        if cfg["model"]["action_dim"] == 9:
+            pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
+            log.info("pose7d:", pose7d)
+            
+            collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
+            collector.C.setJointState(pose7d)
+        elif cfg["model"]["action_dim"] == 3:
+            pos = output.squeeze().cpu().numpy()
+
+            collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0])) # Assuming a fixed orientation for the gripper
+
+       
         collector.C.view(True) # Enable visualization if needed, or set to False for headless execution
 
         if isinstance(output, torch.Tensor):
