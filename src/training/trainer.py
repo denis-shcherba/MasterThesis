@@ -179,8 +179,9 @@ class Trainer:
 
 
                 if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
+                    timestep = batch["timestep"].to(self.device) 
                     state = batch['previous_action'].to(self.device)
-                    pred_actions = self.model(point_clouds, state)
+                    pred_actions = self.model(point_clouds, state, timestep)
                 else:
                     pred_actions = self.model(point_clouds)
                 
