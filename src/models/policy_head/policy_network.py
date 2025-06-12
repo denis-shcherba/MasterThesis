@@ -111,101 +111,6 @@ class PointCloudPolicy(nn.Module):
         """
         return self.pointnet(point_cloud)
 
-
-class MultiModalPolicy_(nn.Module):
-    """
-    Policy network that can handle multiple input modalities.
-    Currently supports point clouds and optional additional state information.
-    """
-    
-    def __init__(self, num_points=1024, feature_dim=256, 
-                 state_dim=0, action_dim=6, hidden_dims=None, 
-                 dropout_rate=0.3, fusion_method='concat'):
-        """
-        Initialize MultiModal Policy network.
-        
-        Args:
-            num_points (int): Number of points in input point cloud
-            pointnet_feature_dim (int): Dimension of PointNet features
-            state_dim (int): Dimension of additional state information
-            action_dim (int): Dimension of output actions
-            hidden_dims (list): Hidden layer dimensions for policy head
-            dropout_rate (float): Dropout rate for regularization
-            fusion_method (str): Method to fuse modalities ('concat', 'add')
-        """
-        super(MultiModalPolicy_, self).__init__()
-        
-        self.num_points = num_points
-        self.pointnet_feature_dim = feature_dim
-        self.state_dim = state_dim
-        self.action_dim = action_dim
-        self.fusion_method = fusion_method
-        
-        # PointNet feature extractor
-        self.pointnet = PointNet(
-            num_points=num_points,
-            feature_dim=feature_dim,
-            dropout_rate=dropout_rate
-        )
-        
-        # State encoder (if additional state is provided)
-        self.state_encoder = None
-        if state_dim > 0:
-            self.state_encoder = nn.Sequential(
-                nn.Linear(state_dim, 64),
-                nn.ReLU(inplace=True),
-                nn.Linear(64, feature_dim)
-            )
-        
-        # Determine input dimension for policy head
-        if state_dim > 0:
-            if fusion_method == 'concat':
-                policy_input_dim = feature_dim + feature_dim
-            elif fusion_method == 'add':
-                policy_input_dim = feature_dim
-            else:
-                raise ValueError(f"Unknown fusion method: {fusion_method}")
-        else:
-            policy_input_dim = feature_dim
-        
-        # Policy head
-        self.policy_head = MLPHead(
-            input_dim=policy_input_dim,
-            output_dim=action_dim,
-            hidden_dims=hidden_dims,
-            dropout_rate=dropout_rate
-        )
-    
-    def forward(self, point_cloud, state=None):
-        """
-        Forward pass through the multimodal policy network.
-        
-        Args:
-            point_cloud: Point cloud tensor of shape (batch_size, num_points, 3)
-            state: Optional state tensor of shape (batch_size, state_dim)
-            
-        Returns:
-            actions: Action tensor of shape (batch_size, action_dim)
-        """
-        # Extract point cloud features
-        pc_features = self.pointnet(point_cloud)
-        
-        # Fuse with state if provided
-        if state is not None and self.state_encoder is not None:
-            state_features = self.state_encoder(state)
-            
-            if self.fusion_method == 'concat':
-                features = torch.cat([pc_features, state_features], dim=1)
-            elif self.fusion_method == 'add':
-                features = pc_features + state_features
-        else:
-            features = pc_features
-        
-        # Generate actions
-        actions = self.policy_head(features)
-        
-        return actions
-
 class MultiModalPolicy(nn.Module):
     """
     Policy network that can handle multiple input modalities, including flexible time encoding.
@@ -380,6 +285,10 @@ def create_model(model_cfg):
         output_activation=model_cfg.get('output_activation', None),
         # For multimodal policy
         state_dim=model_cfg.get('state_dim', 0),
+        # for time encoding
+        time_encoding=model_cfg.get('time_encoding', 'none'),
+        time_embedding_dim=model_cfg.get('time_embedding_dim', 128),
+        max_timesteps=model_cfg.get('max_timesteps', 64),
         # fusion_method=model_cfg.get('fusion_method', 'concat'),
     )
     return model

@@ -15,5 +15,8 @@ output_activation: null  # Output activation function (null for linear output)
 state_dim: 3            # Same as action_dim for now (maybe change/omit)
 # fusion_method: concat  # Method to fuse modalities (concat, add) 
 
-# Ensemble policy specific settings
-# num_models: 3          # Number of models in the ensemble
+#time encodings
+
+time_encoding: positional
+max_timesteps: 64
+# time_embedding_dim: 128
