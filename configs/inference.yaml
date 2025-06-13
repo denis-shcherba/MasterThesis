@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: multi_modal
+  - model: recurrent_simple
   - data: single_step
   - inference: default
   - env: default_9d

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from typing import Optional, Tuple
 
 
 class MLPHead(nn.Module):
@@ -89,6 +89,108 @@ class MLPHead(nn.Module):
         """
         return self.network(x)
 
+
+class GRUHead(nn.Module):
+    """
+    A recurrent policy head using a GRU to maintain a memory of past states.
+    Takes a sequence of feature vectors and outputs a sequence of action predictions.
+    """
+    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int = 256, 
+                 num_layers: int = 2, dropout_rate: float = 0.3, 
+                 output_activation: Optional[str] = None):
+        """
+        Initialize the GRU-based policy head.
+        
+        Args:
+            input_dim (int): Dimension of the input features for each time step.
+            output_dim (int): Dimension of the output actions.
+            hidden_dim (int): The number of features in the hidden state of the GRU.
+            num_layers (int): Number of recurrent layers.
+            dropout_rate (float): If non-zero, introduces a Dropout layer on the outputs of each
+                                  GRU layer except the last layer.
+            output_activation (str, optional): Output activation ('tanh', 'sigmoid', etc.). Defaults to None.
+        """
+        super(GRUHead, self).__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+
+        # The core of our policy is now a GRU
+        self.gru = nn.GRU(
+            input_size=input_dim,
+            hidden_size=hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,  # Crucial for handling (batch, seq, feature) shaped data
+            dropout=dropout_rate if num_layers > 1 else 0
+        )
+        
+        # A linear layer to map the GRU's output to the action space
+        self.fc_out = nn.Linear(hidden_dim, output_dim)
+        
+        # Optional output activation
+        self.output_activation = self._get_activation(output_activation) if output_activation else None
+
+        self._initialize_weights()
+
+    def _get_activation(self, activation_name: str) -> nn.Module:
+        """Get an activation function module by name."""
+        activations = {
+            'relu': nn.ReLU(),
+            'tanh': nn.Tanh(),
+            'elu': nn.ELU(),
+            'sigmoid': nn.Sigmoid()
+        }
+        if activation_name not in activations:
+            raise ValueError(f"Unknown activation: {activation_name}")
+        return activations[activation_name]
+
+    def _initialize_weights(self):
+        """Initialize network weights."""
+        for name, param in self.named_parameters():
+            if 'gru' in name:
+                if 'weight' in name:
+                    nn.init.orthogonal_(param)
+                elif 'bias' in name:
+                    nn.init.constant_(param, 0)
+            elif 'fc' in name:
+                if 'weight' in name:
+                    nn.init.xavier_uniform_(param)
+                elif 'bias' in name:
+                    nn.init.constant_(param, 0)
+    
+    def forward(self, x: torch.Tensor, hidden_state: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass through the GRU head.
+        
+        Args:
+            x: Input tensor.
+               - During training (whole trajectory): (batch_size, sequence_length, input_dim)
+               - During inference (single step): (batch_size, 1, input_dim)
+            hidden_state: The hidden state from the previous time step.
+                          Shape: (num_layers, batch_size, hidden_dim)
+                          If None, it will be initialized to zeros.
+            
+        Returns:
+            A tuple containing:
+            - actions (torch.Tensor): The output actions. Shape is the same as the input's
+                                      batch and sequence dimensions.
+            - new_hidden_state (torch.Tensor): The new hidden state to be passed to the next step.
+                                               Shape: (num_layers, batch_size, hidden_dim)
+        """
+        # The GRU layer returns the output for each time step and the final hidden state.
+        gru_out, new_hidden_state = self.gru(x, hidden_state)
+        
+        # We pass the GRU's output through our final fully-connected layer.
+        actions = self.fc_out(gru_out)
+
+        if self.output_activation:
+            actions = self.output_activation(actions)
+            
+        return actions, new_hidden_state
+
+
+### --- OMIT Maybe ---
 
 class ResidualMLPHead(nn.Module):
     """
