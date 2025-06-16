@@ -1,9 +1,9 @@
 defaults:
   - _self_  
-  - model: recurrent_simple
+  - model: mlp_head_simple
   - data: single_step
   - inference: default
-  - env: default_9d
+  - env: default_delta3d
 train:
   batch_size: 32
   epochs: 100

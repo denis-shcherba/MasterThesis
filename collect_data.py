@@ -15,10 +15,10 @@ def main(cfg: DictConfig):
     collector = ShelfPullDataCollector(**cfg.env)
     collector.spawn_books_scene()
     collector.C.view(True) 
+    run_data_collection(cfg.env)
 
 
 def run_data_collection(config: dict):
-    # your existing logic here
     print(f"Running with config: {config}")
 
     collector = None  # Initialize for finally block
@@ -27,7 +27,7 @@ def run_data_collection(config: dict):
         collector = ShelfPullDataCollector(**config)
         
         print("Initialization complete. Starting data collection experiment...")
-        #collector.run_experiment(view_simulation_steps=True) # Set to False for headless execution TODO
+        collector.run_experiment(view_simulation_steps=True) # Set to False for headless execution TODO
         
         print("Data collection experiment finished.")
 

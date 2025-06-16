@@ -1,13 +1,13 @@
 defaults:
   - _self_  
-  - model: recurrent_simple
+  - model: mlp_head_simple
   - loss: default_3d
   - optimizer: adam
   - data: single_step
   - inference: default
 train:
   batch_size: 32
-  epochs: 10
+  epochs: 50
   device: cuda
 
 # Global settings
@@ -15,3 +15,5 @@ seed: 42
 experiment_name: "SimpleSingleStepBC"
 output_dir: ${hydra:runtime.output_dir}
 
+wandb:
+  enabled: true

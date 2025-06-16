@@ -1,5 +1,3 @@
-# TODO hard
-
 import hydra
 from omegaconf import DictConfig
 import torch
@@ -206,7 +204,11 @@ def eval_policy(cfg: DictConfig) -> None:
         log.error(f"Error loading checkpoint: {e}")
         raise
 
+    hidden_state = None 
+    policy_head = cfg.get("model").get("policy_head_type")
+
     model.eval() # IMPORTANT: Set the model to evaluation mode
+
     log.info("Model set to evaluation mode.")
 
     for i in range (64):
@@ -231,7 +233,16 @@ def eval_policy(cfg: DictConfig) -> None:
         log.info("Running model inference...")
         with torch.no_grad(): # Disable gradient calculations
             try:
-                output = model(input_for_model["point_cloud"], input_for_model["state"], torch.tensor(i).reshape(1))
+
+                if policy_head == "gru":
+                    output, hidden_state = model(
+                        input_for_model["point_cloud"], 
+                        input_for_model["state"], 
+                        torch.tensor(i).reshape(1),
+                        hidden_state=hidden_state
+                    )
+                else:
+                    output = model(input_for_model["point_cloud"], input_for_model["state"], torch.tensor(i).reshape(1))
             except Exception as e:
                 log.error(f"Error during model forward pass: {e}")
                 log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
@@ -249,12 +260,18 @@ def eval_policy(cfg: DictConfig) -> None:
             
             collector.C.setJointState(pose7d)
         elif cfg["model"]["action_dim"] == 3:
-            pos = output.squeeze().cpu().numpy()
+            if cfg["env"]["path_mode"] == "DELTA3D":
+                delta_pos = output.squeeze().cpu().numpy()
+                collector.C.setJointState(collector.C.getJointState() + np.array([delta_pos[0], delta_pos[1], delta_pos[2], 0, 0, 0, 0]))
 
-            collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0])) # Assuming a fixed orientation for the gripper
+            else:   
+                pos = output.squeeze().cpu().numpy()
+                collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0])) # Assuming a fixed orientation for the gripper
 
+
+        
         collector.C.view(False)
-        time.sleep(.1)
+        time.sleep(.3)
         if isinstance(output, torch.Tensor):
             log.info(f"Output tensor shape: {output.shape}")
         elif isinstance(output, dict):

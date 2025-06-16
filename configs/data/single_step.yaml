@@ -1,5 +1,5 @@
 # Path to the HDF5 file containing demonstrations
-h5_file_path: demos/teacher_test_pos.h5
+h5_file_path: demos/test_deltas.h5
 
 # Data loading parameters
 batch_size: 32

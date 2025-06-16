@@ -7,7 +7,7 @@ from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
 COLLECT_DATA = True
-PATH_MODE = "POS3D" # "JOINT7D", "SE38D", "SE39D" or "POS3D" 
+PATH_MODE = "DELTA3D" # "JOINT7D", "SE39D", "POS3D", "DELTA3D" 
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 
@@ -57,7 +57,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=2000, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=20, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -118,12 +118,15 @@ for sample in samples:
                 # Now use se3_path instead of the original path
                 demo_group.create_dataset("path", data=se3_path)
 
-            elif PATH_MODE == "SE38D":
-                # NOT IMPLEMENTED YET and arguably not needed
-                raise(NotImplementedError)
-            
             elif PATH_MODE == "POS3D":
                 demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
+
+            elif PATH_MODE == "DELTA3D":
+                delta_paths = np.empty((64, 3))
+                delta_paths[0] = roboenv.path[0][:3]-C.getJointState()[:3]
+                for i in range(1, roboenv.path.shape[0]):
+                    delta_paths[i] = roboenv.path[i][:3] - roboenv.path[i-1][:3]
+                demo_group.create_dataset("path", data=delta_paths)  # Only delta positions
 
             demo_group.create_dataset("points", data=roboenv.points)
             demo_id += 1

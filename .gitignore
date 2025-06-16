@@ -9,10 +9,12 @@ environment.yaml
 test_panda.py
 *.h5
 .log
-TODOS.txt
+TODOS.*
+notes/
 
 point_net.md
 demos/
 
+wandb/
 outputs/
 checkpoints/

@@ -33,3 +33,10 @@ Splitting IL in learning first representations and then predicting actions: http
 
 ## Multi-modality of Tasks
  [31, 52] BE-Tranfsormer
+
+
+## SOTA IL Methods
+pi0(.5)
+ACT
+DiffPolicy
+SmolVLA
