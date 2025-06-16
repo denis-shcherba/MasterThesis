@@ -170,12 +170,14 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                         .setContact(1) \
                         .setAttribute("friction", 1e-4) \
                     
-                    C.addFrame(f"big_box_inside_{s}_{i}", f"big_xy_bottom_{s}_{i}") \
-                        .setRelativePosition([0., 0., -floor_offsets[i]/2]) \
-                        .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, floor_offsets[i], 0.005]) \
-                        .setColor([0., 1., 1., 0]) \
-                        .setContact(0)
-
+                    if i==2:
+                        C.addFrame(f"big_box_inside_{s}_{i}", f"big_xy_bottom_{s}_{i}") \
+                            .setRelativePosition([0., inner_wall_width, -floor_offsets[i]/2]) \
+                            .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5-inner_wall_width, floor_offsets[i]-base_height/2, 0.005]) \
+                            .setColor([0., 1., 1., 0]) \
+                            .setContact(0)
+                    
+                    
                     # Wände links (und später recht von der Regalwand) auskommentiert weil TODO, nicht wirklich nötig grade
                     # C.addFrame(f"small_box_right_{s}_{i}", f"small_box_right_{s}_{i-1}") \
                     #     .setRelativePosition([0, 0 , floor_offsets[i]]) \

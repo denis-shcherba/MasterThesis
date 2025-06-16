@@ -21,29 +21,71 @@ def choose_starting_point(point_list, metric=""):
         return random.choice(point_list)  # Random choice if no metric
     
 
-def point_in_box_filtering(points, box_params):
+def point_in_box_filtering(points, box_params, ignore_planes=None):
     """
-    Filters points that are within a given 3D bounding box.
+    Filters points that are within a given 3D bounding box, with an option to ignore certain planes.
+
+    This function is useful for creating semi-infinite selection spaces or culling points against
+    a box while excluding one or more of its boundary planes.
 
     Parameters:
-    points (np.ndarray): Nx3 array of 3D points.
-    box_params (tuple): (center, size), where:
-        - center (array-like): (cx, cy, cz) center of the box.
-        - size (array-like): (sx, sy, sz) size of the box along x, y, z.
+    points (np.ndarray): An Nx3 array of 3D points to be filtered.
+    box_params (tuple): A tuple containing the center and size of the box:
+        - center (array-like): The (cx, cy, cz) coordinates of the box's center.
+        - size (array-like): The (sx, sy, sz) dimensions of the box along the x, y, and z axes.
+    ignore_planes (list or set, optional): A list of strings specifying which planes to ignore
+        in the filtering logic. If None, all planes are considered.
+        Valid values are: 'min_x', 'max_x', 'min_y', 'max_y', 'min_z', 'max_z'.
+        For example, ignoring 'max_z' means there will be no upper bound check on the z-axis.
 
     Returns:
-    np.ndarray: Filtered array containing only points inside the bounding box.
+    np.ndarray: A filtered array containing only the points that are inside the specified region.
     """
+    # If no planes are to be ignored, default to an empty set for easier processing.
+    if ignore_planes is None:
+        ignore_planes = set()
+    else:
+        # Convert list to a set for efficient 'in' checks.
+        ignore_planes = set(ignore_planes)
+
     center, size = box_params
     center = np.array(center)
     size = np.array(size)
-    
+
+    # Calculate the minimum and maximum corner coordinates of the box.
     min_bound = center - size / 2
     max_bound = center + size / 2
-    
-    mask = np.all((points >= min_bound) & (points <= max_bound), axis=1)
-    
-    return points[mask]
+
+    # Perform initial boundary checks for all points against all axes.
+    # This creates two boolean arrays of shape (N, 3).
+    lower_mask = points >= min_bound
+    upper_mask = points <= max_bound
+
+    # Create a mapping from the plane identifier string to the corresponding
+    # boolean mask and the axis index (0 for x, 1 for y, 2 for z).
+    plane_to_axis = {
+        'min_x': (lower_mask, 0), 'max_x': (upper_mask, 0),
+        'min_y': (lower_mask, 1), 'max_y': (upper_mask, 1),
+        'min_z': (lower_mask, 2), 'max_z': (upper_mask, 2)
+    }
+
+    # Iterate through the planes to be ignored and disable their corresponding checks.
+    # We do this by setting the entire column for that check to True, effectively
+    # making the condition pass for all points.
+    for plane in ignore_planes:
+        if plane in plane_to_axis:
+            mask, axis_index = plane_to_axis[plane]
+            mask[:, axis_index] = True
+
+    # Combine the lower and upper bound checks with a logical AND.
+    combined_mask = lower_mask & upper_mask
+
+    # A point is considered inside if all its relevant axis checks are True.
+    # np.all along axis=1 checks if all three values (for x, y, z) are True for each point.
+    final_mask = np.all(combined_mask, axis=1)
+
+    return points[final_mask]
+
 
 def cuboid_corners_to_size_com(corner_points):
     """

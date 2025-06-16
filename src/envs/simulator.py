@@ -4,7 +4,7 @@ import time
 import numpy as np
 import robotic as ry
 from robotic import SimulationEngine
-
+from envs.utils import point_in_box_filtering
 
 class Simulator:
     """Wrapper class for ry Simulator, with functionality to run a simulation."""
@@ -15,6 +15,7 @@ class Simulator:
         engine: SimulationEngine = SimulationEngine.physx,
         verbose: int = 0,
         camera: str = "cameraStatic",
+        base_removal: bool = False,  # if true, shelf will be removed from observation
     ):
         self._sim = ry.Simulation(config, engine, verbose=verbose)
         self.config = config
@@ -22,9 +23,10 @@ class Simulator:
         self.camera = camera
         self.points = []
         self._sim.selectSensor(camera)
+        self.base_removal = base_removal
 
-    def getPoints(self, n_samples=1000, vis=False):
-        rbg, depth = self._sim.getImageAndDepth()
+    def getPoints(self, n_samples=100, vis=False):
+        _, depth = self._sim.getImageAndDepth()
 
         CameraView = ry.CameraView(self.config)
         CameraView.setCamera(self.config.getFrame(self.camera))
@@ -34,9 +36,22 @@ class Simulator:
         
         points = point_cloud.reshape(-1, 3) 
 
+        if self.base_removal:
+            # TODO
+            t = self.config.getFrame(self.camera).getPosition()
+            R = ry.Quaternion().set(self.config.getFrame(self.camera).getPose()[3:]).getMatrix()
+
+            # Correct transformation: Rotate first, then translate
+            points = (R @ points.T).T + t
+            # Hardcoded for big_box_inside_0_2 currently
+            box = self.config.getFrame("big_box_inside_0_2")
+            points = point_in_box_filtering(points, (box.getPosition(), box.getSize()[:3]), ignore_planes=["min_x"])
+
+            points = (R.T @ (points - t).T).T
+
         if vis:        
-            self.config.getFrame(self.camera).setPointCloud(point_cloud)
-        # randomply sample points if more than n_samples        
+            self.config.getFrame(self.camera).setPointCloud(points)
+        # randomly sample points if more than n_samples        
         if len(points) > n_samples:
             indices = np.random.choice(len(points), n_samples, replace=False)
             sampled_points = points[indices]

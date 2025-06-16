@@ -12,7 +12,8 @@ class RobotEnviroment:
                  verbose: int=0,
                  compute_collisions: bool=True,
                  sim: bool=False,
-                 gripper: str="l_gripper"):
+                 gripper: str="l_gripper",
+                 base_removal: bool=False):
         self.C = C
         self.visuals = visuals
         self.verbose = verbose
@@ -21,7 +22,7 @@ class RobotEnviroment:
         self.path = np.array([])
         self.compute_collisions = compute_collisions
         self.gripper = gripper
-
+        self.base_removal = base_removal
 
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"
@@ -199,7 +200,7 @@ class RobotEnviroment:
             
             del C2
 
-            sim = Simulator(self.C, verbose=self.verbose)
+            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
             sim.run_trajectory(np.array(path1), 2, capture_points=capture_points)
             sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_points=capture_points)
             self.points = sim.points
