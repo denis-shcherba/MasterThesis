@@ -10,6 +10,7 @@ COLLECT_DATA = True
 PATH_MODE = "DELTA3D" # "JOINT7D", "SE39D", "POS3D", "DELTA3D" 
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
+BASE_REMOVAl = True # if true, shelf will be removed from observation
 
 prefix = "l_"
 C = ry.Config()
@@ -52,12 +53,12 @@ shelf_height = shelfBottomFrame.getSize()[2]
 shelf_size = (shelfBottomFrame.getSize()[0], shelfBottomFrame.getSize()[1], shelfBottomFrame.getSize()[2])  # Fixed shelf dimensions (X_s, Y_s, Z_s)
 
 box_size_ranges = {  # Variable box dimensions
-    'x': (.1, .15),  # X_b range
-    'y': (.14, .23),  # Y_b range
-    'z': (.009, .045),   # Z_b range
+    'x': (.125, .125),  # X_b range
+    'y': (.18, .18),  # Y_b range
+    'z': (.02, .02),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=20, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=5000, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -94,7 +95,7 @@ for sample in samples:
         C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
 
-        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper)
+        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl)
 
         success = roboenv.pull("target_book_0", target, accumulated_collisions=False, capture_points=COLLECT_DATA)
 
@@ -128,6 +129,7 @@ for sample in samples:
                     delta_paths[i] = roboenv.path[i][:3] - roboenv.path[i-1][:3]
                 demo_group.create_dataset("path", data=delta_paths)  # Only delta positions
 
+            
             demo_group.create_dataset("points", data=roboenv.points)
             demo_id += 1
 
