@@ -206,15 +206,22 @@ class RobotEnviroment:
             self.points = sim.points
 
         else:
-            M1.play(self.C, 1.)
-            self.C.view(True)
+            if self.visuals:
+                M1.play(self.C, 1.)
+                self.C.view(True)
 
-            self.C.attach(self.gripper, object_)
+                self.C.attach(self.gripper, object_)
 
-            M2.play(self.C, 1.)
+                M2.play(self.C, 1.)
 
-            self.C.attach("big_xy_bottom_0_1", object_)
-
+                self.C.attach("big_xy_bottom_0_1", object_)
+            else:
+                if capture_points:
+                    sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
+                    self.points = sim.getPoints(vis=True)
+                    self.C.setJointState(path1[-1])
+                    #self.C.view(True)
+                 
         self.C.delFrame("tmp")
 
         self.path = np.concatenate((path1, path2), axis=0)

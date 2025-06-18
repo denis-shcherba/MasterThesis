@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: mlp_head_simple
+  - model: regression
   - data: single_step
   - inference: default
   - env: default_delta3d

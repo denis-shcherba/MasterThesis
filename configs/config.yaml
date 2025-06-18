@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: mlp_head_simple
+  - model: regression
   - loss: default_3d
   - optimizer: adam
   - data: single_step
@@ -16,4 +16,4 @@ experiment_name: "SimpleSingleStepBC"
 output_dir: ${hydra:runtime.output_dir}
 
 wandb:
-  enabled: true
+  enabled: false

@@ -205,7 +205,7 @@ def eval_policy(cfg: DictConfig) -> None:
         raise
 
     hidden_state = None 
-    policy_head = cfg.get("model").get("policy_head_type")
+    policy_type = cfg.get("model").get("type")
 
     model.eval() # IMPORTANT: Set the model to evaluation mode
 
@@ -234,15 +234,19 @@ def eval_policy(cfg: DictConfig) -> None:
         with torch.no_grad(): # Disable gradient calculations
             try:
 
-                if policy_head == "gru":
-                    output, hidden_state = model(
-                        input_for_model["point_cloud"], 
-                        input_for_model["state"], 
-                        torch.tensor(i).reshape(1),
-                        hidden_state=hidden_state
-                    )
-                else:
-                    output = model(input_for_model["point_cloud"], input_for_model["state"], torch.tensor(i).reshape(1))
+                if policy_type == "multimodal":
+                    if cfg.get("model").get("policy_head_type") == "gru":
+                        output, hidden_state = model(
+                            input_for_model["point_cloud"], 
+                            input_for_model["state"], 
+                            torch.tensor(i).reshape(1),
+                            hidden_state=hidden_state
+                        )
+                    elif cfg.get("model").get("policy_head_type") == "mlp":
+                        output = model(input_for_model["point_cloud"], input_for_model["state"], torch.tensor(i).reshape(1))
+                elif policy_type == "regression":
+                    output = model(input_for_model["point_cloud"])
+
             except Exception as e:
                 log.error(f"Error during model forward pass: {e}")
                 log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
@@ -253,7 +257,12 @@ def eval_policy(cfg: DictConfig) -> None:
                 raise
 
         log.info(f"Inference output raw: {output}")
-    
+
+        if cfg["model"]["type"] == "regression":
+            path_dataset = output.squeeze().cpu().numpy()
+
+            collector.C.setJointState([path_dataset[0], path_dataset[1], path_dataset[2], 1, 0, 0, 0])  # Assuming the first 7 values are joint angles
+            collector.C.view(True)
         if cfg["model"]["action_dim"] == 9:
             pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
             log.info("pose7d:", pose7d)

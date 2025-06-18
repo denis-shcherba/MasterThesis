@@ -9,6 +9,7 @@ from models.policy_head.policy_network import create_model
 from training.trainer import Trainer
 from training.losses import create_loss_function
 from training.optimizer import create_optimizer
+from models.policy_head.policy_network import MultiModalPolicy, SimplePCToPosRegressor, PositionalEncoding
 
 log = logging.getLogger(__name__)
 
@@ -53,27 +54,66 @@ def train_policy(cfg: DictConfig) -> None:
 
         # Initialize model
         log.info("Initializing model...")
-        model = create_model(cfg.model).to(device) # Assuming create_model returns your MultiModalPolicy
+        # Assuming create_model returns either MultiModalPolicy or SimplifiedPolicy
+        model = create_model(cfg.model).to(device)
         log.info(f"Model created: {type(model).__name__}")
 
         # --- Parameter Counting for Different Components ---
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         log.info(f"Total trainable parameters: {total_params:,}")
 
-        pointnet_params = sum(p.numel() for p in model.pointnet.parameters() if p.requires_grad)
-        log.info(f"  - PointNet parameters: {pointnet_params:,} ({pointnet_params/total_params*100:.2f}%)")
+        pointnet_params = 0
+        if hasattr(model, 'pointnet') and model.pointnet is not None:
+            pointnet_params = sum(p.numel() for p in model.pointnet.parameters() if p.requires_grad)
+            log.info(f"  - PointNet parameters: {pointnet_params:,} ({pointnet_params/total_params*100:.2f}%)")
+        else:
+            log.warning("Model does not have a 'pointnet' component, skipping PointNet parameter count.")
 
-        policy_head_params = sum(p.numel() for p in model.policy_head.parameters() if p.requires_grad)
-        log.info(f"  - Policy Head parameters: {policy_head_params:,} ({policy_head_params/total_params*100:.2f}%)")
 
-        if model.state_encoder is not None:
-            state_encoder_params = sum(p.numel() for p in model.state_encoder.parameters() if p.requires_grad)
-            log.info(f"  - State Encoder parameters: {state_encoder_params:,} ({state_encoder_params/total_params*100:.2f}%)")
-            if abs(total_params - (pointnet_params + policy_head_params + state_encoder_params)) > 10: # allow for small discrepancies if any non-component params exist
-                log.warning("Parameter count mismatch. There might be other parameters in the main model not in these components.")
-        elif abs(total_params - (pointnet_params + policy_head_params)) > 10:
-            log.warning("Parameter count mismatch (no state encoder). There might be other parameters in the main model not in these components.")
+        policy_specific_params = 0
+        component_params_sum = pointnet_params
 
+        # Dynamically check the type of policy and count relevant parameters
+        if isinstance(model, MultiModalPolicy):
+            # Original MultiModalPolicy specific components
+            if hasattr(model, 'policy_head') and model.policy_head is not None:
+                policy_specific_params = sum(p.numel() for p in model.policy_head.parameters() if p.requires_grad)
+                log.info(f"  - Policy Head (MLP/GRU) parameters: {policy_specific_params:,} ({policy_specific_params/total_params*100:.2f}%)")
+                component_params_sum += policy_specific_params
+            
+            if hasattr(model, 'state_encoder') and model.state_encoder is not None:
+                state_encoder_params = sum(p.numel() for p in model.state_encoder.parameters() if p.requires_grad)
+                log.info(f"  - State Encoder parameters: {state_encoder_params:,} ({state_encoder_params/total_params*100:.2f}%)")
+                component_params_sum += state_encoder_params
+            
+            if hasattr(model, 'time_encoder') and model.time_encoder is not None:
+                # Assuming time_encoder can have parameters, if it's an nn.Module
+                # Check if it's a learnable module like nn.Embedding or nn.Linear
+                if isinstance(model.time_encoder, (nn.Embedding, nn.Linear)):
+                    time_encoder_params = sum(p.numel() for p in model.time_encoder.parameters() if p.requires_grad)
+                    log.info(f"  - Time Encoder parameters: {time_encoder_params:,} ({time_encoder_params/total_params*100:.2f}%)")
+                    component_params_sum += time_encoder_params
+                # If it's PositionalEncoding, it usually doesn't have trainable parameters
+                elif isinstance(model.time_encoder, PositionalEncoding):
+                     log.info("  - Time Encoder (PositionalEncoding) has no trainable parameters.")
+
+        elif isinstance(model, SimplePCToPosRegressor):
+            # SimplifiedPolicy specific components
+            if hasattr(model, 'regressor_head') and model.regressor_head is not None:
+                policy_specific_params = sum(p.numel() for p in model.regressor_head.parameters() if p.requires_grad)
+                log.info(f"  - Regressor Head parameters: {policy_specific_params:,} ({policy_specific_params/total_params*100:.2f}%)")
+                component_params_sum += policy_specific_params
+        
+        else:
+            log.warning("Unknown policy type encountered. Cannot provide detailed breakdown of policy-specific parameters.")
+
+        # Final consistency check for total parameters
+        # Allow for small discrepancies if any non-component params exist
+        if abs(total_params - component_params_sum) > 10:
+            log.warning(
+                f"Parameter count mismatch ({total_params:,} vs {component_params_sum:,}). "
+                "There might be other parameters in the main model not accounted for in specific components."
+            )
         # Initialize optimizer
         log.info("Initializing optimizer...")
         optimizer = create_optimizer(cfg.optimizer, model.parameters())

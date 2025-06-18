@@ -170,7 +170,58 @@ class MultiModalPolicy(nn.Module):
             # The GRU head handles both sequence and single-step inputs
             actions, new_hidden_state = self.policy_head(gru_input, hidden_state)
             return actions, new_hidden_state
+
+class SimplePCToPosRegressor(nn.Module):
+    """
+    A much simpler policy network that regresses a point cloud directly
+    to a 3-element key EE-position.
+    
+    It uses a PointNet to extract features from the point cloud and
+    then a simple linear layer for regression.
+    """
+    
+    def __init__(self, num_points: int = 1024, feature_dim: int = 256):
+        """
+        Initialize the SimplifiedPolicy network.
         
+        Args:
+            num_points (int): Number of points expected in the input point cloud.
+            feature_dim (int): Dimensionality of the features extracted by PointNet.
+        """
+        super(SimplePCToPosRegressor, self).__init__()
+        
+        self.num_points = num_points
+        self.feature_dim = feature_dim
+        self.output_dim = 3 # Fixed output for end position (x, y, z)
+        
+        # PointNet feature extractor
+        self.pointnet = PointNet(num_points=num_points, feature_dim=feature_dim)
+        
+        # Regression head: maps the global point cloud features to the 3D end position
+        self.regressor_head = nn.Linear(feature_dim, self.output_dim)
+
+    def forward(self, point_cloud: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through the simplified policy.
+        
+        Args:
+            point_cloud (torch.Tensor): Input point cloud tensor of shape
+                                        (batch_size, num_points, 3).
+        
+        Returns:
+            torch.Tensor: Predicted end position tensor of shape (batch_size, 3).
+        """
+        # 1. Extract global features from the point cloud using PointNet
+        # pc_features will have shape (batch_size, feature_dim)
+        pc_features = self.pointnet(point_cloud)
+        
+        # 2. Regress the features to the 3D end position
+        # end_position will have shape (batch_size, 3)
+        end_position = self.regressor_head(pc_features)
+        
+        return end_position
+
+
 
 def filter_kwargs(func, kwargs):
     sig = inspect.signature(func)
@@ -185,6 +236,9 @@ def create_policy(policy_type='multimodal', **kwargs):
     if policy_type == 'multimodal':
         filtered = filter_kwargs(MultiModalPolicy.__init__, kwargs)
         return MultiModalPolicy(**filtered)
+    elif policy_type == 'regression':
+        filtered = filter_kwargs(SimplePCToPosRegressor.__init__, kwargs)
+        return SimplePCToPosRegressor(**filtered)
     else:
         raise ValueError(f"Unknown policy type: {policy_type}")
     
@@ -199,7 +253,7 @@ def create_model(model_cfg):
         model: Initialized model
     """
     model = create_policy(
-        policy_type=model_cfg.get('type', 'pointcloud'),
+        policy_type=model_cfg.get('type'),
         num_points=model_cfg.get('num_points', 1024),
         feature_dim=model_cfg.get('feature_dim', 256),
         action_dim=model_cfg.get('action_dim', 7),

@@ -6,11 +6,11 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
-COLLECT_DATA = True
-PATH_MODE = "DELTA3D" # "JOINT7D", "SE39D", "POS3D", "DELTA3D" 
-SIMULATE = True 
+COLLECT_DATA = False
+PATH_MODE = "RegressPC2Pos" # "JOINT7D", "SE39D", "POS3D", "DELTA3D", "RegressPC2Pos"
+SIMULATE = False 
 CAMERA = "cameraStatic"  # or "cameraWrist"
-BASE_REMOVAl = True # if true, shelf will be removed from observation
+BASE_REMOVAl = False # if true, shelf will be removed from observation
 
 prefix = "l_"
 C = ry.Config()
@@ -58,7 +58,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.02, .02),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=5000, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=2000, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -98,9 +98,14 @@ for sample in samples:
         roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl)
 
         success = roboenv.pull("target_book_0", target, accumulated_collisions=False, capture_points=COLLECT_DATA)
+        
+
+        print(q0)
+        C.view(True)
+        quit()
 
         if success and COLLECT_DATA:
-            np.save("pc.npy", roboenv.points[0])
+            #np.save("pc.npy", roboenv.points[0])
 
             demo_group = h5file.create_group(f"demo_{demo_id}")
 
@@ -128,6 +133,10 @@ for sample in samples:
                 for i in range(1, roboenv.path.shape[0]):
                     delta_paths[i] = roboenv.path[i][:3] - roboenv.path[i-1][:3]
                 demo_group.create_dataset("path", data=delta_paths)  # Only delta positions
+
+            elif PATH_MODE == "RegressPC2Pos":
+                print(roboenv.path.shape)
+                demo_group.create_dataset("path", data=roboenv.path[31, :3])  # Only position
 
             
             demo_group.create_dataset("points", data=roboenv.points)

@@ -5,7 +5,7 @@ path_mode: "POS3D"
 simulate: true
 camera_name: "cameraStatic"    # or "cameraWrist"
 
-shelf_pos_xyz: [0.7, 0.05, 0.25]
+shelf_pos_xyz: [.8, 0., .3]
 shelf_quaternion: [1, 0, 0, 1]
 shelf_openings_small: [4, 11]
 shelf_equidistant: false

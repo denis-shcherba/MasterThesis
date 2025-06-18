@@ -25,7 +25,7 @@ class Simulator:
         self._sim.selectSensor(camera)
         self.base_removal = base_removal
 
-    def getPoints(self, n_samples=100, vis=False):
+    def getPoints(self, n_samples=1000, vis=False):
         _, depth = self._sim.getImageAndDepth()
 
         CameraView = ry.CameraView(self.config)
@@ -37,7 +37,6 @@ class Simulator:
         points = point_cloud.reshape(-1, 3) 
 
         if self.base_removal:
-            # TODO
             t = self.config.getFrame(self.camera).getPosition()
             R = ry.Quaternion().set(self.config.getFrame(self.camera).getPose()[3:]).getMatrix()
 
