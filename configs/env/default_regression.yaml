@@ -1,0 +1,19 @@
+robot_mode: "floating"         # "normal" or "floating"
+collect_data: false
+path_mode: "DELTA3D"            
+simulate: true
+camera_name: "cameraStatic"    # or "cameraWrist"
+
+shelf_pos_xyz: [.8, 0., .3]
+shelf_quaternion: [1, 0, 0, 1]
+shelf_openings_small: [4, 11]
+shelf_equidistant: false
+
+num_samples_books: 10
+num_boxes_per_sample: 1
+allow_book_yaw: false
+
+box_size_ranges:
+  x: [0,1, 0.15]
+  y: [0.14, 0.23]
+  z: [0.009, 0.045]

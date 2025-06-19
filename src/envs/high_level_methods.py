@@ -219,13 +219,17 @@ class RobotEnviroment:
                 if capture_points:
                     sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
                     self.points = sim.getPoints(vis=True)
-                    self.C.setJointState(path1[-1])
+                    #self.C.setJointState(path1[-1])
                     #self.C.view(True)
                  
         self.C.delFrame("tmp")
 
         self.path = np.concatenate((path1, path2), axis=0)
         return True
+
+    def pull_point():
+        #TODO
+        pass
 
     def render(self):
         if self.sim:

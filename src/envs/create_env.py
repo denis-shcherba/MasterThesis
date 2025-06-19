@@ -59,7 +59,7 @@ class ShelfPullDataCollector:
             # Assuming the first 7 DoFs are for the floating base [x,y,z, qx,qy,qz,qw] or similar
             # This requires pandaFloatingFixGripper.g to define these base joints.
             if len(current_q) >= 7 : # Check if there are enough joints for a floating base
-                offset = np.array([.3, 0, .2, 0, 0, 0, 0]) # x,y,z translation, identity rotation
+                offset = np.array([.0, 0, .2, 0, 0, 0, 0]) # x,y,z translation, identity rotation
                 current_q[:len(offset)] += offset # Apply to the base part of the joint state
                 self.C.setJointState(current_q)
             elif len(current_q) > 0: # If some joints exist but not enough for full base, this might be an issue
@@ -67,7 +67,7 @@ class ShelfPullDataCollector:
                 # Potentially set a default base pose if appropriate
                 # For now, we'll proceed, assuming the .g file and joint state are somewhat aligned.
             else: # No joints defined, set a default initial pose for the floating base
-                 self.C.setJointState(np.array([.3, 0, .2, 0, 0, 0, 0])) # x,y,z, and 4 for quaternion (identity)
+                 self.C.setJointState(np.array([.0, 0, .2, 0, 0, 0, 0])) # x,y,z, and 4 for quaternion (identity)
         else:
             raise ValueError(f"Unknown ROBOT_MODE: {self.robot_mode}")
 

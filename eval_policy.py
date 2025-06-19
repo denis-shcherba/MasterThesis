@@ -267,6 +267,8 @@ def eval_policy(cfg: DictConfig) -> None:
 
             collector.C.setJointState(q0)
             collector.C.delFrame("target_book_0")
+            collector.C.view(False)
+
             collector.spawn_books_scene()
             collector.C.view(True)
 

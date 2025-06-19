@@ -25,7 +25,7 @@ class Simulator:
         self._sim.selectSensor(camera)
         self.base_removal = base_removal
 
-    def getPoints(self, n_samples=1000, vis=False):
+    def getPoints(self, n_samples=4096, vis=False):
         _, depth = self._sim.getImageAndDepth()
 
         CameraView = ry.CameraView(self.config)

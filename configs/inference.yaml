@@ -3,7 +3,7 @@ defaults:
   - model: regression
   - data: single_step
   - inference: default
-  - env: default_delta3d
+  - env: default_regression
 train:
   batch_size: 32
   epochs: 100

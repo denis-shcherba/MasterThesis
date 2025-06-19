@@ -2,9 +2,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import h5py
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional
 import logging
-from pathlib import Path
 import random
 # Assuming src.data_handling.processing.normalize_point_cloud_to_unit_sphere exists
 # For self-contained example, let's define a placeholder if it's not critical for this change
@@ -14,16 +13,22 @@ from data_handling.processing import normalize_point_cloud_to_unit_sphere
 
 class ManipulationDataset(Dataset):
     """
-    Dataset for loading manipulation demonstration data from H5 files.
+    A flexible dataset for loading manipulation demonstrations from H5 files,
+    supporting both sequential and static regression tasks.
 
-    Data structure expected:
-    - /demo_0/path: (trajectory_length, action_dim) array - trajectory information
-    - /demo_0/points: (trajectory_length, num_points, 3) array - point cloud data
+    Expected H5 structure for sequential data:
+    - /demo_0/path: (trajectory_length, action_dim)
+    - /demo_0/points: (trajectory_length, num_points, 3)
+
+    Expected H5 structure for regression data:
+    - /demo_0/path: (action_dim,)
+    - /demo_0/points: (num_points, 3)
     """
 
     def __init__(
         self,
         h5_file_path: str,
+        is_regression: bool = False,
         sequence_length: int = 1,
         action_dim: int = 9,
         num_points: int = 1000,
@@ -31,275 +36,77 @@ class ManipulationDataset(Dataset):
         augment_data: bool = False,
         subsample_demos: Optional[int] = None,
         train_split: float = 0.8,
-        split: str = 'train',  # 'train', 'val', or 'all'
+        split: str = 'train',
         random_seed: int = 42,
-        is_regression: bool = False 
     ):
-        """
-        Initialize the dataset.
-
-        Args:
-            h5_file_path: Path to the H5 file containing demonstrations
-            sequence_length: Number of consecutive timesteps to use as input
-            action_dim: Dimension of action space (should match path dimension)
-            num_points: Number of points in each point cloud
-            normalize_points: Whether to normalize point clouds
-            augment_data: Whether to apply data augmentation
-            subsample_demos: If specified, randomly subsample this many demos
-            train_split: Fraction of data to use for training
-            split: Which split to use ('train', 'val', or 'all')
-            random_seed: Random seed for reproducibility
-        """
+        """Initializes the dataset."""
+        # --- Configuration ---
         self.h5_file_path = h5_file_path
-        self.sequence_length = sequence_length
+        self.is_regression = is_regression
+        self.sequence_length = sequence_length if not is_regression else 1
         self.action_dim = action_dim
         self.num_points = num_points
         self.normalize_points = normalize_points
         self.augment_data = augment_data
         self.split = split
-        self.is_regression = is_regression 
-
-        np.random.seed(random_seed)
-        random.seed(random_seed)
-
+        
+        # --- Setup ---
         self.logger = logging.getLogger(__name__)
-        logging.basicConfig(level=logging.INFO) # Ensure logger messages are displayed
-
+        # REFACTOR: Use an encapsulated random number generator instead of global seeds.
+        self.rng = np.random.default_rng(random_seed)
+        
+        # --- Data Loading and Processing ---
         self._load_demonstrations()
-
-        if split != 'all':
-            self._create_split(train_split, random_seed)
-
-        if subsample_demos is not None and subsample_demos < len(self.valid_indices):
-            self.valid_indices = random.sample(self.valid_indices, subsample_demos)
-
-        self.logger.info(f"Dataset initialized with {len(self)} samples ({split} split)")
-
-    def _load_demonstrations(self):
-        """Load demonstrations from H5 file based on the loading mode."""
-        self.demonstrations = []
         
-        # valid_indices is only needed for sequence mode
-        if not self.is_regression:
-            self.valid_indices = []
-
-        with h5py.File(self.h5_file_path, 'r') as f:
-            demo_keys = [key for key in f.keys() if key.startswith('demo_')]
-            demo_keys.sort(key=lambda x: int(x.split('_')[1]))
-
-            for demo_idx, demo_key in enumerate(demo_keys):
-                try:
-                    # --- LOGIC BRANCHING BASED ON MODE ---
-                    
-                    if self.is_regression:
-                        # --- REGRESSION LOADING LOGIC ---
-                        path_data = f[f'{demo_key}/path'][()]
-                        points_data = f[f'{demo_key}/points'][()]
-
-                        # Validation for a single (point_cloud, path_vector) sample
-                        if path_data.shape != (self.action_dim,):
-                            self.logger.warning(
-                                f"Skipping {demo_key}: Path shape mismatch. "
-                                f"Expected ({self.action_dim},), got {path_data.shape}"
-                            )
-                            continue
-
-                        # For regression, we expect an exact match on num_points
-                        if points_data.shape != (self.num_points, 3):
-                            self.logger.warning(
-                                f"Skipping {demo_key}: Points shape mismatch. "
-                                f"Expected ({self.num_points}, 3), got {points_data.shape}"
-                            )
-                            continue
-                        
-                        demo_data = {
-                            'path': path_data.astype(np.float32),
-                            'points': points_data.astype(np.float32),
-                            'demo_id': demo_idx,
-                            'demo_key': demo_key
-                        }
-                        self.demonstrations.append(demo_data)
-
-                    else:
-                        # --- SEQUENCE LOADING LOGIC (Your Original Code) ---
-                        path_data = f[f'{demo_key}/path'][()]
-                        points_data = f[f'{demo_key}/points'][()]
-
-                        if path_data.shape[0] != points_data.shape[0]:
-                            self.logger.warning(f"Mismatched timesteps in {demo_key}: "
-                                            f"path {path_data.shape[0]}, points {points_data.shape[0]}")
-                            continue
-
-                        if path_data.shape[1] != self.action_dim:
-                            self.logger.warning(f"Action dimension mismatch in {demo_key}: "
-                                            f"expected {self.action_dim}, got {path_data.shape[1]}")
-                            continue
-
-                        # Your original, flexible check for num_points
-                        if points_data.shape[2] != 3 or points_data.shape[1] < self.num_points:
-                            self.logger.warning(f"Point cloud shape mismatch or insufficient points in {demo_key}: "
-                                            f"expected at least ({self.num_points}, 3), got {points_data.shape[1:]}. "
-                                            f"Ensure point clouds have at least 'num_points' points.")
-                            continue
-
-                        demo_data = {
-                            'path': path_data.astype(np.float32),
-                            'points': points_data.astype(np.float32),
-                            'demo_id': demo_idx,
-                            'demo_key': demo_key
-                        }
-                        self.demonstrations.append(demo_data)
-
-                        num_timesteps = path_data.shape[0]
-                        for t in range(num_timesteps - self.sequence_length + 1):
-                            self.valid_indices.append((demo_idx, t))
-
-                except Exception as e:
-                    self.logger.error(f"Error loading {demo_key}: {e}")
-                    continue
-
-        # --- FINAL VALIDATION AND LOGGING (ADAPTED FOR BOTH MODES) ---
-        if not self.demonstrations:
-            raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
-
-        if self.is_regression:
-            self.logger.info(f"Loaded {len(self.demonstrations)} demonstrations/samples.")
-        else:
-            # Your original logging message for sequence mode
-            self.logger.info(f"Loaded {len(self.demonstrations)} demonstrations "
-                            f"with {len(self.valid_indices)} total sequences")
-
-    def _create_split(self, train_split: float, random_seed: int):
-        """
-        Create train/validation split based on demonstrations.
-        This method now supports both sequence and regression modes.
-        """
-        # This part is common and correct for both modes
-        num_demos = len(self.demonstrations)
-        
-        # Ensure there's something to split
-        if num_demos == 0:
-            self.logger.warning("Cannot create split: No demonstrations were loaded.")
-            return
-
-        demo_indices = list(range(num_demos))
-
-        rng = np.random.RandomState(random_seed)
-        rng.shuffle(demo_indices)
-
-        split_idx = int(num_demos * train_split)
-        if self.split == 'train':
-            # Create a set for efficient lookup
-            selected_demo_ids = set(demo_indices[:split_idx])
-        elif self.split == 'val':
-            selected_demo_ids = set(demo_indices[split_idx:])
-        else:
-            # No 'all' or other splits, so we can return if not train/val
-            return
-
-        # --- LOGIC BRANCHING BASED ON MODE ---
-        
-        if self.is_regression:
-            # --- REGRESSION SPLITTING LOGIC ---
-            # Filter the demonstrations list directly. The __len__ and __getitem__
-            # methods for regression mode rely on this list.
+        if self.split in ['train', 'val']:
+            self._create_split(train_split)
             
-            # We can get the 'demo_id' from each dictionary in the list
-            original_demonstrations = self.demonstrations
-            self.demonstrations = [
-                demo for demo in original_demonstrations
-                if demo['demo_id'] in selected_demo_ids
-            ]
-            
-            self.logger.info(
-                f"Created '{self.split}' split with {len(self.demonstrations)} samples (regression mode)."
-            )
+        self._subsample_if_needed(subsample_demos)
 
-        else:
-            # --- SEQUENCE SPLITTING LOGIC (Your Original Code) ---
-            # Filter self.valid_indices. The __len__ and __getitem__ methods
-            # for sequence mode rely on this list. The full self.demonstrations
-            # list is kept in memory, but only the valid indices are accessible.
-            
-            original_indices_count = len(self.valid_indices)
-            self.valid_indices = [
-                (demo_idx, t) for demo_idx, t in self.valid_indices
-                if demo_idx in selected_demo_ids
-            ]
-            
-            self.logger.info(
-                f"Created '{self.split}' split. Kept {len(self.valid_indices)} sequences "
-                f"from an original of {original_indices_count} (sequence mode)."
-            )
+        self.logger.info(
+            f"Dataset initialized with {len(self)} samples for split '{self.split}' "
+            f"(mode: {'regression' if self.is_regression else 'sequence'})."
+        )
 
     def __len__(self) -> int:
-        """
-        Return the total number of samples in the dataset.
-        This method is mode-aware.
-        """
+        """Return the total number of samples in the dataset."""
         if self.is_regression:
-            # In regression mode, the length is the number of individual demonstration samples.
             return len(self.demonstrations)
-        else:
-            # In sequence mode, the length is the number of valid sequences.
-            # It's good practice to check if the attribute exists to prevent errors
-            # if the dataset is not properly initialized.
-            if hasattr(self, 'valid_indices'):
-                return len(self.valid_indices)
-            return 0
+        
+        if hasattr(self, 'valid_indices'):
+            return len(self.valid_indices)
+        return 0
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """
-        Get a sample from the dataset. This method is mode-aware.
-        
-        Args:
-            idx: Sample index
-
-        Returns:
-            A dictionary containing torch tensors. The structure depends on the mode.
-        """
+        """Fetches a sample, applies processing, and returns it as a dictionary of tensors."""
         if self.is_regression:
             # --- REGRESSION MODE ---
-            # The index directly corresponds to a demonstration.
             demo_data = self.demonstrations[idx]
-            
-            # Get the raw point cloud data (e.g., shape (N, 3))
             raw_points = demo_data['points']
             
-            # Process it using our new helper method
-            processed_points = raw_points
+            # FIX: Apply the same processing logic in both modes.
+            processed_points = self._process_single_point_cloud(raw_points)
             
-            # The action is the final path vector
-            action = demo_data['path'] # Shape -> (action_dim,)
-            
-            # Create the sample dictionary for regression
             sample = {
                 'point_cloud': torch.from_numpy(processed_points).float(),
-                'action': torch.from_numpy(action).float(),
+                'action': torch.from_numpy(demo_data['path']).float(),
                 'demo_id': torch.tensor(demo_data['demo_id'], dtype=torch.long)
             }
             return sample
 
         else:
-            # --- SEQUENCE MODE (Your original logic, but cleaner) ---
+            # --- SEQUENCE MODE ---
             demo_idx, start_t = self.valid_indices[idx]
             demo_data = self.demonstrations[demo_idx]
-
             end_t = start_t + self.sequence_length
 
-            point_clouds = []
-            actions = []
-
-            for t in range(start_t, end_t):
-                # Use the helper for each point cloud in the sequence
-                processed_points = self._process_single_point_cloud(demo_data['points'][t])
-                point_clouds.append(processed_points)
-                actions.append(demo_data['path'][t])
-
+            point_clouds = [self._process_single_point_cloud(demo_data['points'][t]) for t in range(start_t, end_t)]
+            actions = [demo_data['path'][t] for t in range(start_t, end_t)]
+            
             point_cloud_seq = np.stack(point_clouds, axis=0)
             action_seq = np.stack(actions, axis=0)
 
-            # --- The rest of your original logic for prev/next actions ---
+            # --- Previous/Next Action Logic ---
             if start_t == 0:
                 previous_action = np.zeros(self.action_dim, dtype=np.float32)
             else:
@@ -322,29 +129,139 @@ class ManipulationDataset(Dataset):
             if self.sequence_length == 1:
                 sample['point_cloud'] = sample['point_cloud'].squeeze(0)
                 sample['action'] = sample['action'].squeeze(0)
-
+            
             return sample
-
+    
     def get_demo_info(self) -> Dict[str, any]:
-        """Get information about the loaded demonstrations."""
+        """Get information about the loaded demonstrations, adapted for the current mode."""
         info = {
             'num_demonstrations': len(self.demonstrations),
-            'total_sequences': len(self.valid_indices),
             'sequence_length': self.sequence_length,
             'action_dim': self.action_dim,
             'num_points': self.num_points,
-            'split': self.split
+            'split': self.split,
+            'mode': 'regression' if self.is_regression else 'sequence'
         }
-
-        if self.demonstrations:
-            demo_lengths = [demo['path'].shape[0] for demo in self.demonstrations]
-            info.update({
-                'min_demo_length': min(demo_lengths) if demo_lengths else 0,
-                'max_demo_length': max(demo_lengths) if demo_lengths else 0,
-                'avg_demo_length': np.mean(demo_lengths) if demo_lengths else 0
-            })
+        
+        # BUG FIX: This method now works for both modes.
+        if self.is_regression:
+            info['total_samples'] = len(self.demonstrations)
+        else:
+            info['total_sequences'] = len(self.valid_indices)
+            if self.demonstrations:
+                demo_lengths = [demo['path'].shape[0] for demo in self.demonstrations]
+                info.update({
+                    'min_demo_length': min(demo_lengths) if demo_lengths else 0,
+                    'max_demo_length': max(demo_lengths) if demo_lengths else 0,
+                    'avg_demo_length': np.mean(demo_lengths) if demo_lengths else 0
+                })
         return info
 
+    # --- Private Helper Methods ---
+
+    def _load_demonstrations(self):
+        """Load demonstrations from the H5 file, branching logic based on mode."""
+        self.demonstrations: List[Dict] = []
+        if not self.is_regression:
+            self.valid_indices: List[tuple[int, int]] = []
+
+        try:
+            with h5py.File(self.h5_file_path, 'r') as f:
+                demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
+
+                for demo_idx, demo_key in enumerate(demo_keys):
+                    path_data = f[f'{demo_key}/path'][()]
+                    points_data = f[f'{demo_key}/points'][()]
+
+                    if self.is_regression:
+                        # Validation for a single (point_cloud, path_vector) sample
+                        if path_data.shape != (self.action_dim,): continue
+                        if points_data.shape != (self.num_points, 3): continue
+                    else:
+                        # Validation for sequential data
+                        if path_data.shape[0] != points_data.shape[0]: continue
+                        if path_data.shape[1] != self.action_dim: continue
+                        if points_data.shape[2] != 3 or points_data.shape[1] < self.num_points: continue
+                    
+                    demo_data = {'path': path_data.astype(np.float32), 'points': points_data.astype(np.float32), 'demo_id': demo_idx, 'demo_key': demo_key}
+                    self.demonstrations.append(demo_data)
+
+                    if not self.is_regression:
+                        num_timesteps = path_data.shape[0]
+                        for t in range(num_timesteps - self.sequence_length + 1):
+                            self.valid_indices.append((demo_idx, t))
+        except Exception as e:
+            self.logger.error(f"Failed to load H5 file {self.h5_file_path}: {e}")
+            raise
+            
+        if not self.demonstrations:
+            raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
+
+    def _create_split(self, train_split: float):
+        """Create train/validation split based on demonstration indices."""
+        num_demos = len(self.demonstrations)
+        if num_demos == 0: return
+
+        indices = np.arange(num_demos)
+        self.rng.shuffle(indices)
+
+        split_idx = int(num_demos * train_split)
+        if self.split == 'train':
+            selected_ids = set(indices[:split_idx])
+        else: # 'val'
+            selected_ids = set(indices[split_idx:])
+
+        if self.is_regression:
+            self.demonstrations = [d for d in self.demonstrations if d['demo_id'] in selected_ids]
+        else:
+            self.valid_indices = [(d_idx, t) for d_idx, t in self.valid_indices if d_idx in selected_ids]
+
+    def _subsample_if_needed(self, subsample_count: Optional[int]):
+        """Subsamples the dataset if a count is provided."""
+        # BUG FIX: This method now works for both modes.
+        if subsample_count is None:
+            return
+
+        if self.is_regression:
+            if subsample_count < len(self.demonstrations):
+                self.logger.info(f"Subsampling {subsample_count} from {len(self.demonstrations)} regression samples.")
+                indices = self.rng.choice(len(self.demonstrations), subsample_count, replace=False)
+                self.demonstrations = [self.demonstrations[i] for i in indices]
+        else:
+            if hasattr(self, 'valid_indices') and subsample_count < len(self.valid_indices):
+                self.logger.info(f"Subsampling {subsample_count} from {len(self.valid_indices)} sequences.")
+                # Using random.sample is fine for lists of tuples.
+                self.valid_indices = random.sample(self.valid_indices, subsample_count)
+    
+    def _process_single_point_cloud(self, points_data: np.ndarray) -> np.ndarray:
+        """Applies subsampling/padding, normalization, and augmentation to a single point cloud."""
+        # FIX: Re-introduced this crucial helper method.
+        # 1. Subsample or Pad to ensure consistent point count
+        if points_data.shape[0] > self.num_points:
+            indices = self.rng.choice(points_data.shape[0], self.num_points, replace=False)
+            processed_points = points_data[indices]
+        elif points_data.shape[0] < self.num_points:
+            pad_width = self.num_points - points_data.shape[0]
+            last_point = points_data[-1] if points_data.shape[0] > 0 else np.zeros(3)
+            padding = np.tile(last_point, (pad_width, 1))
+            processed_points = np.concatenate([points_data, padding], axis=0)
+        else:
+            processed_points = points_data
+
+        # 2. Normalize if enabled
+        if self.normalize_points:
+            processed_points = normalize_point_cloud_to_unit_sphere(processed_points)
+
+        # 3. Augment if enabled
+        if self.augment_data:
+            processed_points = self._augment_point_cloud(processed_points)
+        
+        return processed_points.astype(np.float32)
+
+    def _augment_point_cloud(self, points: np.ndarray) -> np.ndarray:
+        """Placeholder for point cloud augmentation logic."""
+        # TODO: Implement your desired augmentations (e.g., jitter, rotation).
+        return points
 
 def create_dataloaders(
     h5_file_path: str,

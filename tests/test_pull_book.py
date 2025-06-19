@@ -6,7 +6,7 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
-COLLECT_DATA = False
+COLLECT_DATA = True
 PATH_MODE = "RegressPC2Pos" # "JOINT7D", "SE39D", "POS3D", "DELTA3D", "RegressPC2Pos"
 SIMULATE = False 
 CAMERA = "cameraStatic"  # or "cameraWrist"
@@ -27,7 +27,7 @@ elif ROBOT_MODE == "floating":
     C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
     gripper = "gripper"
     palm = "palm"
-    C.setJointState(C.getJointState() + np.array([.3, 0, .2, 0, 0, 0, 0]))
+    C.setJointState(C.getJointState() + np.array([.0, 0, .2, 0, 0, 0, 0]))
     prefix = ""
 
 C.getFrame(prefix+"finger1").setAttribute("friction", 1e5)
@@ -53,12 +53,12 @@ shelf_height = shelfBottomFrame.getSize()[2]
 shelf_size = (shelfBottomFrame.getSize()[0], shelfBottomFrame.getSize()[1], shelfBottomFrame.getSize()[2])  # Fixed shelf dimensions (X_s, Y_s, Z_s)
 
 box_size_ranges = {  # Variable box dimensions
-    'x': (.125, .125),  # X_b range
-    'y': (.18, .18),  # Y_b range
-    'z': (.02, .02),   # Z_b range
+    'x': (.1, .15),  # X_b range
+    'y': (.14, .23),  # Y_b range
+    'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=2000, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=10000, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -99,10 +99,6 @@ for sample in samples:
 
         success = roboenv.pull("target_book_0", target, accumulated_collisions=False, capture_points=COLLECT_DATA)
         
-
-        print(q0)
-        C.view(True)
-        quit()
 
         if success and COLLECT_DATA:
             #np.save("pc.npy", roboenv.points[0])
