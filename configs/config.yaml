@@ -7,7 +7,7 @@ defaults:
   - inference: default
 train:
   batch_size: 32
-  epochs: 50
+  epochs: 100
   device: cuda
 
 # Global settings

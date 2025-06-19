@@ -163,6 +163,7 @@ def eval_policy(cfg: DictConfig) -> None:
     collector.spawn_books_scene()
     collector.C.view(True)
     collector.C.view(False) 
+    q0 = collector.C.getJointState()
 
     # --- 2. Initialize Model ---
     log.info("Initializing model...")
@@ -260,9 +261,16 @@ def eval_policy(cfg: DictConfig) -> None:
 
         if cfg["model"]["type"] == "regression":
             path_dataset = output.squeeze().cpu().numpy()
-
+            
             collector.C.setJointState([path_dataset[0], path_dataset[1], path_dataset[2], 1, 0, 0, 0])  # Assuming the first 7 values are joint angles
             collector.C.view(True)
+
+            collector.C.setJointState(q0)
+            collector.C.delFrame("target_book_0")
+            collector.spawn_books_scene()
+            collector.C.view(True)
+
+            
         if cfg["model"]["action_dim"] == 9:
             pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
             log.info("pose7d:", pose7d)
@@ -280,7 +288,6 @@ def eval_policy(cfg: DictConfig) -> None:
 
         
         collector.C.view(False)
-        time.sleep(.3)
         if isinstance(output, torch.Tensor):
             log.info(f"Output tensor shape: {output.shape}")
         elif isinstance(output, dict):
