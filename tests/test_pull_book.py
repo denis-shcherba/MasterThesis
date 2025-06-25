@@ -7,10 +7,11 @@ from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
 COLLECT_DATA = True
-PATH_MODE = "RegressPC2Pos" # "JOINT7D", "SE39D", "POS3D", "DELTA3D", "RegressPC2Pos"
-SIMULATE = False 
+PATH_MODE = "POS3D" # "JOINT7D", "SE39D", "POS3D", "DELTA3D", "RegressPC2Pos"
+SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
+DEBUG = True # pull debugging
 
 prefix = "l_"
 C = ry.Config()
@@ -58,13 +59,14 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=10000, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=20_000, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
 
 demo_id = 0
+err = []
 
 if COLLECT_DATA:
     h5file = h5py.File("variable_demo.h5", "w")
@@ -82,7 +84,8 @@ for sample in samples:
                 .setShape(ry.ST.ssBox, size=[box[0], box[1], box[2], 0.005]) \
                 .setColor(np.random.rand(3)) \
                 .setContact(1) \
-                .setMass(.1)
+                .setMass(.1) \
+                .setAttribute("friction", .01) 
         C.view(False)
 
         
@@ -138,12 +141,20 @@ for sample in samples:
             demo_group.create_dataset("points", data=roboenv.points)
             demo_id += 1
 
+        elif success and DEBUG:
+            err.append(np.linalg.norm(C.getFrame("target_book_0").getPosition() - target))
 
         C.delFrame(f"target_book_0")
         C.view(False)
         C.setJointState(q0)
         
         C.getFrame(prefix+'panda_finger_joint1').setJointState(np.array([.01]))
+
+
+if DEBUG:
+    print("Average error to target:", np.mean(err))
+    print("Max error to target:", np.max(err))
+    print("Min error to target:", np.min(err))
 
 if COLLECT_DATA:
     h5file.close()
