@@ -2,6 +2,7 @@ import hydra
 from omegaconf import DictConfig
 import logging
 import torch
+import torch.nn as nn
 import numpy as np
 
 from data_handling.dataset import create_dataloaders_from_config

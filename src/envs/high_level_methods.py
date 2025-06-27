@@ -231,10 +231,10 @@ class RobotEnviroment:
         #TODO
         pass
 
-    def render(self):
+    def render(self, n_samples=4096):
         if self.sim:
             sim = Simulator(self.C, verbose=self.verbose)
-            points = sim.getPoints(1000, vis=False)
+            points = sim.getPoints(n_samples, vis=False)
             return points
         else:
             #TODO? maybe, maybe not

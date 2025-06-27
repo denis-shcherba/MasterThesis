@@ -328,9 +328,9 @@ class ShelfPullDataCollector:
             print("Closing simulation view.")
             self.C.viewClose()
 
-    def render(self):
+    def render(self, n_samples=4096):
         roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper_name)
-        points = roboenv.render()
+        points = roboenv.render(n_samples)
         return points
 
     def close(self):

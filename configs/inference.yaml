@@ -2,7 +2,7 @@ defaults:
   - _self_  
   - model: regression
   - data: single_step
-  - inference: default
+  - inference: regression
   - env: default_regression
 train:
   batch_size: 32

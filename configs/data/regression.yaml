@@ -7,7 +7,7 @@ num_workers: 4
 
 # Sequence settings
 sequence_length: 1  # Number of consecutive timesteps to use as input
-action_dim: 3       # Dimension of action space (in SE3 9D representation)
+action_dim: 3       # Dimension of action space 
 num_points: 4096    # Number of points per point cloud
 
 # Dataset split

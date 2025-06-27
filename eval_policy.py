@@ -43,24 +43,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
         log.error(f"Point cloud shape invalid. Expected (N, 3), got {point_cloud_raw.shape}")
         raise ValueError("Point cloud must have shape (N, 3).")
 
-    # Adjust number of points (padding/subsampling) - CRITICAL
-    # This logic should mirror your training dataset's point adjustment
-    num_model_points = model_cfg.num_points
-    if point_cloud_raw.shape[0] > num_model_points:
-        log.info(f"Subsampling point cloud from {point_cloud_raw.shape[0]} to {num_model_points} points.")
-        # Example: random subsampling, or just take the first N
-        indices = np.random.choice(point_cloud_raw.shape[0], num_model_points, replace=False)
-        pc_processed_np = point_cloud_raw[indices, :]
-    elif point_cloud_raw.shape[0] < num_model_points:
-        log.info(f"Padding point cloud from {point_cloud_raw.shape[0]} to {num_model_points} points.")
-        padding_needed = num_model_points - point_cloud_raw.shape[0]
-        # Example: pad with zeros, or repeat last point (check training dataset's method)
-        padding = np.zeros((padding_needed, 3), dtype=point_cloud_raw.dtype)
-        pc_processed_np = np.concatenate([point_cloud_raw, padding], axis=0)
-    else:
-        pc_processed_np = point_cloud_raw
-
-    pc_tensor = torch.from_numpy(pc_processed_np).float()
+    pc_tensor = torch.from_numpy(point_cloud_raw).float()
 
     # Apply normalization if configured (use the same function as in training)
     if data_cfg.get('normalize_points', False): # Check actual path in your config for this flag
@@ -214,7 +197,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
     for i in range (64):
         # --- 4. Prepare Input Data for Inference ---
-        pc = collector.render()
+        pc = collector.render(cfg.get("data", {}).get("num_points", 4096))
         robot_state = None
         #if cfg.get() 
         if cfg["model"]["action_dim"] == 9:

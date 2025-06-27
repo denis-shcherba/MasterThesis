@@ -1,10 +1,10 @@
 defaults:
   - _self_  
-  - model: regression
+  - model: mlp
   - loss: default_3d
   - optimizer: adam
-  - data: single_step
-  - inference: default
+  - data: mlp
+  - inference: mlp
 train:
   batch_size: 32
   epochs: 100
