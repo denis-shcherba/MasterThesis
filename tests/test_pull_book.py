@@ -11,7 +11,9 @@ PATH_MODE = "POS3D" # "JOINT7D", "SE39D", "POS3D", "DELTA3D", "RegressPC2Pos"
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
-DEBUG = True # pull debugging
+DEBUG = False # pull debugging
+OBSERVATION_MODE = "RGB" # "POINTCLOUD", "RGB", "RGBD", "DEPTH"
+COMPRESS = False
 
 prefix = "l_"
 C = ry.Config()
@@ -59,7 +61,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=20_000, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=100, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -98,9 +100,9 @@ for sample in samples:
         C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
 
-        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl)
+        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE)
 
-        success = roboenv.pull("target_book_0", target, accumulated_collisions=False, capture_points=COLLECT_DATA)
+        success = roboenv.pull("target_book_0", target, accumulated_collisions=False, get_observation=COLLECT_DATA)
         
 
         if success and COLLECT_DATA:
@@ -137,8 +139,18 @@ for sample in samples:
                 print(roboenv.path.shape)
                 demo_group.create_dataset("path", data=roboenv.path[31, :3])  # Only position
 
-            
-            demo_group.create_dataset("points", data=roboenv.points)
+            if OBSERVATION_MODE == "POINTCLOUD":
+                demo_group.create_dataset("points", data=roboenv.points)
+            elif OBSERVATION_MODE == "RGB":
+                if COMPRESS:
+                        demo_group.create_dataset(
+                        "rgb", 
+                        data=roboenv.rgb_image,
+                        compression="gzip",
+                        compression_opts=4
+                        )
+                else:
+                    demo_group.create_dataset("rgb", data=roboenv.rgb_image)
             demo_id += 1
 
         elif success and DEBUG:

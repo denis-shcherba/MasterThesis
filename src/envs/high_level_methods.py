@@ -13,7 +13,8 @@ class RobotEnviroment:
                  compute_collisions: bool=True,
                  sim: bool=False,
                  gripper: str="l_gripper",
-                 base_removal: bool=False):
+                 base_removal: bool=False,
+                 observation_mode: str="POINTCLOUD") -> None:
         self.C = C
         self.visuals = visuals
         self.verbose = verbose
@@ -23,6 +24,7 @@ class RobotEnviroment:
         self.compute_collisions = compute_collisions
         self.gripper = gripper
         self.base_removal = base_removal
+        self.observation_mode = observation_mode
 
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"
@@ -133,7 +135,7 @@ class RobotEnviroment:
             print('  -- infeasible')
             return False
 
-    def pull(self, object_, placePosition, accumulated_collisions=True, capture_points=False) -> bool:
+    def pull(self, object_, placePosition, accumulated_collisions=True, get_observation=False) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
@@ -201,9 +203,14 @@ class RobotEnviroment:
             del C2
 
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
-            sim.run_trajectory(np.array(path1), 2, capture_points=capture_points)
-            sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_points=capture_points)
-            self.points = sim.points
+            if self.observation_mode == "POINTCLOUD":
+                sim.run_trajectory(np.array(path1), 2, capture_points=get_observation)
+                sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_points=get_observation)
+                self.points = sim.points
+            elif self.observation_mode == "RGB":
+                sim.run_trajectory(np.array(path1), 2, capture_rgb=get_observation)
+                sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_rgb=get_observation)
+                self.rgb_image = sim.rgb
 
         else:
             if self.visuals:
@@ -216,12 +223,15 @@ class RobotEnviroment:
 
                 self.C.attach("big_xy_bottom_0_1", object_)
             else:
-                if capture_points:
+                if get_observation:
                     sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
-                    self.points = sim.getPoints(vis=True)
+                    if self.observation_mode == "POINTCLOUD":
+                        self.points = sim.getPoints(vis=True)
                     #self.C.setJointState(path1[-1])
                     #self.C.view(True)
-                 
+                    elif self.observation_mode == "RGB":
+                        self.rgb_image = sim.getRGB()
+
         self.C.delFrame("tmp")
 
         self.path = np.concatenate((path1, path2), axis=0)
@@ -234,8 +244,12 @@ class RobotEnviroment:
     def render(self, n_samples=4096):
         if self.sim:
             sim = Simulator(self.C, verbose=self.verbose)
-            points = sim.getPoints(n_samples, vis=False)
-            return points
+            if self.observation_mode == "POINTCLOUD":
+                points = sim.getPoints(n_samples, vis=False)
+                return points
+            elif self.observation_mode == "RGB":
+                pass    
+        
         else:
             #TODO? maybe, maybe not
             self.C.view(True)

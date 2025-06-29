@@ -22,6 +22,7 @@ class Simulator:
         self.init_state = self._sim.getState()
         self.camera = camera
         self.points = []
+        self.rgb = []
         self._sim.selectSensor(camera)
         self.base_removal = base_removal
 
@@ -60,6 +61,19 @@ class Simulator:
             self.config.view(True)
             return points  
 
+    def getRGB(self, crop: bool = True, crop_size: int = 96) -> np.ndarray:
+        rgb, _ = self._sim.getImageAndDepth()
+
+        if crop:
+            original_height, original_width, _ = rgb.shape
+            left = (original_width - crop_size) // 2
+            top = (original_height - crop_size) // 2
+            right = left + crop_size
+            bottom = top + crop_size
+
+            rgb = rgb[top:bottom, left:right, :]
+
+        return rgb
 
     def run_trajectory(
         self,
@@ -67,6 +81,7 @@ class Simulator:
         n_steps: float,
         tau: float = 5e-4,
         capture_points: bool = False,
+        capture_rgb: bool = False,
     ) -> [np.ndarray, np.ndarray, np.ndarray, np.ndarray]: # type: ignore
         """Run a trajectory in simulation using the specified KOMO instance.
 
@@ -93,12 +108,17 @@ class Simulator:
 
         # TODO think about this, maybe change control mode, and then better capture points every path
         interval = max(1, sim_steps // 32)
-        points_captured = 0
+        observations_captured = 0
         for i in range(1, sim_steps + 1):
-            if capture_points and ((i - 1) % interval == 0) and (points_captured < path.shape[-2]):
-                points = self.getPoints(vis=True)
-                self.points.append(points)
-                points_captured += 1
+            if ((i - 1) % interval == 0) and (observations_captured < path.shape[-2]):
+                if capture_points:
+                    points = self.getPoints(vis=True)
+                    self.points.append(points)
+                elif capture_rgb:
+                    rgb = self.getRGB()
+                    self.rgb.append(rgb)
+                observations_captured += 1
+            
             self._sim.step([], tau, ry.ControlMode.spline)
             if i % 100 == 0:
                 self.config.view()
