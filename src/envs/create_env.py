@@ -54,20 +54,11 @@ class ShelfPullDataCollector:
             self.palm_name = "palm"
             self.prefix = ""
             
-            # Set initial floating base position if joints exist
             current_q = self.C.getJointState()
-            # Assuming the first 7 DoFs are for the floating base [x,y,z, qx,qy,qz,qw] or similar
-            # This requires pandaFloatingFixGripper.g to define these base joints.
-            if len(current_q) >= 7 : # Check if there are enough joints for a floating base
-                offset = np.array([.0, 0, .2, 0, 0, 0, 0]) # x,y,z translation, identity rotation
-                current_q[:len(offset)] += offset # Apply to the base part of the joint state
-                self.C.setJointState(current_q)
-            elif len(current_q) > 0: # If some joints exist but not enough for full base, this might be an issue
-                print(f"Warning: Floating robot mode, but initial joint state length is {len(current_q)}. Expected >= 7 for base.")
-                # Potentially set a default base pose if appropriate
-                # For now, we'll proceed, assuming the .g file and joint state are somewhat aligned.
-            else: # No joints defined, set a default initial pose for the floating base
-                 self.C.setJointState(np.array([.0, 0, .2, 0, 0, 0, 0])) # x,y,z, and 4 for quaternion (identity)
+            offset = np.array([.0, 0, .2, 0, 0, 0, 0]) 
+            current_q[:len(offset)] += offset 
+            self.C.setJointState(current_q)
+
         else:
             raise ValueError(f"Unknown ROBOT_MODE: {self.robot_mode}")
 
@@ -104,6 +95,7 @@ class ShelfPullDataCollector:
         # The Z component here is the thickness of the plate books are spawned on.
         self.shelf_dims_for_spawning = (self.shelf_width, self.shelf_depth, self.shelf_plate_thickness)
 
+        # std values
         self.box_size_ranges = box_size_ranges if box_size_ranges is not None else {
             'x': (.1, .15),    # Book width
             'y': (.14, .23),   # Book depth
@@ -130,18 +122,11 @@ class ShelfPullDataCollector:
             # book_params: [size_x, size_y, size_z, pos_x_on_shelf, pos_y_on_shelf, yaw_angle]
             b_size_x, b_size_y, b_size_z, b_pos_x, b_pos_y, b_pos_z, b_yaw = book_params
 
-            # Z-offset for book center relative to shelf_corner_ref_point's Z:
-            # Places bottom of book on top surface of shelf plate.
-            # shelf_corner_ref_point's Z is shelf_plate_center_z.
-            # Top surface Z = shelf_plate_center_z + shelf_plate_thickness/2.
-            # Book center Z = top_surface_z + b_size_z/2.
-            # So, book_center_z = shelf_plate_center_z + shelf_plate_thickness/2 + b_size_z/2
-            #                 = shelf_corner_ref_point[2] + (self.shelf_plate_thickness + b_size_z) / 2
             z_offset = (self.shelf_plate_thickness + b_size_z) / 2
             
             book_center_position = self.shelf_corner_ref_point + np.array([b_pos_x, b_pos_y, z_offset])
             
-            q_orientation = ry.Quaternion().setRollPitchYaw([0, 0, b_yaw]) # Yaw around Z
+            q_orientation = ry.Quaternion().setRollPitchYaw([0, 0, b_yaw]) 
             
             frame_name = f"target_book_{i}"
             self.C.addFrame(frame_name) \
@@ -165,7 +150,7 @@ class ShelfPullDataCollector:
             allow_yaw=allow_yaw
         )
 
-        spawned_book_names = self._spawn_books(samples[0])
+        self._spawn_books(samples[0])
 
 
     def run_experiment(self, view_simulation_steps=True):
@@ -324,9 +309,7 @@ class ShelfPullDataCollector:
             if view_simulation_steps: self.C.view(True, f"Sample {sample_idx+1}: Robot reset to initial state.")
 
         print("\nAll samples processed.")
-        if view_simulation_steps and hasattr(self.C, 'view_window') and self.C.view_window:
-            print("Closing simulation view.")
-            self.C.viewClose()
+
 
     def render(self, n_samples=4096):
         roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper_name)
@@ -338,13 +321,6 @@ class ShelfPullDataCollector:
         if self.h5file:
             self.h5file.close()
             print(f"HDF5 file '{self.h5_filename}' closed.")
-        # Close ry view window if it's still open and managed by this class instance
-        if hasattr(self.C, 'view_window') and self.C.view_window is not None:
-            try:
-                self.C.viewClose()
-                print("Robotic configuration view closed.")
-            except Exception as e:
-                print(f"Error closing robotic view: {e}")
 
 
 # --- Example Usage ---
