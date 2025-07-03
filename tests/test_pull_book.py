@@ -6,7 +6,7 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
-COLLECT_DATA = True
+COLLECT_DATA = False
 PATH_MODE = "POS3D" # "JOINT7D", "SE39D", "POS3D", "DELTA3D", "RegressPC2Pos"
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
@@ -37,6 +37,11 @@ C.getFrame(prefix+"finger1").setAttribute("friction", 1e5)
 C.getFrame(prefix+"finger2").setAttribute("friction", 1e5)
 
 q0 = C.getJointState()
+
+# World Camera pose
+camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
+C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setPosition([1,0,0]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
+C.view_setCamera(C.getFrame("worldCamera"))
 
 # Shelf
 pos = np.array([.8, 0., .3])
@@ -73,7 +78,7 @@ err = []
 if COLLECT_DATA:
     h5file = h5py.File("variable_demo.h5", "w")
 
-
+C.view(True)
 for sample in samples:
     for book_params in sample:
         q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]]))
