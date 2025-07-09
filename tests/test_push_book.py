@@ -1,13 +1,13 @@
 import numpy as np
 import robotic as ry
-import time
-import manipulation as manip
 from envs.shelf import generate_shelf
 from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 from envs.utils import find_nearest_cuboid_edge_center, sample_cuboid_edges, choose_starting_point
+import random
 
 ROBOT_MODE = "floating" 
+MAX_NUMBER_PUSHES = 5
 
 C = ry.Config()
 
@@ -24,6 +24,8 @@ elif ROBOT_MODE == "floating":
     C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
     gripper = "gripper"
     palm = "palm"
+
+q0 = C.getJointState()
 
 # Shelf
 pos = np.array([1, 0., .3])
@@ -44,7 +46,7 @@ shelf_size = (shelfBottomFrame.getSize()[0], shelfBottomFrame.getSize()[1], shel
 box_size_ranges = {  # Variable box dimensions
     'x': (.1, .15),  # X_b range
     'y': (.14, .23),  # Y_b range
-    'z': (.009, .045),   # Z_b range
+    'z': (.025, .045),   # Z_b range
 }
 
 samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=50, allow_yaw=True)
@@ -70,6 +72,9 @@ for sample in samples:
             .setQuaternion(q)
 
 
+
+
+    for i in range(MAX_NUMBER_PUSHES):
         nearest_cuboid_edge_center = find_nearest_cuboid_edge_center(C, "target_book", yaw)
         
         points = sample_cuboid_edges(C, "target_book", yaw, samples=10, sides_rel=True, sides_to_sample=[True, True, False, True])
@@ -81,32 +86,41 @@ for sample in samples:
             C.addFrame(f"sample{j}").setShape(ry.ST.sphere, size=[.01]).setPosition(point).setContact(0)
 
         C.addFrame("to_push_point").setShape(ry.ST.marker, size=[.5]).setPosition(nearest_cuboid_edge_center)
-
-
+    
         roboenv = RobotEnviroment(C, sim=True, gripper=gripper)
 
-        success_pushstart_proposal = []
+        pre_push_paths = []
         for j, point in enumerate(points):
-            success, path = roboenv.move_to_point_path(point)
+            success, path = roboenv.move_to_point_path(point, minDistance=.1, accumulated_collisions=True)
 
             if success:
                 C.getFrame(f"sample{j}").setColor([0, 1, 0, .9])
-                success_pushstart_proposal.append(point)
+                pre_push_paths.append(path)
             else:
                 C.getFrame(f"sample{j}").setColor([1, 0, 0, .9])
 
             C.view(False, "Calculating success score for push proposal")
         C.view(True, "All success samples")
 
+        if len(pre_push_paths) != 0:
+            #TODO with dict of path and point
+            #starting_point = choose_starting_point(success_pushstart_proposal)
+            path = random.choice(pre_push_paths)
+            roboenv.run_path(path)
+            
+            C.view(True)
+            roboenv.move_to_point(nearest_cuboid_edge_center, straight_line=True, accumulated_collisions=False)
 
-        starting_point = choose_starting_point(success_pushstart_proposal)
-        roboenv.move_to_point(starting_point)
-        roboenv.move_to_point(nearest_cuboid_edge_center, straight_line=True, accumulated_collisions=False)
 
-        C.delFrame(f"target_book")
         C.delFrame("to_push_point")
-        for j in range(len(points)):
-            C.delFrame(f"sample{j}")
-
-
+        C.setJointState(q0)
         C.view(False)
+            
+        for j in range(len(points)):
+            C.delFrame(f"sample{j}")    
+
+        # if isGraspable(C, "target_book"):
+        #     break
+    
+    C.delFrame(f"target_book")
+    C.view(False)

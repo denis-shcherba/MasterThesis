@@ -6,14 +6,15 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
-COLLECT_DATA = False
+COLLECT_DATA = True
 PATH_MODE = "POS3D" # "JOINT7D", "SE39D", "POS3D", "DELTA3D", "RegressPC2Pos"
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
 DEBUG = False # pull debugging
 OBSERVATION_MODE = "RGB" # "POINTCLOUD", "RGB", "RGBD", "DEPTH"
-COMPRESS = False
+COMPRESS = True
+RANDOM_COLOR = False
 
 prefix = "l_"
 C = ry.Config()
@@ -40,7 +41,7 @@ q0 = C.getJointState()
 
 # World Camera pose
 camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
-C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setPosition([1,0,0]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
+C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
 C.view_setCamera(C.getFrame("worldCamera"))
 
 # Shelf
@@ -66,7 +67,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=100, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -78,7 +79,6 @@ err = []
 if COLLECT_DATA:
     h5file = h5py.File("variable_demo.h5", "w")
 
-C.view(True)
 for sample in samples:
     for book_params in sample:
         q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]]))
@@ -89,7 +89,7 @@ for sample in samples:
                 .setPosition(shelf_corner + np.append(box[3:5], (shelf_height+box[2])/2)) \
                 .setQuaternion(q.asArr()) \
                 .setShape(ry.ST.ssBox, size=[box[0], box[1], box[2], 0.005]) \
-                .setColor(np.random.rand(3)) \
+                .setColor(np.random.rand(3) if RANDOM_COLOR else [1, 0, 0]) \
                 .setContact(1) \
                 .setMass(.1) \
                 .setAttribute("friction", .01) 

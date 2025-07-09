@@ -70,7 +70,7 @@ class RobotEnviroment:
         return True
 
 
-    def move_to_point_path(self, point, relPos=None, straight_line = False, useRRT = False, accumulated_collisions=True) -> bool:
+    def move_to_point_path(self, point, minDistance=None, straight_line = False, useRRT = False, accumulated_collisions = True) -> bool:
 
         if self.C.getFrame("_tmp_way") is None:
             self.C.addFrame('_tmp_way') \
@@ -80,12 +80,21 @@ class RobotEnviroment:
             self.C.getFrame('_tmp_way') \
                 .setPosition(point) \
 
+
         man = ry.KOMO_ManipulationHelper()
         man.setup_inverse_kinematics(self.C, accumulated_collisions=accumulated_collisions)
-        if relPos is None:
+        if minDistance is None:
             man.komo.addObjective([1], ry.FS.position, [self.gripper], ry.OT.eq, 1, point)
         else:
-            man.komo.addObjective([1], ry.FS.positionRel, [self.gripper, '_tmp_way'], ry.OT.eq, 1, relPos)
+            # straight line objective
+            delta = point-self.C.getFrame("target_book").getPosition()
+            delta /= np.linalg.norm(delta)
+            print('delta:', delta)
+            man.komo.addObjective([1], ry.FS.positionDiff, [self.gripper, '_tmp_way'], ry.OT.eq, [1e2*(np.eye(3)-np.outer(delta,delta))])
+            man.komo.addObjective([1], ry.FS.negDistance, [self.gripper, "target_book"], ry.OT.ineq, 1e1, [-.05])
+
+            # TODO not infront to push point
+            #man.komo.addObjective([1], ry.FS.positionDiff, [self.gripper, "to_push_point"], ry.OT.ineq, [1, 0, 0])
 
         if straight_line:
             #TODO
@@ -116,13 +125,25 @@ class RobotEnviroment:
         
         return True, man.path
 
-    def move_to_point(self, point, relPos=None, straight_line = False, useRRT = False, accumulated_collisions=True) -> bool:
+
+    def run_path(self, path):
+        if self.sim == True:
+            sim = Simulator(self.C, verbose=self.verbose)
+            sim.run_trajectory(path, 2)
+        else:
+            for t in range(path.shape[0]):
+                self.C.setJointState(path[t])
+                self.C.view(False)
+                time.sleep(.05)
         
-        feasible, path = self.move_to_point_path(point, relPos, straight_line, useRRT, accumulated_collisions) 
+
+    def move_to_point(self, point, minDistance=None, straight_line = False, useRRT = False, accumulated_collisions=True, book_point_line = False) -> bool:
+        
+        feasible, path = self.move_to_point_path(point, minDistance, straight_line, useRRT, accumulated_collisions) 
         if feasible:
             if self.sim == True:
                 sim = Simulator(self.C, verbose=self.verbose)
-                xs, qs, xdots, qdots = sim.run_trajectory(path, 2, real_time=True)
+                sim.run_trajectory(path, 2)
             
             else:
                 for t in range(path.shape[0]):
@@ -134,6 +155,7 @@ class RobotEnviroment:
         else:
             print('  -- infeasible')
             return False
+
 
     def pull(self, object_, placePosition, accumulated_collisions=True, get_observation=False) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
