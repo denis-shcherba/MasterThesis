@@ -5,6 +5,7 @@ import numpy as np
 import robotic as ry
 from robotic import SimulationEngine
 from envs.utils import point_in_box_filtering
+import cv2
 
 class Simulator:
     """Wrapper class for ry Simulator, with functionality to run a simulation."""
@@ -23,8 +24,28 @@ class Simulator:
         self.camera = camera
         self.points = []
         self.rgb = []
+        self.depth = []
         self._sim.selectSensor(camera)
         self.base_removal = base_removal
+
+    def getDepth(self, crop: bool = False, rescale: bool = True, crop_size: int = 96, rescale_size: int = 96) -> np.ndarray:
+        _, depth = self._sim.getImageAndDepth()
+
+        if crop:
+            original_height, original_width = depth.shape
+            left = (original_width - crop_size) // 2
+            top = (original_height - crop_size) // 2
+            right = left + crop_size
+            bottom = top + crop_size
+
+            depth = depth[top:bottom, left:right, :]
+
+        if rescale:
+            depth = cv2.resize(depth, (rescale_size, rescale_size), interpolation=cv2.INTER_LINEAR)
+
+
+        return depth
+    
 
     def getPoints(self, n_samples=4096, vis=False):
         _, depth = self._sim.getImageAndDepth()
@@ -61,7 +82,7 @@ class Simulator:
             self.config.view(True)
             return points  
 
-    def getRGB(self, crop: bool = True, crop_size: int = 96) -> np.ndarray:
+    def getRGB(self, rescale: bool = True, crop: bool = False, crop_size: int = 96, rescale_size: int = 96) -> np.ndarray:
         rgb, _ = self._sim.getImageAndDepth()
 
         if crop:
@@ -73,6 +94,9 @@ class Simulator:
 
             rgb = rgb[top:bottom, left:right, :]
 
+        if rescale:
+            rgb = cv2.resize(rgb, (rescale_size, rescale_size), interpolation=cv2.INTER_LINEAR)
+
         return rgb
 
     def run_trajectory(
@@ -82,6 +106,7 @@ class Simulator:
         tau: float = 5e-4,
         capture_points: bool = False,
         capture_rgb: bool = False,
+        capture_depth: bool = False,
     ) -> [np.ndarray, np.ndarray, np.ndarray, np.ndarray]: # type: ignore
         """Run a trajectory in simulation using the specified KOMO instance.
 
@@ -114,12 +139,15 @@ class Simulator:
                 if capture_points:
                     points = self.getPoints(vis=True)
                     self.points.append(points)
-                elif capture_rgb:
+                if capture_rgb:
                     rgb = self.getRGB()
                     self.rgb.append(rgb)
+                if capture_depth:
+                    depth = self.getDepth()
+                    self.depth.append(depth)
                 observations_captured += 1
             
             self._sim.step([], tau, ry.ControlMode.spline)
-            if i % 100 == 0:
-                self.config.view()
+            # if i % 100 == 0:
+                # self.config.view()
 

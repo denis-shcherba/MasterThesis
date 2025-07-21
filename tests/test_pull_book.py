@@ -12,9 +12,10 @@ SIMULATE = True
 CAMERA = "cameraStatic"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
 DEBUG = False # pull debugging
-OBSERVATION_MODE = "RGB" # "POINTCLOUD", "RGB", "RGBD", "DEPTH"
+OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
+NUM_SAMPLES = 1000
 
 prefix = "l_"
 C = ry.Config()
@@ -67,7 +68,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, num_boxes= 1, allow_yaw=False)
+samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=NUM_SAMPLES, num_boxes= 1, allow_yaw=False)
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -156,6 +157,19 @@ for sample in samples:
                         )
                 else:
                     demo_group.create_dataset("rgb", data=roboenv.rgb_image)
+            
+            elif OBSERVATION_MODE == "DEPTH":
+                if COMPRESS:
+                        demo_group.create_dataset(
+                        "depth", 
+                        data=roboenv.depth_image,
+                        compression="gzip",
+                        compression_opts=4
+                        )
+                else:
+                    demo_group.create_dataset("depth", data=roboenv.depth_image)
+
+            
             demo_id += 1
 
         elif success and DEBUG:

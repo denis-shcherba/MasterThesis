@@ -233,6 +233,10 @@ class RobotEnviroment:
                 sim.run_trajectory(np.array(path1), 2, capture_rgb=get_observation)
                 sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_rgb=get_observation)
                 self.rgb_image = sim.rgb
+            elif self.observation_mode == "DEPTH":
+                sim.run_trajectory(np.array(path1), 2, capture_depth=get_observation)
+                sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_depth=get_observation)
+                self.depth_image = sim.depth
 
         else:
             if self.visuals:

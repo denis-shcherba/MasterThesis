@@ -194,7 +194,7 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 #TODO
                 pass
             
-
+    # TODO, rotate quat maybe pi/2 around z 
     C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
         .setPosition(C.getFrame("big_xy_bottom_0_1").getPosition()+np.array([-.22*w, 0, 0]) + np.array([-.25, 0, floor_offsets[2]])) \
         .setQuaternion([np.cos(np.deg2rad(125/2)), 0, np.sin(np.deg2rad(125/2)), 0]) \
