@@ -1,14 +1,14 @@
-loss:
-  name: PoseLoss9D   # Specifies to use the PoseLoss9D class from losses.py
-  lambda_pos: 1.0     # Weight for the position component of the loss
-  lambda_rot: 1.0     # Weight for the rotation component of the loss
 
-  position_loss:
-    type: mse         # Type of loss for the 3D position component
-                      # Options: mse, l1
+name: PoseLoss9D   # Specifies to use the PoseLoss9D class from losses.py
+lambda_pos: 1.0     # Weight for the position component of the loss
+lambda_rot: 1.0     # Weight for the rotation component of the loss
 
-  rotation_loss:
-    type: geodesic    # Type of loss for the 6D rotation component
-                      # Options: mse_6d (MSE on the 6D vectors), 
-                      #          geodesic (geodesic distance on reconstructed 3x3 matrices)
-    eps: 1e-7         # Epsilon for numerical stability in acos for geodesic loss  (Only used if type: geodesic)
+position_loss:
+  type: mse         # Type of loss for the 3D position component
+                    # Options: mse, l1
+
+rotation_loss:
+  type: geodesic    # Type of loss for the 6D rotation component
+                    # Options: mse_6d (MSE on the 6D vectors), 
+                    #          geodesic (geodesic distance on reconstructed 3x3 matrices)
+  eps: 1e-7         # Epsilon for numerical stability in acos for geodesic loss  (Only used if type: geodesic)

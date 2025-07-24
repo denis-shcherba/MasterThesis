@@ -68,6 +68,7 @@ class Trainer:
             cfg: Configuration
         """
         self.model = model
+        self.observation_mode = cfg.get('observation_mode', 'points')  # Default to 'points
         self.optimizer = optimizer
         self.criterion = criterion
         self.device = device
@@ -117,7 +118,8 @@ class Trainer:
         pbar = tqdm(train_loader, desc="Training")
         for batch in pbar:
             # Move batch to device
-            point_clouds = batch['point_cloud'].to(self.device)
+            obs = batch["observation"].to(self.device)
+
             actions = batch['action'].to(self.device)
             
             # Forward pass
@@ -127,9 +129,9 @@ class Trainer:
             if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
                 state = batch['previous_action'].to(self.device)
                 timestep = batch["timestep"].to(self.device) 
-                output = self.model(point_clouds, state, timestep)
+                output = self.model(obs, state, timestep)
             else:
-                output = self.model(point_clouds)
+                output = self.model(obs)
             
             
             if isinstance(output, tuple):
@@ -178,7 +180,7 @@ class Trainer:
             pbar = tqdm(val_loader, desc="Validation")
             for batch in pbar:
                 # Move batch to device
-                point_clouds = batch['point_cloud'].to(self.device)
+                obs = batch["observation"].to(self.device)
                 actions = batch['action'].to(self.device)
                 
 
@@ -186,9 +188,9 @@ class Trainer:
                 if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
                     timestep = batch["timestep"].to(self.device) 
                     state = batch['previous_action'].to(self.device)
-                    output = self.model(point_clouds, state, timestep)
+                    output = self.model(obs, state, timestep)
                 else:
-                    output = self.model(point_clouds)
+                    output = self.model(obs)
                 
                 if isinstance(output, tuple):
                     pred_actions, _ = output

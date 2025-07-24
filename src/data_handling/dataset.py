@@ -38,6 +38,7 @@ class ManipulationDataset(Dataset):
         train_split: float = 0.8,
         split: str = 'train',
         random_seed: int = 42,
+        observation_mode: str = 'points'
     ):
         """Initializes the dataset."""
         # --- Configuration ---
@@ -49,7 +50,8 @@ class ManipulationDataset(Dataset):
         self.normalize_points = normalize_points
         self.augment_data = augment_data
         self.split = split
-        
+        self.observation_mode = observation_mode
+
         # --- Setup ---
         self.logger = logging.getLogger(__name__)
         # REFACTOR: Use an encapsulated random number generator instead of global seeds.
@@ -80,45 +82,39 @@ class ManipulationDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         """Fetches a sample, applies processing, and returns it as a dictionary of tensors."""
         if self.is_regression:
-            # --- REGRESSION MODE ---
             demo_data = self.demonstrations[idx]
-            raw_points = demo_data['points']
-            
-            # FIX: Apply the same processing logic in both modes.
-            processed_points = self._process_single_point_cloud(raw_points)
-            
+            raw_obs = demo_data['obs']
+
+            if self.observation_mode == 'points':
+                processed_obs = self._process_single_point_cloud(raw_obs)
+            else:
+                processed_obs = raw_obs  # depth: no point processing
+
             sample = {
-                'point_cloud': torch.from_numpy(processed_points).float(),
+                'observation': torch.from_numpy(processed_obs).float(),
                 'action': torch.from_numpy(demo_data['path']).float(),
                 'demo_id': torch.tensor(demo_data['demo_id'], dtype=torch.long)
             }
             return sample
 
         else:
-            # --- SEQUENCE MODE ---
             demo_idx, start_t = self.valid_indices[idx]
             demo_data = self.demonstrations[demo_idx]
             end_t = start_t + self.sequence_length
 
-            point_clouds = [self._process_single_point_cloud(demo_data['points'][t]) for t in range(start_t, end_t)]
-            actions = [demo_data['path'][t] for t in range(start_t, end_t)]
-            
-            point_cloud_seq = np.stack(point_clouds, axis=0)
-            action_seq = np.stack(actions, axis=0)
-
-            # --- Previous/Next Action Logic ---
-            if start_t == 0:
-                previous_action = np.zeros(self.action_dim, dtype=np.float32)
+            if self.observation_mode == 'points':
+                obs_seq = [self._process_single_point_cloud(demo_data['obs'][t]) for t in range(start_t, end_t)]
             else:
-                previous_action = demo_data['path'][start_t - 1].astype(np.float32)
+                obs_seq = [demo_data['obs'][t] for t in range(start_t, end_t)]
 
-            if end_t < demo_data['path'].shape[0]:
-                next_action = demo_data['path'][end_t].astype(np.float32)
-            else:
-                next_action = demo_data['path'][-1].astype(np.float32)
+            obs_seq = np.stack(obs_seq, axis=0)
+            action_seq = np.stack([demo_data['path'][t] for t in range(start_t, end_t)], axis=0)
+
+            previous_action = demo_data['path'][start_t - 1].astype(np.float32) if start_t > 0 else np.zeros(self.action_dim, dtype=np.float32)
+            next_action = demo_data['path'][end_t].astype(np.float32) if end_t < demo_data['path'].shape[0] else demo_data['path'][-1].astype(np.float32)
 
             sample = {
-                'point_cloud': torch.from_numpy(point_cloud_seq).float(),
+                'observation': torch.from_numpy(obs_seq).float(),
                 'action': torch.from_numpy(action_seq).float(),
                 'previous_action': torch.from_numpy(previous_action).float(),
                 'next_action': torch.from_numpy(next_action).float(),
@@ -127,10 +123,11 @@ class ManipulationDataset(Dataset):
             }
 
             if self.sequence_length == 1:
-                sample['point_cloud'] = sample['point_cloud'].squeeze(0)
+                sample['observation'] = sample['observation'].squeeze(0)
                 sample['action'] = sample['action'].squeeze(0)
-            
+
             return sample
+
     
     def get_demo_info(self) -> Dict[str, any]:
         """Get information about the loaded demonstrations, adapted for the current mode."""
@@ -143,7 +140,6 @@ class ManipulationDataset(Dataset):
             'mode': 'regression' if self.is_regression else 'sequence'
         }
         
-        # BUG FIX: This method now works for both modes.
         if self.is_regression:
             info['total_samples'] = len(self.demonstrations)
         else:
@@ -157,7 +153,6 @@ class ManipulationDataset(Dataset):
                 })
         return info
 
-    # --- Private Helper Methods ---
 
     def _load_demonstrations(self):
         """Load demonstrations from the H5 file, branching logic based on mode."""
@@ -171,31 +166,52 @@ class ManipulationDataset(Dataset):
 
                 for demo_idx, demo_key in enumerate(demo_keys):
                     path_data = f[f'{demo_key}/path'][()]
-                    points_data = f[f'{demo_key}/points'][()]
-
-                    if self.is_regression:
-                        # Validation for a single (point_cloud, path_vector) sample
-                        if path_data.shape != (self.action_dim,): continue
-                        if points_data.shape != (self.num_points, 3): continue
+                    if self.observation_mode == 'depth':
+                        obs_data = f[f'{demo_key}/depth'][()]
+                    elif self.observation_mode == 'points':
+                        obs_data = f[f'{demo_key}/points'][()]
                     else:
-                        # Validation for sequential data
-                        if path_data.shape[0] != points_data.shape[0]: continue
-                        if path_data.shape[1] != self.action_dim: continue
-                        if points_data.shape[2] != 3 or points_data.shape[1] < self.num_points: continue
-                    
-                    demo_data = {'path': path_data.astype(np.float32), 'points': points_data.astype(np.float32), 'demo_id': demo_idx, 'demo_key': demo_key}
+                        raise ValueError(f"Unsupported observation mode: {self.observation_mode}")
+
+                    # --- REGRESSION MODE ---
+                    if self.is_regression:
+                        if path_data.shape != (self.action_dim,):
+                            continue
+                        if self.observation_mode == 'points' and obs_data.shape != (self.num_points, 3):
+                            continue
+                        if self.observation_mode == 'depth' and obs_data.ndim != 2:
+                            continue  # e.g. (H, W)
+
+                    # --- SEQUENCE MODE ---
+                    else:
+                        if path_data.ndim != 2 or path_data.shape[1] != self.action_dim:
+                            continue
+                        if self.observation_mode == 'points':
+                            if obs_data.shape[0] != path_data.shape[0]: continue
+                            if obs_data.shape[2] != 3 or obs_data.shape[1] < self.num_points: continue
+                        if self.observation_mode == 'depth':
+                            if obs_data.shape[0] != path_data.shape[0]: continue  # obs: (T, H, W)
+
+                    demo_data = {
+                        'path': path_data.astype(np.float32),
+                        'obs': obs_data.astype(np.float32),
+                        'demo_id': demo_idx,
+                        'demo_key': demo_key
+                    }
                     self.demonstrations.append(demo_data)
 
                     if not self.is_regression:
                         num_timesteps = path_data.shape[0]
                         for t in range(num_timesteps - self.sequence_length + 1):
                             self.valid_indices.append((demo_idx, t))
+
         except Exception as e:
             self.logger.error(f"Failed to load H5 file {self.h5_file_path}: {e}")
             raise
-            
+
         if not self.demonstrations:
             raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
+
 
     def _create_split(self, train_split: float):
         """Create train/validation split based on demonstration indices."""
@@ -275,7 +291,8 @@ def create_dataloaders(
     num_workers: int = 4,
     subsample_demos: Optional[int] = None,
     random_seed: int = 42,
-    is_regression: bool = False
+    is_regression: bool = False,
+    observation_mode: str = 'points'
 ) -> Tuple[DataLoader, DataLoader]:
     train_dataset = ManipulationDataset(
         h5_file_path=h5_file_path,
@@ -288,7 +305,8 @@ def create_dataloaders(
         train_split=train_split,
         split='train',
         random_seed=random_seed,
-        is_regression=is_regression
+        is_regression=is_regression,
+        observation_mode=observation_mode
     )
 
     val_dataset = ManipulationDataset(
@@ -302,7 +320,8 @@ def create_dataloaders(
         train_split=train_split,
         split='val',
         random_seed=random_seed,
-        is_regression=is_regression
+        is_regression=is_regression,
+        observation_mode=observation_mode
     )
 
     train_loader = DataLoader(
@@ -334,12 +353,13 @@ def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
         action_dim=data_cfg.action_dim,
         num_points=data_cfg.num_points,
         train_split=data_cfg.train_split,
-        normalize_points=data_cfg.normalize_points,
-        augment_data=data_cfg.augment_data,
+        normalize_points=data_cfg.get('normalize_points', True),
+        augment_data=data_cfg.get('augment_data', False),
         num_workers=data_cfg.num_workers,
         subsample_demos=data_cfg.get('subsample_demos', None),
         random_seed=data_cfg.random_seed,
-        is_regression=data_cfg.get('is_regression', False)
+        is_regression=data_cfg.get('is_regression', False),
+        observation_mode=cfg.get('observation_mode', 'points')
     )
 
 

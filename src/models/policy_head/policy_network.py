@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from models.perception.pointnet import PointNet
+from models.perception.depthimageencoder import DepthImageEncoder
 from models.policy_head.mlp_head import MLPHead, GRUHead
 import math
 import inspect
@@ -36,6 +37,7 @@ class MultiModalPolicy(nn.Module):
                  state_dim=0, action_dim=6, 
                  dropout_rate=0.3, fusion_method='concat',
                  time_encoding='none', time_embedding_dim=128, max_timesteps=64,
+                 observation_mode='points',
                  # --- New arguments for selecting and configuring the policy head ---
                  policy_head_type: str = 'mlp', 
                  mlp_hidden_dims: Optional[list] = None,
@@ -62,8 +64,16 @@ class MultiModalPolicy(nn.Module):
         self.time_encoding = time_encoding
         self.max_timesteps = max_timesteps
         self.policy_head_type = policy_head_type
-        
+        self.observation_mode = observation_mode
         # --- PointNet feature extractor ---
+        
+        if self.observation_mode == 'points':
+            self.obs_encoder = PointNet(num_points=num_points, feature_dim=feature_dim, dropout_rate=dropout_rate)
+        elif self.observation_mode == 'depth':
+            self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
+        else:
+            raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
+        
         self.pointnet = PointNet(num_points=num_points, feature_dim=feature_dim, dropout_rate=dropout_rate)
         
         # --- State encoder ---
@@ -102,51 +112,62 @@ class MultiModalPolicy(nn.Module):
         if encoding_type == 'linear': return nn.Linear(1, embedding_dim)
         raise ValueError(f"Unknown time_encoding method: {encoding_type}")
     
-    def forward(self, point_cloud: torch.Tensor, state: Optional[torch.Tensor] = None, 
+    def forward(self, observation: torch.Tensor, state: Optional[torch.Tensor] = None, 
                 time_steps: Optional[torch.Tensor] = None, 
                 hidden_state: Optional[torch.Tensor] = None) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass through the policy. Handles both single-step and sequence data.
 
         Args:
-            point_cloud: Point cloud tensor.
-                         - For sequences: (batch_size, seq_len, num_points, 3)
-                         - For single step: (batch_size, num_points, 3)
-            state: State tensor. (batch_size, seq_len, state_dim) or (batch_size, state_dim).
-            time_steps: Time steps tensor. (batch_size, seq_len) or (batch_size,).
-            hidden_state: (For GRU) The previous hidden state. (num_layers, batch_size, hidden_dim).
+            point_cloud: Either point cloud or depth image tensor depending on observation_mode.
+                - If points: shape (B, [S], N, 3)
+                - If depth: shape (B, [S], 1, H, W)
+            state: Optional robot state input.
+            time_steps: Optional time step indices (used if time_encoding is enabled).
+            hidden_state: Previous hidden state for GRU policies.
 
         Returns:
-            - For MLP: actions tensor of shape (batch_size * seq_len, action_dim).
-            - For GRU: tuple of (actions, new_hidden_state).
+            - For MLP: actions of shape (B * S, action_dim)
+            - For GRU: (actions, new_hidden_state)
         """
-        # --- 1. Reshape inputs for sequence processing ---
-        is_sequence = point_cloud.dim() == 4
+        # --- 1. Determine if input is a sequence ---
+        is_sequence = observation.dim() == 4 if self.observation_mode == 'points' else observation.dim() == 5   # look into
         if is_sequence:
-            batch_size, seq_len = point_cloud.shape[:2]
-            # Reshape from (B, S, ...) to (B*S, ...) for encoders
-            point_cloud = point_cloud.reshape(batch_size * seq_len, self.num_points, 3)
-            if state is not None: state = state.reshape(batch_size * seq_len, -1)
-            if time_steps is not None: time_steps = time_steps.reshape(batch_size * seq_len)
+            batch_size, seq_len = observation.shape[:2]
+            obs_input = observation.reshape(batch_size * seq_len, *observation.shape[2:])
+            if state is not None:
+                state = state.reshape(batch_size * seq_len, -1)
+            if time_steps is not None:
+                time_steps = time_steps.reshape(batch_size * seq_len)
         else:
-            batch_size = point_cloud.shape[0]
+            batch_size = observation.shape[0]
             seq_len = 1
+            obs_input = observation
 
-        # --- 2. Extract features from all modalities ---
-        pc_features = self.pointnet(point_cloud)
-        
-        features_list = []
+        # --- 2. Extract features based on modality ---
+        if self.observation_mode == 'points':
+            obs_features = self.obs_encoder(obs_input)  # shape: (B*S, feature_dim)
+        elif self.observation_mode == 'depth':
+            #obs_input = self.depth_resize(obs_input)
+            obs_input = obs_input.unsqueeze(1)
+            obs_features = self.obs_encoder(obs_input)
+        else:
+            raise ValueError(f"Unsupported observation mode: {self.observation_mode}")
+
+        features_list = [obs_features]
+
+        # --- 3. Encode state ---
         if state is not None and self.state_encoder is not None:
             state_features = self.state_encoder(state)
             if self.fusion_method == 'add':
-                pc_features = pc_features + state_features
-            else: # Concat
+                features_list[0] = features_list[0] + state_features
+            else:  # concat
                 features_list.append(state_features)
-        
-        features_list.insert(0, pc_features)
 
+        # --- 4. Encode time if enabled ---
         if self.time_encoder is not None:
-            if time_steps is None: raise ValueError("time_steps must be provided for time encoding")
+            if time_steps is None:
+                raise ValueError("time_steps must be provided for time encoding")
             if self.time_encoding == 'linear':
                 normalized_time = time_steps.float().unsqueeze(1) / self.max_timesteps
                 time_features = self.time_encoder(normalized_time)
@@ -154,20 +175,15 @@ class MultiModalPolicy(nn.Module):
                 time_features = self.time_encoder(time_steps.long())
             features_list.append(time_features)
 
-        # --- 3. Fuse features ---
-        # Fused features have shape (B*S, policy_input_dim)
-        fused_features = torch.cat(features_list, dim=1)
-        
-        # --- 4. Pass features to the appropriate policy head ---
+        # --- 5. Fuse all features ---
+        fused_features = torch.cat(features_list, dim=1)  # (B*S, D)
+
+        # --- 6. Policy head ---
         if self.policy_head_type == 'mlp':
-            # MLP directly processes the flattened batch of features
             return self.policy_head(fused_features)
 
         elif self.policy_head_type == 'gru':
-            # Reshape features for GRU: (B*S, D) -> (B, S, D)
             gru_input = fused_features.view(batch_size, seq_len, -1)
-            
-            # The GRU head handles both sequence and single-step inputs
             actions, new_hidden_state = self.policy_head(gru_input, hidden_state)
             return actions, new_hidden_state
 
@@ -263,6 +279,7 @@ def create_model(model_cfg):
         use_residual=model_cfg.get('use_residual', False),
         output_activation=model_cfg.get('output_activation', None),
         policy_head_type=model_cfg.get('policy_head_type', 'mlp'),
+        observation_mode=model_cfg.get('observation_mode'),
         # For multimodal policy
         state_dim=model_cfg.get('state_dim', 0),
         fusion_method=model_cfg.get('fusion_method', 'concat'),
@@ -273,6 +290,7 @@ def create_model(model_cfg):
         # for rnn
         gru_hidden_dim=model_cfg.get('gru_hidden_dim', 0),
         gru_num_layers=model_cfg.get('gru_num_layers', 0), 
+
     )
     return model
 

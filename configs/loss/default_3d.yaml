@@ -1,2 +1,1 @@
-loss:
-  name: MSELoss 
+name: MSELoss 

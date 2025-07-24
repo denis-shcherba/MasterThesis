@@ -214,7 +214,7 @@ def create_loss_function(loss_cfg_global):
     Raises:
         ValueError: If the loss configuration is invalid or the specified loss name is unknown.
     """
-    loss_name = loss_cfg_global.get("loss").get("name", None)
+    loss_name = loss_cfg_global.get("name", None)
 
     if loss_name == 'PoseLoss9D':
         # PoseLoss9D expects the full configuration, as it processes nested configs.

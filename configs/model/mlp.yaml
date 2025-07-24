@@ -20,4 +20,5 @@ state_dim: 3            # Same as action_dim for now (maybe change/omit)
 
 time_encoding: positional
 max_timesteps: 64
+observation_mode: ${observation_mode}  # inherit from global config
 # time_embedding_dim: 128

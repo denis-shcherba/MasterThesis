@@ -1,9 +1,9 @@
 defaults:
   - _self_  
-  - model: mlp
+  - model: mlp_depth
   - loss: default_3d
   - optimizer: adam
-  - data: mlp
+  - data: mlp_depth
   - inference: mlp
 train:
   batch_size: 32
@@ -11,6 +11,7 @@ train:
   device: cuda
 
 # Global settings
+observation_mode: 'depth'  
 seed: 42
 experiment_name: "SimpleSingleStepBC"
 output_dir: ${hydra:runtime.output_dir}

@@ -8,16 +8,14 @@ num_workers: 4
 # Sequence settings
 sequence_length: 1  # Number of consecutive timesteps to use as input
 action_dim: 3       # Dimension of action space 
-num_points: 1000    # Number of points per point cloud
+num_points: 3000    # Number of points per point cloud
 
 # Dataset split
 train_split: 0.8    # Fraction of data to use for training
 
 # Data processing options
-normalize_points: true  # Whether to normalize point clouds to unit sphere
-augment_data: false      # Whether to apply data augmentation for training
+
 is_regression: false  # Whether the task is regression (true) or classification (false)
-observation_mode: 'point'
 
 # Optional parameters
 subsample_demos: null   # If specified, randomly subsample this many demos
