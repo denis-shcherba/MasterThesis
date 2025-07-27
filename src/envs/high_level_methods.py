@@ -270,11 +270,14 @@ class RobotEnviroment:
     def render(self, n_samples=4096):
         if self.sim:
             sim = Simulator(self.C, verbose=self.verbose)
-            if self.observation_mode == "POINTCLOUD":
+            if self.observation_mode.upper() == "POINTCLOUD" or self.observation_mode.upper() == "POINTS":
                 points = sim.getPoints(n_samples, vis=False)
                 return points
-            elif self.observation_mode == "RGB":
-                pass    
+            elif self.observation_mode.upper() == "RGB":
+                pass   
+            if self.observation_mode.upper() == "DEPTH":
+                depth = sim.getDepth()
+                return depth
         
         else:
             #TODO? maybe, maybe not

@@ -311,10 +311,10 @@ class ShelfPullDataCollector:
         print("\nAll samples processed.")
 
 
-    def render(self, n_samples=4096):
-        roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper_name)
-        points = roboenv.render(n_samples)
-        return points
+    def render(self, observation_mode="DEPTH", n_samples=4096):
+        roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper_name, observation_mode=observation_mode)
+        obs = roboenv.render(n_samples)
+        return obs
 
     def close(self):
         """Closes any open resources, like the HDF5 file."""

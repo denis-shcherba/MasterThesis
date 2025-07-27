@@ -132,6 +132,7 @@ def eval_policy(cfg: DictConfig) -> None:
         cfg: Hydra configuration object.
     """
 
+
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
     # log.info(f"Full config: {OmegaConf.to_yaml(cfg)}") # For debugging
@@ -144,7 +145,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
     collector = ShelfPullDataCollector(**cfg.env)
     collector.spawn_books_scene()
-    collector.C.view(True)
+    #collector.C.view(True)
     collector.C.view(False) 
     q0 = collector.C.getJointState()
 
@@ -197,7 +198,10 @@ def eval_policy(cfg: DictConfig) -> None:
 
     for i in range (64):
         # --- 4. Prepare Input Data for Inference ---
-        pc = collector.render(cfg.get("data", {}).get("num_points", 4096))
+        pc = collector.render(observation_mode="POINTCLOUD", n_samples=cfg.get("data", {}).get("num_points", 4096))
+        depth_ = collector.render(observation_mode=cfg.get("observation_mode"), n_samples=cfg.get("data", {}).get("num_points", 0))
+        depth = torch.from_numpy(depth_).float().to("cuda")
+        depth = depth.unsqueeze(0)
         robot_state = None
         #if cfg.get() 
         if cfg["model"]["action_dim"] == 9:
@@ -227,17 +231,17 @@ def eval_policy(cfg: DictConfig) -> None:
                             hidden_state=hidden_state
                         )
                     elif cfg.get("model").get("policy_head_type") == "mlp":
-                        output = model(input_for_model["point_cloud"], input_for_model["state"], torch.tensor(i).reshape(1))
+                        output = model(depth, input_for_model["state"], torch.tensor(i).reshape(1))
                 elif policy_type == "regression":
                     output = model(input_for_model["point_cloud"])
 
             except Exception as e:
                 log.error(f"Error during model forward pass: {e}")
-                log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
-                log.error(f"Input keys: {input_for_model.keys()}")
-                for k, v in input_for_model.items():
-                    if isinstance(v, torch.Tensor):
-                        log.error(f"  {k}: shape {v.shape}, dtype {v.dtype}, device {v.device}")
+                # log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
+                # log.error(f"Input keys: {input_for_model.keys()}")
+                # for k, v in input_for_model.items():
+                #     if isinstance(v, torch.Tensor):
+                #         log.error(f"  {k}: shape {v.shape}, dtype {v.dtype}, device {v.device}")
                 raise
 
         log.info(f"Inference output raw: {output}")

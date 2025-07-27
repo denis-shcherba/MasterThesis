@@ -1,3 +1,5 @@
+#TODO fix prints for depth
+
 import hydra
 from omegaconf import DictConfig
 import logging

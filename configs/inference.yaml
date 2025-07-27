@@ -1,14 +1,10 @@
 defaults:
   - _self_  
-  - model: regression
-  - data: regression
-  - inference: regression
-  - env: default_regression
-train:
-  batch_size: 32
-  epochs: 100
-  device: cuda
+  - model: mlp_depth
+  - data: mlp_depth
+  - inference: mlp_depth
+  - env: default_3d
 
 experiment_name: "SimpleSingleStepBC Inference"
-
+observation_mode: 'depth'
 output_subdir: null
