@@ -7,7 +7,6 @@ import os # For path joining
 from envs.create_env import ShelfPullDataCollector 
 from models.policy_head.policy_network import create_model # From your project
 from data_handling.processing import normalize_point_cloud_to_unit_sphere_torch, pose_9d_to_7d, pose_7d_to_9d
-import time 
 
 log = logging.getLogger(__name__)
 
@@ -78,30 +77,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
                     "State input from 'robot_state' (if provided) will be ignored by PointCloudPolicy.")
 
 
-    # --- 3. The DUMMY data generation block (reconsider its use here) ---
-    # For actual inference, this block is problematic as it overwrites real data.
-    # It's better to ensure the above steps correctly prepare all inputs.
-    # If you want to keep it for some debugging or specific fallback, make it conditional and non-destructive.
-    # For now, let's assume it should NOT run if we are processing real data.
-
-    # Example: Only run if a special debug flag is set and no real data was processed
-    # create_dummy_if_needed = cfg.get("debug_create_dummy_input", False)
-    # if create_dummy_if_needed and not processed_input: # or some other condition
-    if hasattr(cfg.model, 'input_features_eval'):
-        log.warning("`cfg.model.input_features_eval` is defined. "
-                    "If this block runs, IT MAY OVERWRITE your REAL processed data with DUMMY data. "
-                    "This is generally UNDESIRABLE for actual inference.")
-        # If you absolutely need this for some reason, ensure it only fills MISSING keys,
-        # or is used in a completely separate mode.
-        # for key, shape_without_batch in cfg.model.input_features_eval.items():
-        #     if key not in processed_input: # Only if missing
-        #         batch_shape = [1] + list(shape_without_batch)
-        #         log.info(f"Creating DUMMY input for missing key '{key}'.")
-        #         processed_input[key] = torch.randn(batch_shape, device=device)
-        #     else:
-        #         log.info(f"Key '{key}' from input_features_eval already processed from real data. Skipping dummy generation.")
-
-    # --- 4. Final Checks & Logging ---
+    # --- 3. Final Checks & Logging ---
     # Verify that all necessary inputs for the selected model type are present.
     required_keys = set(['point_cloud'])
     if model_cfg.type == 'multimodal' and model_cfg.get('state_dim', 0) > 0:
@@ -200,7 +176,7 @@ def eval_policy(cfg: DictConfig) -> None:
         # --- 4. Prepare Input Data for Inference ---
         pc = collector.render(observation_mode="POINTCLOUD", n_samples=cfg.get("data", {}).get("num_points", 4096))
         depth_ = collector.render(observation_mode=cfg.get("observation_mode"), n_samples=cfg.get("data", {}).get("num_points", 0))
-        depth = torch.from_numpy(depth_).float().to("cuda")
+        depth = torch.from_numpy(depth_).float().to(default_device_str)
         depth = depth.unsqueeze(0)
         robot_state = None
         #if cfg.get() 

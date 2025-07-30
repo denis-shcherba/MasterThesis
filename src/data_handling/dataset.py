@@ -351,7 +351,7 @@ def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
         batch_size=data_cfg.batch_size,
         sequence_length=data_cfg.sequence_length,
         action_dim=data_cfg.action_dim,
-        num_points=data_cfg.num_points,
+        num_points=data_cfg.get('num_points', 0),
         train_split=data_cfg.train_split,
         normalize_points=data_cfg.get('normalize_points', True),
         augment_data=data_cfg.get('augment_data', False),

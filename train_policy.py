@@ -78,27 +78,33 @@ def train_policy(cfg: DictConfig) -> None:
 
         # Dynamically check the type of policy and count relevant parameters
         if isinstance(model, MultiModalPolicy):
-            # Original MultiModalPolicy specific components
-            if hasattr(model, 'policy_head') and model.policy_head is not None:
-                policy_specific_params = sum(p.numel() for p in model.policy_head.parameters() if p.requires_grad)
-                log.info(f"  - Policy Head (MLP/GRU) parameters: {policy_specific_params:,} ({policy_specific_params/total_params*100:.2f}%)")
-                component_params_sum += policy_specific_params
-            
+            # Observation encoder (PointNet or DepthImageEncoder)
+            if hasattr(model, 'obs_encoder') and model.obs_encoder is not None:
+                obs_encoder_params = sum(p.numel() for p in model.obs_encoder.parameters() if p.requires_grad)
+                log.info(f"  - Obs Encoder ({type(model.obs_encoder).__name__}) parameters: {obs_encoder_params:,} ({obs_encoder_params/total_params*100:.2f}%)")
+                component_params_sum += obs_encoder_params
+
+            # State encoder
             if hasattr(model, 'state_encoder') and model.state_encoder is not None:
                 state_encoder_params = sum(p.numel() for p in model.state_encoder.parameters() if p.requires_grad)
                 log.info(f"  - State Encoder parameters: {state_encoder_params:,} ({state_encoder_params/total_params*100:.2f}%)")
                 component_params_sum += state_encoder_params
-            
+
+            # Time encoder
             if hasattr(model, 'time_encoder') and model.time_encoder is not None:
-                # Assuming time_encoder can have parameters, if it's an nn.Module
-                # Check if it's a learnable module like nn.Embedding or nn.Linear
                 if isinstance(model.time_encoder, (nn.Embedding, nn.Linear)):
                     time_encoder_params = sum(p.numel() for p in model.time_encoder.parameters() if p.requires_grad)
                     log.info(f"  - Time Encoder parameters: {time_encoder_params:,} ({time_encoder_params/total_params*100:.2f}%)")
                     component_params_sum += time_encoder_params
-                # If it's PositionalEncoding, it usually doesn't have trainable parameters
                 elif isinstance(model.time_encoder, PositionalEncoding):
-                     log.info("  - Time Encoder (PositionalEncoding) has no trainable parameters.")
+                    log.info("  - Time Encoder (PositionalEncoding) has no trainable parameters.")
+
+            # Policy head
+            if hasattr(model, 'policy_head') and model.policy_head is not None:
+                policy_specific_params = sum(p.numel() for p in model.policy_head.parameters() if p.requires_grad)
+                log.info(f"  - Policy Head ({type(model.policy_head).__name__}) parameters: {policy_specific_params:,} ({policy_specific_params/total_params*100:.2f}%)")
+                component_params_sum += policy_specific_params
+
 
         elif isinstance(model, SimplePCToPosRegressor):
             # SimplifiedPolicy specific components

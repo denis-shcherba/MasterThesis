@@ -36,6 +36,7 @@ class ShelfPullDataCollector:
         self.gripper_name = "l_gripper"
         self.palm_name = "l_palm"
 
+
         # Configure robot based on mode
         if self.robot_mode == "normal":
             self.C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
@@ -61,6 +62,10 @@ class ShelfPullDataCollector:
 
         else:
             raise ValueError(f"Unknown ROBOT_MODE: {self.robot_mode}")
+
+        camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
+        self.C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
+        self.C.view_setCamera(self.C.getFrame("worldCamera"))
 
         # Gripper friction
         finger1 = self.C.getFrame(self.prefix + "finger1")
@@ -133,7 +138,7 @@ class ShelfPullDataCollector:
                 .setPosition(book_center_position) \
                 .setQuaternion(q_orientation.asArr()) \
                 .setShape(ry.ST.ssBox, size=[b_size_x, b_size_y, b_size_z, 0.005]) \
-                .setColor(np.random.rand(3)) \
+                .setColor([1,0,0]) \
                 .setContact(1) \
                 .setMass(.1)
             spawned_book_frames.append(frame_name)

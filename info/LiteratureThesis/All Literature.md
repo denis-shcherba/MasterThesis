@@ -40,3 +40,14 @@ pi0(.5)
 ACT
 DiffPolicy
 SmolVLA
+
+
+## IMitating TAMP:
+Imitating Task and Motion Planning with
+Visuomotor Transformers: https://arxiv.org/pdf/2305.16309 
+
+Points2Plans: From Point Clouds to Long-Horizon Plans
+with Composable Relational Dynamics https://arxiv.org/pdf/2408.14769
+
+SPIN: distilling Skill-RRT for long-horizon
+prehensile and non-prehensile manipulation? https://arxiv.org/pdf/2502.18015

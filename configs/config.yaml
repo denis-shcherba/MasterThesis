@@ -4,7 +4,7 @@ defaults:
   - loss: default_3d
   - optimizer: adam
   - data: mlp_depth
-  - inference: mlp
+  - inference: mlp_depth
 train:
   batch_size: 32
   epochs: 100
