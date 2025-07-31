@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: mlp_depth
+  - model: recurrent_depth
   - loss: default_3d
   - optimizer: adam
   - data: depth

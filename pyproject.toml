@@ -22,6 +22,7 @@ dependencies = [
     "torch",
     "numpy",
     "torchvision",
+    "opencv-python",
     "hydra-core",
     "h5py",
     "matplotlib",
@@ -30,7 +31,8 @@ dependencies = [
     "lxml",
     "trimesh",
     "wandb",
-    "tqdm"
+    "tqdm",
+    "gymnasium",
 ]
 
 [project.urls]

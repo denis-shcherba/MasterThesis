@@ -2,8 +2,8 @@
 h5_file_path: demos/depth1000tries.h5
 
 # Data loading parameters
-batch_size: 32
-num_workers: 4
+batch_size: ${train.batch_size}
+num_workers: ${train.batch_size}
 
 # Sequence settings
 sequence_length: 1  # Number of consecutive timesteps to use as input
