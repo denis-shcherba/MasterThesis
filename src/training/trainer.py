@@ -130,7 +130,7 @@ class Trainer:
                 state = batch['previous_action'].to(self.device)
                 timestep = batch["timestep"].to(self.device) 
                 if self.model.policy_head_type == "gru":
-                    output = self.model(obs, state, timestep)
+                    output = self.model(obs, state)
                 elif self.model.policy_head_type == "mlp":
                     output = self.model(obs, state, timestep)
                 

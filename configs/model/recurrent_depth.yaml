@@ -15,7 +15,5 @@ state_dim: 3            # Same as action_dim for now (maybe change/omit)
 fusion_method: concat  # Method to fuse modalities (concat, add) 
 
 #time encodings
-time_encoding: positional
 max_timesteps: 64
-time_embedding_dim: 128
 observation_mode: ${observation_mode}  # inherit from global config
