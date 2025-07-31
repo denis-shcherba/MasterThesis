@@ -1,12 +1,13 @@
 defaults:
   - _self_  
-  - model: recurrent_depth
+  - model: mlp_depth
   - loss: default_3d
   - optimizer: adam
   - data: depth
   - inference: mlp_depth
 train:
-  batch_size: 32
+  batch_size: 64
+  num_workers: 8
   epochs: 100
   device: cuda
 

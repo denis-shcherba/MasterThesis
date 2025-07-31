@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "torch",
     "numpy",
+    "torchvision",
     "hydra-core",
     "h5py",
     "matplotlib",
