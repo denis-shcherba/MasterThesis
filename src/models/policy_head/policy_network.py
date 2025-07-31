@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from models.perception.pointnet import PointNet
 from models.perception.depthimageencoder import DepthImageEncoder
-from models.policy_head.mlp_head import MLPHead, GRUHead
+from models.policy_head.mlp_head import MLPHead, GRUHead, ResidualMLPHead
 import math
 import inspect
 from typing import Optional, Tuple
@@ -42,7 +42,9 @@ class MultiModalPolicy(nn.Module):
                  policy_head_type: str = 'mlp', 
                  mlp_hidden_dims: Optional[list] = None,
                  gru_hidden_dim: int = 256, 
-                 gru_num_layers: int = 2):
+                 gru_num_layers: int = 2, 
+                 use_residual: bool = False,
+                 ):
         """
         Initialize MultiModal Policy network.
         
@@ -73,9 +75,7 @@ class MultiModalPolicy(nn.Module):
             self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
         else:
             raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
-        
-        self.pointnet = PointNet(num_points=num_points, feature_dim=feature_dim, dropout_rate=dropout_rate)
-        
+                
         # --- State encoder ---
         self.state_encoder = nn.Linear(state_dim, feature_dim) if state_dim > 0 else None
         
@@ -91,17 +91,26 @@ class MultiModalPolicy(nn.Module):
         
         # --- Create the selected policy head ---
         if policy_head_type == 'mlp':
+
             if mlp_hidden_dims is None: mlp_hidden_dims = [256, 128]
-            self.policy_head = MLPHead(
-                input_dim=policy_input_dim, output_dim=action_dim, 
-                hidden_dims=mlp_hidden_dims, dropout_rate=dropout_rate
-            )
+            if use_residual:
+                self.policy_head = ResidualMLPHead(
+                    input_dim=policy_input_dim, output_dim=action_dim,
+                    hidden_dims=mlp_hidden_dims, dropout_rate=dropout_rate
+                )
+            else:
+                self.policy_head = MLPHead(
+                    input_dim=policy_input_dim, output_dim=action_dim,
+                    hidden_dims=mlp_hidden_dims, dropout_rate=dropout_rate
+                )
         elif policy_head_type == 'gru':
             self.policy_head = GRUHead(
                 input_dim=policy_input_dim, output_dim=action_dim,
                 hidden_dim=gru_hidden_dim, num_layers=gru_num_layers,
                 dropout_rate=dropout_rate
             )
+        
+            
         else:
             raise ValueError(f"Unknown policy_head_type: {policy_head_type}")
 

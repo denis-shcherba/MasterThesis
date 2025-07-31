@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: recurrent_depth
+  - model: res_mlp_depth
   - loss: default_3d
   - optimizer: adam
   - data: depth
@@ -8,7 +8,7 @@ defaults:
 train:
   batch_size: 64
   num_workers: 8
-  epochs: 100
+  epochs: 50
   device: cuda
 
 # Global settings
@@ -21,4 +21,4 @@ output_dir: ${hydra:runtime.output_dir}
 is_regression: false
 
 wandb:
-  enabled: false
+  enabled: true
