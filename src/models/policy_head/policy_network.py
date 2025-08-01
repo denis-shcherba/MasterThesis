@@ -140,12 +140,12 @@ class MultiModalPolicy(nn.Module):
             - For GRU: (actions, new_hidden_state)
         """
         # --- 1. Determine if input is a sequence ---
-        is_sequence = observation.dim() == 4 if self.observation_mode == 'points' else observation.dim() == 5   # look into
+        is_sequence = observation.dim() == 3 if self.observation_mode == 'points' else observation.dim() == 4   # look into
         if is_sequence:
             batch_size, seq_len = observation.shape[:2]
             obs_input = observation.reshape(batch_size * seq_len, *observation.shape[2:])
-            if state is not None:
-                state = state.reshape(batch_size * seq_len, -1)
+            # if state is not None:
+            #     state = state.reshape(batch_size * seq_len, -1)
             if time_steps is not None:
                 time_steps = time_steps.reshape(batch_size * seq_len)
         else:

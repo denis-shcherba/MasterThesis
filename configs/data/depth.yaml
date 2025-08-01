@@ -6,7 +6,7 @@ batch_size: ${train.batch_size}  # Batch size for training
 num_workers: ${train.num_workers}  
 
 # Sequence settings
-sequence_length: 1  # Number of consecutive timesteps to use as input
+sequence_length: 10  # Number of consecutive timesteps to use as input
 action_dim: 3       # Dimension of action space 
 
 # Dataset split
