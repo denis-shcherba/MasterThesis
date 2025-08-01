@@ -118,13 +118,14 @@ class Trainer:
         pbar = tqdm(train_loader, desc="Training")
         for batch in pbar:
             # Move batch to device
-            obs = batch["observation"].to(self.device)
+            obs = batch["observation"].to(self.device)  # shape: (B, T, D) if T > 1 e.g. (128, 10, 96, 96), else (B, D) e.g. (128, 96, 96)
+            actions = batch['action'].to(self.device)  # shape: (B, T, A) if T > 1 e.g. (128, 10, 3), else (B, A) e.g. (128, 3)
 
-            actions = batch['action'].to(self.device)
-            
             # Forward pass
             self.optimizer.zero_grad()
             
+            hidden_state = None
+
             # Handle different policy types
             if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
                 state = batch['previous_action'].to(self.device)
@@ -202,6 +203,7 @@ class Trainer:
                 
                 if isinstance(output, tuple):
                     pred_actions, _ = output
+                    pred_actions = pred_actions.squeeze(1) 
                 else:
                     pred_actions = output
 

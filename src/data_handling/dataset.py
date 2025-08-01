@@ -111,13 +111,11 @@ class ManipulationDataset(Dataset):
             action_seq = np.stack([demo_data['path'][t] for t in range(start_t, end_t)], axis=0)
 
             previous_action = demo_data['path'][start_t - 1].astype(np.float32) if start_t > 0 else np.zeros(self.action_dim, dtype=np.float32)
-            next_action = demo_data['path'][end_t].astype(np.float32) if end_t < demo_data['path'].shape[0] else demo_data['path'][-1].astype(np.float32)
 
             sample = {
                 'observation': torch.from_numpy(obs_seq).float(),
                 'action': torch.from_numpy(action_seq).float(),
                 'previous_action': torch.from_numpy(previous_action).float(),
-                'next_action': torch.from_numpy(next_action).float(),
                 'demo_id': torch.tensor(demo_idx, dtype=torch.long),
                 'timestep': torch.tensor(start_t, dtype=torch.long)
             }

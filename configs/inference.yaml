@@ -1,8 +1,8 @@
 defaults:
   - _self_  
-  - model: mlp_depth
+  - model: recurrent_depth
   - data: depth
-  - inference: mlp_depth
+  - inference: gru_depth
   - env: default_3d
 
 experiment_name: "SimpleSingleStepBC Inference"

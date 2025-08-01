@@ -203,7 +203,6 @@ def eval_policy(cfg: DictConfig) -> None:
                         output, hidden_state = model(
                             input_for_model["point_cloud"], 
                             input_for_model["state"], 
-                            torch.tensor(i).reshape(1),
                             hidden_state=hidden_state
                         )
                     elif cfg.get("model").get("policy_head_type") == "mlp":

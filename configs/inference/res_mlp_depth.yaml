@@ -1,1 +1,1 @@
-checkpoint_path: outputs/final_outputs/depth_mlp_res.pth
+checkpoint_path: outputs/final_outputs/mlp_depth_res.pth
