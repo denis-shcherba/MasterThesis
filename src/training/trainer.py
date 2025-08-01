@@ -130,9 +130,9 @@ class Trainer:
                 state = batch['previous_action'].to(self.device)
                 timestep = batch["timestep"].to(self.device) 
                 if self.model.policy_head_type == "gru":
-                    output = self.model(obs, state)
+                    output = self.model(obs, state=state, hidden_state=None)
                 elif self.model.policy_head_type == "mlp":
-                    output = self.model(obs, state, timestep)
+                    output = self.model(obs, state=state, time_steps=timestep)
                 
             else:
                 output = self.model(obs)
@@ -151,8 +151,8 @@ class Trainer:
             loss.backward()
             
             # Gradient clipping if specified
-            if self.cfg.get('grad_clip', 0) > 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip)
+            if self.cfg.get('train').get('grad_clip') > 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.get('train').get('grad_clip'))
             
             self.optimizer.step()
             
@@ -190,9 +190,13 @@ class Trainer:
 
 
                 if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
-                    timestep = batch["timestep"].to(self.device) 
                     state = batch['previous_action'].to(self.device)
-                    output = self.model(obs, state, timestep)
+                    
+                    if self.model.policy_head_type == "gru":
+                        output = self.model(obs, state=state, hidden_state=None)
+                    elif self.model.policy_head_type == "mlp":
+                        timestep = batch["timestep"].to(self.device) 
+                        output = self.model(obs, state, time_steps=timestep)
                 else:
                     output = self.model(obs)
                 
