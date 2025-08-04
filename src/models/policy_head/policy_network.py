@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from models.perception.pointnet import PointNet
 from models.perception.depthimageencoder import DepthImageEncoder
-from models.policy_head.mlp_head import MLPHead, GRUHead, ResidualMLPHead
+from models.policy_head.policy_head import MLPHead, GRUHead, ResidualMLPHead, TransformerHead
 import math
 import inspect
 from typing import Optional, Tuple
@@ -110,7 +110,18 @@ class MultiModalPolicy(nn.Module):
                 dropout_rate=dropout_rate
             )
         
-            
+        elif policy_head_type == 'transformer':
+            self.policy_head = TransformerHead(
+                input_dim=policy_input_dim,
+                output_dim=action_dim,
+                context_length=max_timesteps,  # or context_length if dynamic
+                embed_dim=256,
+                num_layers=4,
+                num_heads=4,
+                dropout=dropout_rate,
+                output_activation='tanh',
+            )
+
         else:
             raise ValueError(f"Unknown policy_head_type: {policy_head_type}")
 
@@ -195,6 +206,14 @@ class MultiModalPolicy(nn.Module):
             gru_input = fused_features.view(batch_size, seq_len, -1)
             actions, new_hidden_state = self.policy_head(gru_input, hidden_state)
             return actions, new_hidden_state
+        
+        if self.policy_head_type == 'transformer':
+    # reshape into (B, T, D) for transformer
+    seq_input = fused_features.view(batch_size, seq_len, -1)
+    action_seq = self.policy_head(seq_input)  # (B, T, action_dim)
+    
+    # return just last action for now (like MLP)
+    return action_seq[:, -1, :]
 
 class SimplePCToPosRegressor(nn.Module):
     """

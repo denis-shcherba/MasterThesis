@@ -363,3 +363,59 @@ class ResidualBlock(nn.Module):
         out = self.activation(out)
         
         return out
+    
+
+class TransformerHead(nn.Module):
+    def __init__(self, input_dim, output_dim, context_length, embed_dim=128, 
+                 num_layers=4, num_heads=4, dropout=0.1, output_activation='tanh'):
+        """
+        Transformer-based policy head.
+
+        Args:
+            input_dim: Dim of each input vector (e.g. obs dim)
+            output_dim: Dim of each output vector (e.g. action dim)
+            context_length: Number of timesteps in the input sequence
+            embed_dim: Dim of internal transformer embeddings
+            num_layers: Number of transformer blocks
+            num_heads: Number of attention heads
+            dropout: Dropout rate
+            output_activation: Activation function on output ('tanh', 'sigmoid', or None)
+        """
+        super().__init__()
+        self.input_proj = nn.Linear(input_dim, embed_dim)
+        self.pos_emb = nn.Parameter(torch.randn(1, context_length, embed_dim))  # learnable positional encoding
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=num_heads,
+            dim_feedforward=4*embed_dim,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        self.output_proj = nn.Linear(embed_dim, output_dim)
+        self.output_activation = self._get_activation(output_activation)
+
+    def _get_activation(self, name):
+        if name is None:
+            return nn.Identity()
+        elif name == 'tanh':
+            return nn.Tanh()
+        elif name == 'sigmoid':
+            return nn.Sigmoid()
+        else:
+            raise ValueError(f"Unsupported activation: {name}")
+
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor of shape (batch_size, context_length, input_dim)
+        Returns:
+            Tensor of shape (batch_size, context_length, output_dim)
+        """
+        x = self.input_proj(x) + self.pos_emb  # add positional encoding
+        x = self.transformer(x)
+        x = self.output_proj(x)
+        return self.output_activation(x)
