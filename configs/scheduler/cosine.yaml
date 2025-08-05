@@ -1,0 +1,4 @@
+use: true
+type: cosine
+T_max: 100     # or your total epochs
+eta_min: 1e-6

@@ -5,6 +5,7 @@ defaults:
   - optimizer: adam
   - data: depth
   - inference: mlp_depth
+  - scheduler: cosine
 train:
   batch_size: 128
   num_workers: 8
