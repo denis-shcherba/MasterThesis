@@ -80,7 +80,8 @@ class ManipulationDataset(Dataset):
         return 0
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """Fetches a sample, applies processing, and returns it as a dictionary of tensors."""
+        """Fetches a sample consisting of a sequence of (obs, action) pairs and a target action."""
+
         if self.is_regression:
             demo_data = self.demonstrations[idx]
             raw_obs = demo_data['obs']
@@ -97,34 +98,36 @@ class ManipulationDataset(Dataset):
             }
             return sample
 
+        # Sequential mode
+        demo_idx, t = self.valid_indices[idx]
+        demo_data = self.demonstrations[demo_idx]
+
+        start_t = t
+        end_t = t + self.sequence_length  # exclusive
+
+        # --- Get observation sequence ---
+        if self.observation_mode == 'points':
+            obs_seq = [self._process_single_point_cloud(demo_data['obs'][i]) for i in range(start_t, end_t)]
         else:
-            demo_idx, start_t = self.valid_indices[idx]
-            demo_data = self.demonstrations[demo_idx]
-            end_t = start_t + self.sequence_length
+            obs_seq = [demo_data['obs'][i] for i in range(start_t, end_t)]
 
-            if self.observation_mode == 'points':
-                obs_seq = [self._process_single_point_cloud(demo_data['obs'][t]) for t in range(start_t, end_t)]
-            else:
-                obs_seq = [demo_data['obs'][t] for t in range(start_t, end_t)]
+        obs_seq = np.stack(obs_seq, axis=0)  # (sequence_length, ...)
 
-            obs_seq = np.stack(obs_seq, axis=0)
-            action_seq = np.stack([demo_data['path'][t] for t in range(start_t, end_t)], axis=0)
+        # --- Get action sequence (inputs) and next action (target) ---
+        action_seq = np.stack([demo_data['path'][i] for i in range(start_t, end_t)], axis=0)  # (sequence_length, action_dim)
+        next_action = demo_data['path'][end_t]  # shape: (action_dim,)
 
-            previous_action = demo_data['path'][start_t - 1].astype(np.float32) if start_t > 0 else np.zeros(self.action_dim, dtype=np.float32)
+        timestep_seq = np.arange(start_t, end_t, dtype=np.int64)
 
-            sample = {
-                'observation': torch.from_numpy(obs_seq).float(),
-                'action': torch.from_numpy(action_seq).float(),
-                'previous_action': torch.from_numpy(previous_action).float(),
-                'demo_id': torch.tensor(demo_idx, dtype=torch.long),
-                'timestep': torch.tensor(start_t, dtype=torch.long)
-            }
+        sample = {
+            'observation': torch.from_numpy(obs_seq).float(),
+            'previous_actions': torch.from_numpy(action_seq).float(),  # input to policy
+            'action': torch.from_numpy(next_action).float(),           # target to predict
+            'timestep': torch.from_numpy(timestep_seq).long(),
+            'demo_id': torch.tensor(demo_idx, dtype=torch.long)
+        }
 
-            if self.sequence_length == 1:
-                sample['observation'] = sample['observation'].squeeze(0)
-                sample['action'] = sample['action'].squeeze(0)
-
-            return sample
+        return sample
 
     
     def get_demo_info(self) -> Dict[str, any]:
@@ -200,8 +203,9 @@ class ManipulationDataset(Dataset):
 
                     if not self.is_regression:
                         num_timesteps = path_data.shape[0]
-                        for t in range(num_timesteps - self.sequence_length + 1):
+                        for t in range(num_timesteps - self.sequence_length):
                             self.valid_indices.append((demo_idx, t))
+
 
         except Exception as e:
             self.logger.error(f"Failed to load H5 file {self.h5_file_path}: {e}")

@@ -6,8 +6,6 @@ floatZ (floatY){ joint:transZ, limits:[0 3], mass:.01, q: 1 }
 floatBall (floatZ){ joint:quatBall, limits:[-1 -1 -1 -1 1 1 1 1], mass:.01 }
 
 Include: <../panda/panda_gripper.g>
-#Include: </home/denis/miniconda3/envs/thesis/lib/python3.10/site-packages/robotic/rai-robotModels/panda>
-
 
 gripper_base(floatBall): { Q:"t(0 0 .1035) d(180 1 0 0) d(-90 0 0 1)", shape: marker, size: [.03] }
 Edit panda_hand(gripper_base): {}
@@ -29,8 +27,10 @@ dotB(panda_finger_joint2){ Q:[0, 0, .0451], shape:sphere, size:[.01], color:[1 0
 
 Edit panda_finger_joint1: { q: .04 }
 
-camera(gripper): {
- Q: [0, 0, -.05],
+cameraWrist(gripper): {
+ Q: "d(180 0 1 0) t(0 -0.05 -.05)",
  shape: camera, size: [.1],
- focalLength: 0.895, width: 640, height: 360, zRange: [.01, 1]
+ focalLength: 0.895, width: 640, height: 360, zRange: [.01, 10]
 }
+
+

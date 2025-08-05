@@ -1,0 +1,23 @@
+# Base policy configuration
+type: multimodal         # Options: pointcloud, multimodal
+
+action_dim: 3            # Dimension of action space (SE3 9D representation)
+dropout_rate: 0.2        # Dropout rate for regularization
+use_residual: false      # Whether to use residual connections in MLP
+output_activation: null  
+policy_head_type: transformer
+
+# Multimodal policy specific settings
+state_dim: 3            # Same as action_dim for now (maybe change/omit)
+fusion_method: concat  # Method to fuse modalities (concat, add, concat_project) 
+
+time_encoding: positional
+
+max_timesteps: 64
+observation_mode: ${observation_mode}  # inherit from global config
+
+# Transformer settings
+context_length: 10 
+embed_dim: 256
+num_layers: 4
+num_heads: 4

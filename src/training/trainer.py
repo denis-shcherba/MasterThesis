@@ -104,56 +104,122 @@ class Trainer:
     def train_epoch(self, train_loader):
         """
         Train for one epoch.
-        
         Args:
             train_loader: Training data loader
-            
         Returns:
             avg_loss: Average training loss
         """
         self.model.train()
         total_loss = 0.0
         num_batches = 0
-        
         pbar = tqdm(train_loader, desc="Training")
+        
         for batch in pbar:
             # Move batch to device
-            obs = batch["observation"].to(self.device)  # shape: (B, T, D) if T > 1 e.g. (128, 10, 96, 96), else (B, D) e.g. (128, 96, 96)
-            actions = batch['action'].to(self.device)  # shape: (B, T, A) if T > 1 e.g. (128, 10, 3), else (B, A) e.g. (128, 3)
-
+            obs = batch["observation"].to(self.device)  
+            actions = batch['action'].to(self.device)  
+            
+            is_sequence = obs.shape[1] > 1  
+    
+            # Debug shapes
+            tqdm.write(f"Obs shape: {obs.shape}, Actions shape: {actions.shape}, Is sequence: {is_sequence}")
+            
             # Forward pass
             self.optimizer.zero_grad()
             
-            hidden_state = None
-
-            # Handle different policy types
-            if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
-                state = batch['previous_action'].to(self.device)
-                timestep = batch["timestep"].to(self.device) 
-                if self.model.policy_head_type == "gru":
-                    output = self.model(obs, state=state, hidden_state=None)
-                elif self.model.policy_head_type == "mlp":
-                    output = self.model(obs, state=state, time_steps=timestep)
+            # Prepare inputs
+            state = None
+            timestep = None
+            
+            if 'previous_actions' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
+                state = batch['previous_actions'].to(self.device)
+                
+            if "timestep" in batch:
+                timestep = batch["timestep"].to(self.device)
+            
+            # Forward pass based on policy type
+            if self.model.policy_head_type == "mlp":
+                output = self.model(obs, state=state, time_steps=timestep)
+                
+            elif self.model.policy_head_type == "gru":
+                output = self.model(obs, state=state, hidden_state=None)
+                
+            elif self.model.policy_head_type == "transformer":
+                if not is_sequence:
+                    raise ValueError("Transformer requires sequence input but got single timestep")
+                output = self.model(obs, state=state, time_steps=timestep)
                 
             else:
                 output = self.model(obs)
             
-            
+            # Handle different output types and compute loss
             if isinstance(output, tuple):
-                pred_actions, _ = output  # GRU
-                pred_actions = pred_actions.squeeze(1) 
+                # GRU case: output is (actions, hidden_state)
+                pred_actions, _ = output  # pred_actions shape: (B, T, A)
+                
+                if is_sequence:
+                    # For sequences, we need to compute loss over all timesteps
+                    # Reshape for loss computation: (B*T, A)
+                    batch_size, seq_len = pred_actions.shape[:2]
+                    pred_actions_flat = pred_actions.reshape(batch_size * seq_len, -1)
+                    actions_flat = actions.reshape(batch_size * seq_len, -1)
+                    loss = self.criterion(pred_actions_flat, actions_flat)
+                else:
+                    # Single timestep case
+                    pred_actions = pred_actions.squeeze(1)  # Remove sequence dimension
+                    loss = self.criterion(pred_actions, actions)
+                    
             else:
-                pred_actions = output # This handles the old MLP-style output
-
-            # Compute loss
-            loss = self.criterion(pred_actions, actions)
+                # MLP or Transformer case: output is just actions
+                pred_actions = output
+                
+                if self.model.policy_head_type == "transformer":
+                    # Transformer returns last timestep action: (B, A)
+                    # Actions should be the target for the last timestep: (B, A) or (B, T, A)
+                    if actions.dim() == 3:  # (B, T, A)
+                        target_actions = actions[:, -1, :]  # Take last timestep
+                    else:  # (B, A)
+                        target_actions = actions
+                    loss = self.criterion(pred_actions, target_actions)
+                    
+                elif self.model.policy_head_type == "mlp":
+                    if is_sequence:
+                        # MLP processes each timestep independently
+                        # pred_actions shape: (B*T, A), actions shape: (B, T, A) or (B*T, A)
+                        if actions.dim() == 3:  # (B, T, A)
+                            batch_size, seq_len = actions.shape[:2]
+                            actions_flat = actions.reshape(batch_size * seq_len, -1)
+                        else:  # Already flat
+                            actions_flat = actions
+                        loss = self.criterion(pred_actions, actions_flat)
+                    else:
+                        # Single timestep
+                        loss = self.criterion(pred_actions, actions)
+            
+            #Debug loss
+            if num_batches % 10 == 0:  # tqdm.write every 10 batches
+                tqdm.write(f"Batch {num_batches}: Loss = {loss.item():.6f}")
+                tqdm.write(f"Pred actions range: [{pred_actions.min().item():.3f}, {pred_actions.max().item():.3f}]")
+                tqdm.write(f"Target actions range: [{actions.min().item():.3f}, {actions.max().item():.3f}]")
+            
+            # Check for NaN or infinite loss
+            if torch.isnan(loss) or torch.isinf(loss):
+                tqdm.write(f"WARNING: Invalid loss detected: {loss.item()}")
+                tqdm.write(f"Pred actions stats: mean={pred_actions.mean():.3f}, std={pred_actions.std():.3f}")
+                tqdm.write(f"Target actions stats: mean={actions.mean():.3f}, std={actions.std():.3f}")
+                continue  # Skip this batch
             
             # Backward pass
             loss.backward()
             
             # Gradient clipping if specified
-            if self.cfg.get('train').get('grad_clip') > 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.get('train').get('grad_clip'))
+            if self.cfg.get('train', {}).get('grad_clip', 0) > 0:
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), 
+                    self.cfg.get('train').get('grad_clip')
+                )
+                if num_batches % 10 == 0:
+                    tqdm.write(f"Gradient norm: {grad_norm:.3f}")
             
             self.optimizer.step()
             
@@ -162,10 +228,11 @@ class Trainer:
             num_batches += 1
             
             # Update progress bar
-            pbar.set_postfix({'Loss': f'{loss.item():.6f}'})
+            pbar.set_postfix({'Loss': f'{loss.item():.6f}', 'Avg': f'{total_loss/num_batches:.6f}'})
         
-        avg_loss = total_loss / num_batches
+        avg_loss = total_loss / num_batches if num_batches > 0 else float('inf')
         return avg_loss
+
     
     def validate_epoch(self, val_loader):
         """
@@ -190,14 +257,17 @@ class Trainer:
                 
 
 
-                if 'previous_action' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
-                    state = batch['previous_action'].to(self.device)
+                if 'previous_actions' in batch and hasattr(self.model, 'state_dim') and self.model.state_dim > 0:
+                    state = batch['previous_actions'].to(self.device)
                     
-                    if self.model.policy_head_type == "gru":
-                        output = self.model(obs, state=state, hidden_state=None)
-                    elif self.model.policy_head_type == "mlp":
+                    if self.model.policy_head_type == "mlp":
                         timestep = batch["timestep"].to(self.device) 
                         output = self.model(obs, state, time_steps=timestep)
+                    elif self.model.policy_head_type == "gru":
+                        output = self.model(obs, state=state, hidden_state=None)
+                    elif self.model.policy_head_type == "transformer":
+                        timestep = batch["timestep"].to(self.device) 
+                        output = self.model(obs, state=state, time_steps=timestep)
                 else:
                     output = self.model(obs)
                 

@@ -8,6 +8,23 @@ import math
 import inspect
 from typing import Optional, Tuple
 
+def prepare_depth_input(observation: torch.Tensor) -> Tuple[torch.Tensor, int, int]:
+    """
+    Ensures depth input is in shape (B*S, 1, H, W)
+    Returns: obs_input, batch_size, seq_len
+    """
+    if observation.dim() == 4:  # (B, S, H, W)
+        batch_size, seq_len = observation.shape[:2]
+        obs_input = observation.view(batch_size * seq_len, 1, *observation.shape[2:])
+    elif observation.dim() == 3:  # (B, H, W)
+        batch_size = observation.shape[0]
+        seq_len = 1
+        obs_input = observation.unsqueeze(1)  # (B, 1, H, W)
+    else:
+        raise ValueError(f"Unexpected depth observation shape: {observation.shape}")
+    return obs_input, batch_size, seq_len
+
+
 class PositionalEncoding(nn.Module):
     """Generates sinusoidal positional encodings for timesteps."""
     def __init__(self, embedding_dim, max_timesteps=1000):
@@ -21,43 +38,52 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         
-        self.register_buffer('pe', pe)
+        # (1, max_timesteps, embedding_dim) for broadcasting
+        self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, time_steps):
-        """Args: time_steps: Tensor of shape (batch_size,)"""
-        return self.pe[time_steps, :]
+        """
+        Args:
+            time_steps: Tensor of shape (batch_size,) or (batch_size, seq_len)
+                        with integer timestep indices (e.g., [0, 1, 2, ...])
+        Returns:
+            Positional encodings of shape (batch_size, embedding_dim) or
+            (batch_size, seq_len, embedding_dim)
+        """
+        if time_steps.dim() == 1:
+            return self.pe[0, time_steps]  # (batch_size, embedding_dim)
+        elif time_steps.dim() == 2:
+            return self.pe[0, time_steps]  # (batch_size, seq_len, embedding_dim)
+        else:
+            raise ValueError("time_steps must be of shape (batch,) or (batch, seq_len)")
+
 
 class MultiModalPolicy(nn.Module):
     """
     Policy network that handles multiple input modalities and supports both
-    stateless (MLP) and stateful (GRU) policy heads.
+    stateless (MLP) and stateful (GRU/Transformer) policy heads.
     """
-    
-    def __init__(self, num_points=1024, feature_dim=256, 
-                 state_dim=0, action_dim=6, 
+
+    def __init__(self, num_points=1024, feature_dim=256,
+                 state_dim=0, action_dim=6,
                  dropout_rate=0.3, fusion_method='concat',
-                 time_encoding='none', time_embedding_dim=128, max_timesteps=64,
+                 time_encoding='none', time_embedding_dim=256, max_timesteps=64,
                  observation_mode='points',
-                 # --- New arguments for selecting and configuring the policy head ---
-                 policy_head_type: str = 'mlp', 
+                 policy_head_type: str = 'mlp',
                  mlp_hidden_dims: Optional[list] = None,
-                 gru_hidden_dim: int = 256, 
-                 gru_num_layers: int = 2, 
+                 gru_hidden_dim: int = 256,
+                 gru_num_layers: int = 2,
                  use_residual: bool = False,
+                 # for Transformer
+                 context_length: int = None,
+                 embed_dim: int = 256,
+                 num_layers: int = 4,
+                 num_heads: int = 4,
+                 output_activation: str = "tanh",
                  ):
-        """
-        Initialize MultiModal Policy network.
-        
-        Args:
-            (Same as before, with new arguments below)
-            policy_head_type (str): The type of policy head to use ('mlp' or 'gru').
-            mlp_hidden_dims (list): Hidden layer dimensions for the MLP head.
-            gru_hidden_dim (int): Hidden state dimension for the GRU head.
-            gru_num_layers (int): Number of layers for the GRU head.
-        """
         super(MultiModalPolicy, self).__init__()
         
-        # --- Store configuration ---
+        # Store configuration
         self.num_points = num_points
         self.feature_dim = feature_dim
         self.state_dim = state_dim
@@ -67,32 +93,45 @@ class MultiModalPolicy(nn.Module):
         self.max_timesteps = max_timesteps
         self.policy_head_type = policy_head_type
         self.observation_mode = observation_mode
-        # --- PointNet feature extractor ---
-        
+
+        # Observation encoder
         if self.observation_mode == 'points':
             self.obs_encoder = PointNet(num_points=num_points, feature_dim=feature_dim, dropout_rate=dropout_rate)
         elif self.observation_mode == 'depth':
             self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
         else:
             raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
-                
-        # --- State encoder ---
-        self.state_encoder = nn.Linear(state_dim, feature_dim) if state_dim > 0 else None
-        
-        # --- Time encoder ---
-        self.time_encoder = self._create_time_encoder(time_encoding, time_embedding_dim, max_timesteps)
-        
-        # --- Determine the input dimension for the policy head ---
-        policy_input_dim = feature_dim  # Base features from PointNet
-        if state_dim > 0 and fusion_method == 'concat':
-            policy_input_dim += feature_dim
-        if time_encoding != 'none':
-            policy_input_dim += time_embedding_dim
-        
-        # --- Create the selected policy head ---
-        if policy_head_type == 'mlp':
 
-            if mlp_hidden_dims is None: mlp_hidden_dims = [256, 128]
+        # State encoder
+        self.state_encoder = nn.Linear(state_dim, feature_dim) if state_dim > 0 else None
+
+        # Determine the input dimension for the policy head
+        policy_input_dim = feature_dim
+        if state_dim > 0:
+            self.state_encoder = nn.Linear(state_dim, feature_dim)
+            if fusion_method == 'concat':
+                policy_input_dim += feature_dim
+            elif fusion_method == 'concat_project':
+                # This fusion projects back down to feature_dim, so policy_input_dim doesn't change
+                self.fusion_mlp = nn.Sequential(
+                    nn.Linear(feature_dim + feature_dim, 512), # obs_dim + state_dim
+                    nn.ReLU(),
+                    nn.Linear(512, feature_dim), # output matches obs_feature_dim
+                )
+            # For 'add' fusion, policy_input_dim also doesn't change
+
+        # IMPORTANT: Only add time encoding for non-transformer heads
+        # Transformer handles positional encoding internally
+        if policy_head_type != 'transformer' and time_encoding != 'none':
+            self.time_encoder = self._create_time_encoder(time_encoding, time_embedding_dim, max_timesteps)
+            policy_input_dim += time_embedding_dim
+        else:
+            self.time_encoder = None
+
+        # Create the selected policy head
+        if policy_head_type == 'mlp':
+            if mlp_hidden_dims is None: 
+                mlp_hidden_dims = [256, 128]
             if use_residual:
                 self.policy_head = ResidualMLPHead(
                     input_dim=policy_input_dim, output_dim=action_dim,
@@ -103,72 +142,74 @@ class MultiModalPolicy(nn.Module):
                     input_dim=policy_input_dim, output_dim=action_dim,
                     hidden_dims=mlp_hidden_dims, dropout_rate=dropout_rate
                 )
+
         elif policy_head_type == 'gru':
             self.policy_head = GRUHead(
                 input_dim=policy_input_dim, output_dim=action_dim,
                 hidden_dim=gru_hidden_dim, num_layers=gru_num_layers,
                 dropout_rate=dropout_rate
             )
-        
-        elif policy_head_type == 'transformer':
-            self.policy_head = TransformerHead(
-                input_dim=policy_input_dim,
-                output_dim=action_dim,
-                context_length=max_timesteps,  # or context_length if dynamic
-                embed_dim=256,
-                num_layers=4,
-                num_heads=4,
-                dropout=dropout_rate,
-                output_activation='tanh',
-            )
 
+        elif policy_head_type == 'transformer':
+            if context_length is None:
+                context_length = max_timesteps
+            
+            # For transformer, we don't add external time encoding
+            # The transformer handles positional encoding internally
+            self.policy_head = TransformerHead(
+                input_dim=policy_input_dim,  # No time encoding added here
+                output_dim=action_dim,
+                context_length=context_length,
+                embed_dim=embed_dim,
+                num_layers=num_layers,
+                num_heads=num_heads,
+                dropout=dropout_rate,
+                output_activation=None,
+            )
         else:
             raise ValueError(f"Unknown policy_head_type: {policy_head_type}")
 
     def _create_time_encoder(self, encoding_type, embedding_dim, max_steps):
-        if encoding_type == 'none': return None
-        if encoding_type == 'positional': return PositionalEncoding(embedding_dim, max_steps)
-        if encoding_type == 'embedding': return nn.Embedding(max_steps, embedding_dim)
-        if encoding_type == 'linear': return nn.Linear(1, embedding_dim)
+        if encoding_type == 'none': 
+            return None
+        if encoding_type == 'positional': 
+            return PositionalEncoding(embedding_dim, max_steps)
+        if encoding_type == 'embedding': 
+            return nn.Embedding(max_steps, embedding_dim)
+        if encoding_type == 'linear': 
+            return nn.Linear(1, embedding_dim)
         raise ValueError(f"Unknown time_encoding method: {encoding_type}")
-    
-    def forward(self, observation: torch.Tensor, state: Optional[torch.Tensor] = None, 
-                time_steps: Optional[torch.Tensor] = None, 
+
+    def forward(self, observation: torch.Tensor, state: Optional[torch.Tensor] = None,
+                time_steps: Optional[torch.Tensor] = None,
                 hidden_state: Optional[torch.Tensor] = None) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass through the policy. Handles both single-step and sequence data.
-
+        
         Args:
-            point_cloud: Either point cloud or depth image tensor depending on observation_mode.
-                - If points: shape (B, [S], N, 3)
+            observation: Point cloud or depth image tensor depending on observation_mode.
+                - If points: shape (B, [S], N, 3)  
                 - If depth: shape (B, [S], 1, H, W)
             state: Optional robot state input.
             time_steps: Optional time step indices (used if time_encoding is enabled).
             hidden_state: Previous hidden state for GRU policies.
-
+            
         Returns:
             - For MLP: actions of shape (B * S, action_dim)
             - For GRU: (actions, new_hidden_state)
+            - For Transformer: actions of shape (B, action_dim) for last timestep
         """
-        # --- 1. Determine if input is a sequence ---
-        is_sequence = observation.dim() == 3 if self.observation_mode == 'points' else observation.dim() == 4   # look into
-        if is_sequence:
-            batch_size, seq_len = observation.shape[:2]
-            obs_input = observation.reshape(batch_size * seq_len, *observation.shape[2:])
-            # if state is not None:
-            #     state = state.reshape(batch_size * seq_len, -1)
-            if time_steps is not None:
-                time_steps = time_steps.reshape(batch_size * seq_len)
-        else:
-            batch_size = observation.shape[0]
-            seq_len = 1
-            obs_input = observation
 
-        # --- 2. Extract features based on modality ---
-        if self.observation_mode == 'points':
-            obs_features = self.obs_encoder(obs_input)  # shape: (B*S, feature_dim)
+        if self.observation_mode == 'depth':
+            obs_input, batch_size, seq_len = prepare_depth_input(observation)
+            obs_features = self.obs_encoder(obs_input)  # (B*S, D)
+
+            if time_steps is not None:
+                time_steps = time_steps.view(batch_size * seq_len)
+
+        elif self.observation_mode == 'points':
+            obs_features = self.obs_encoder(obs_input)  # (B*S, feature_dim)
         elif self.observation_mode == 'depth':
-            #obs_input = self.depth_resize(obs_input)
             obs_input = obs_input.unsqueeze(1)
             obs_features = self.obs_encoder(obs_input)
         else:
@@ -176,15 +217,25 @@ class MultiModalPolicy(nn.Module):
 
         features_list = [obs_features]
 
-        # --- 3. Encode state ---
+        # Encode state
         if state is not None and self.state_encoder is not None:
+
+            state = state.reshape(batch_size * seq_len, -1)
             state_features = self.state_encoder(state)
+
             if self.fusion_method == 'add':
                 features_list[0] = features_list[0] + state_features
-            else:  # concat
+
+            elif self.fusion_method == 'concat_project':
+                # Concatenate and project via fusion MLP
+                fusion_input = torch.cat([obs_features, state_features], dim=1)
+                fused = self.fusion_mlp(fusion_input)  # (B*S, D)
+                features_list[0] = fused  # replace obs_features with fused
+            else:  # vanilla concat
                 features_list.append(state_features)
 
-        # --- 4. Encode time if enabled ---
+
+        # Encode time if enabled (ONLY for non-transformer heads)
         if self.time_encoder is not None:
             if time_steps is None:
                 raise ValueError("time_steps must be provided for time encoding")
@@ -195,10 +246,10 @@ class MultiModalPolicy(nn.Module):
                 time_features = self.time_encoder(time_steps.long())
             features_list.append(time_features)
 
-        # --- 5. Fuse all features ---
+        # Fuse all features
         fused_features = torch.cat(features_list, dim=1)  # (B*S, D)
 
-        # --- 6. Policy head ---
+        # Policy head forward pass
         if self.policy_head_type == 'mlp':
             return self.policy_head(fused_features)
 
@@ -206,15 +257,21 @@ class MultiModalPolicy(nn.Module):
             gru_input = fused_features.view(batch_size, seq_len, -1)
             actions, new_hidden_state = self.policy_head(gru_input, hidden_state)
             return actions, new_hidden_state
-        
-        if self.policy_head_type == 'transformer':
-    # reshape into (B, T, D) for transformer
-    seq_input = fused_features.view(batch_size, seq_len, -1)
-    action_seq = self.policy_head(seq_input)  # (B, T, action_dim)
-    
-    # return just last action for now (like MLP)
-    return action_seq[:, -1, :]
 
+        elif self.policy_head_type == 'transformer':
+            # Reshape for transformer: (B, T, D)
+            seq_input = fused_features.view(batch_size, seq_len, -1)
+            
+            # Your transformer handles positional encoding internally
+            action_seq = self.policy_head(seq_input)  # (B, T, action_dim)
+            
+            # Return last action (most common use case)
+            # You could also return the full sequence if needed
+            return action_seq[:, -1, :]  # (B, action_dim)
+
+        else:
+            raise ValueError(f"Unknown policy_head_type: {self.policy_head_type}")
+        
 class SimplePCToPosRegressor(nn.Module):
     """
     A much simpler policy network that regresses a point cloud directly
@@ -318,9 +375,14 @@ def create_model(model_cfg):
         # for rnn
         gru_hidden_dim=model_cfg.get('gru_hidden_dim', 0),
         gru_num_layers=model_cfg.get('gru_num_layers', 0), 
-
+        # for transformer
+        context_length=model_cfg.get('context_length', None),
+        embed_dim=model_cfg.get('embed_dim', 256),
+        num_layers=model_cfg.get('num_layers', 4),
+        num_heads=model_cfg.get('num_heads', 4),
     )
     return model
+
 
 # # Base policy configuration
 # type: multimodal         # Options: pointcloud, multimodal

@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: recurrent_depth
+  - model: transformer_depth
   - loss: default_3d
   - optimizer: adam
   - data: depth
@@ -10,7 +10,7 @@ train:
   num_workers: 8
   epochs: 50
   device: cuda
-  grad_clip: 1.0
+  #grad_clip: 1.0
 
 # Global settings
 observation_mode: 'depth'  
@@ -22,4 +22,4 @@ output_dir: ${hydra:runtime.output_dir}
 is_regression: false
 
 wandb:
-  enabled: true
+  enabled: false
