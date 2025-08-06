@@ -1,10 +1,10 @@
 defaults:
   - _self_  
-  - model: mlp_depth
+  - model: transformer_depth
   - data: depth
-  - inference: mlp_depth
+  - inference: transformer_depth
   - env: default_3d
 
-experiment_name: "SimpleSingleStepBC Inference"
+experiment_name: "Transformer 10 step input Inference"
 observation_mode: 'depth'
 output_subdir: null

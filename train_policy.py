@@ -6,6 +6,8 @@ import logging
 import torch
 import torch.nn as nn
 import numpy as np
+from pathlib import Path
+import yaml
 
 from data_handling.dataset import create_dataloaders_from_config
 from models.policy_head.policy_network import create_model
@@ -13,6 +15,8 @@ from training.trainer import Trainer
 from training.losses import create_loss_function
 from training.optimizer import create_optimizer
 from models.policy_head.policy_network import MultiModalPolicy, SimplePCToPosRegressor, PositionalEncoding
+from utils.data_utils import numpy_to_python
+
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +58,25 @@ def train_policy(cfg: DictConfig) -> None:
             for key, value in batch.items():
                 log.info(f"  {key}: {value.shape}")
             break
+        
+        # --- Access normalization stats from the train dataset ---
+        train_dataset = train_loader.dataset
+        action_stats = train_dataset.get_normalization_stats().get("action_stats")
+        depth_stats = train_dataset.get_normalization_stats().get("depth_stats")
+
+        # Convert to clean dicts
+        normalization_stats = {
+            "action_stats": numpy_to_python(action_stats) if action_stats else None,
+            "depth_stats": numpy_to_python(depth_stats) if depth_stats else None,
+        }
+
+        output_dir = Path(cfg.get('output_dir', 'outputs'))
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        with open(output_dir / "normalization_stats.yaml", "w") as f:
+            yaml.dump(normalization_stats, f, default_flow_style=False)
+
+        log.info(f"Saved clean normalization stats to {output_dir / 'normalization_stats.yaml'}")
 
         # Initialize model
         log.info("Initializing model...")

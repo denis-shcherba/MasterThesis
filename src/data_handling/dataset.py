@@ -10,6 +10,7 @@ class ManipulationDataset(Dataset):
     """
     A flexible dataset for loading manipulation demonstrations from H5 files,
     supporting both sequential and static regression tasks with normalization.
+    This version uses zero-padding for initial sequences.
 
     Expected H5 structure for sequential data:
     - /demo_0/path: (trajectory_length, action_dim)
@@ -92,8 +93,10 @@ class ManipulationDataset(Dataset):
         return 0
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """Fetches a sample consisting of a sequence of (obs, action) pairs and a target action."""
-
+        """
+        Fetches a sample. For sequential mode, this consists of a sequence of 
+        (obs, action) pairs (padded if necessary) and a target action.
+        """
         if self.is_regression:
             demo_data = self.demonstrations[idx]
             raw_obs = demo_data['obs']
@@ -116,37 +119,65 @@ class ManipulationDataset(Dataset):
             }
             return sample
 
-        # Sequential mode
+        # --- MODIFIED: Sequential mode with padding ---
         demo_idx, t = self.valid_indices[idx]
         demo_data = self.demonstrations[demo_idx]
+        
+        # `t` is the index of the last observation in the history.
+        # The target action is at `t + 1`.
+        target_action = demo_data['path'][t + 1]
 
-        start_t = t
-        end_t = t + self.sequence_length  # exclusive
+        # Determine the start of the sequence slice from the demonstration
+        start_idx = max(0, t - self.sequence_length + 1)
+        
+        # Get the available history slices
+        obs_slice = demo_data['obs'][start_idx : t + 1]
+        action_slice = demo_data['path'][start_idx : t + 1]
+        timestep_slice = np.arange(start_idx, t + 1, dtype=np.int64)
 
-        # --- Get observation sequence ---
+        actual_seq_len = len(obs_slice)
+        num_padding = self.sequence_length - actual_seq_len
+
+        # --- Process and Normalize Slices ---
+        # Process observations first to get the correct shape for padding
         if self.observation_mode == 'depth':
-            obs_seq = [self._process_single_depth_image(demo_data['obs'][i]) for i in range(start_t, end_t)]
-        else:
-            obs_seq = [demo_data['obs'][i] for i in range(start_t, end_t)]
+            processed_obs_slice = np.stack(
+                [self._process_single_depth_image(obs) for obs in obs_slice], axis=0
+            )
+        else: # 'points'
+            processed_obs_slice = obs_slice
 
-        obs_seq = np.stack(obs_seq, axis=0)  # (sequence_length, ...)
-
-        # --- Get action sequence (inputs) and next action (target) ---
-        action_seq = np.stack([demo_data['path'][i] for i in range(start_t, end_t)], axis=0)  # (sequence_length, action_dim)
-        next_action = demo_data['path'][end_t]  # shape: (action_dim,)
-
-        # Normalize actions if enabled
+        # Normalize actions (if enabled)
         if self.normalize_actions and self.action_stats is not None:
-            action_seq = self._normalize_actions(action_seq)
-            next_action = self._normalize_actions(next_action)
+            action_slice = self._normalize_actions(action_slice)
+            target_action = self._normalize_actions(target_action)
 
-        timestep_seq = np.arange(start_t, end_t, dtype=np.int64)
+        # --- Create Padding ---
+        # Create zero-padding for observations
+        obs_padding_shape = (num_padding,) + processed_obs_slice.shape[1:]
+        obs_padding = np.zeros(obs_padding_shape, dtype=processed_obs_slice.dtype)
 
+        # Create zero-padding for actions and timesteps
+        action_padding = np.zeros((num_padding, self.action_dim), dtype=action_slice.dtype)
+        timestep_padding = np.zeros(num_padding, dtype=np.int64)
+
+        # --- Combine Padding and Data ---
+        obs_seq = np.concatenate([obs_padding, processed_obs_slice], axis=0)
+        action_seq = np.concatenate([action_padding, action_slice], axis=0)
+        timestep_seq = np.concatenate([timestep_padding, timestep_slice], axis=0)
+
+        # --- Create Attention Mask ---
+        # `True` for real data, `False` for padding. Crucial for Transformers.
+        attention_mask = np.zeros(self.sequence_length, dtype=np.bool_)
+        attention_mask[-actual_seq_len:] = True
+
+        # --- Assemble Final Sample ---
         sample = {
             'observation': torch.from_numpy(obs_seq).float(),
-            'previous_actions': torch.from_numpy(action_seq).float(),  # input to policy
-            'action': torch.from_numpy(next_action).float(),           # target to predict
+            'previous_actions': torch.from_numpy(action_seq).float(),
+            'action': torch.from_numpy(target_action).float(),
             'timestep': torch.from_numpy(timestep_seq).long(),
+            'attention_mask': torch.from_numpy(attention_mask), # NEW
             'demo_id': torch.tensor(demo_idx, dtype=torch.long)
         }
 
@@ -154,7 +185,6 @@ class ManipulationDataset(Dataset):
 
     def _process_single_depth_image(self, depth: np.ndarray) -> np.ndarray:
         """Process a single depth image with optional normalization."""
-        # Apply normalization if enabled
         if self.normalize_depth and self.depth_stats is not None:
             depth = self._normalize_depth(depth)
         
@@ -166,146 +196,81 @@ class ManipulationDataset(Dataset):
         
         for demo in self.demonstrations:
             if self.is_regression:
-                # Single action
                 all_actions.append(demo['path'])
             else:
-                # Sequence of actions - flatten to get all actions
                 all_actions.extend(demo['path'])
         
         if all_actions:
-            # Convert to numpy array
             all_actions = np.array(all_actions)
-            
             if self.action_normalization_method == 'minmax':
-                # Min-max normalization to [0, 1]
                 min_vals = np.min(all_actions, axis=0)
                 max_vals = np.max(all_actions, axis=0)
                 range_vals = max_vals - min_vals
-                range_vals = np.where(range_vals == 0, 1, range_vals)  # Avoid division by zero
-                self.action_stats = {
-                    'method': 'minmax',
-                    'min': min_vals,
-                    'range': range_vals
-                }
-            elif self.action_normalization_method == 'zscore':
-                # Z-score normalization
+                range_vals[range_vals == 0] = 1
+                self.action_stats = {'method': 'minmax', 'min': min_vals, 'range': range_vals}
+            elif self.action_normalization_method in ['zscore', 'unit']:
                 mean = np.mean(all_actions, axis=0)
                 std = np.std(all_actions, axis=0)
-                std = np.where(std == 0, 1, std)  # Avoid division by zero
-                self.action_stats = {
-                    'method': 'zscore',
-                    'mean': mean,
-                    'std': std
-                }
-            elif self.action_normalization_method == 'unit':
-                # Unit normalization (same as zscore for actions)
-                mean = np.mean(all_actions, axis=0)
-                std = np.std(all_actions, axis=0)
-                std = np.where(std == 0, 1, std)  # Avoid division by zero
-                self.action_stats = {
-                    'method': 'unit',
-                    'mean': mean,
-                    'std': std
-                }
+                std[std == 0] = 1
+                self.action_stats = {'method': self.action_normalization_method, 'mean': mean, 'std': std}
         
-        self.logger.info(f"Computed action normalization stats using {self.action_normalization_method} method")
+        self.logger.info(f"Computed action normalization stats using '{self.action_normalization_method}' method")
 
     def _compute_depth_normalization_stats(self):
         """Compute normalization statistics for depth images."""
         all_depths = []
         
         for demo in self.demonstrations:
-            if self.is_regression:
-                # Single depth image
-                all_depths.append(demo['obs'].flatten())
-            else:
-                # Sequence of depth images
-                for t in range(demo['obs'].shape[0]):
-                    all_depths.append(demo['obs'][t].flatten())
-        
+            data = demo['obs']
+            if data.ndim == 2: # Regression
+                all_depths.append(data.flatten())
+            else: # Sequence
+                for t in range(data.shape[0]):
+                    all_depths.append(data[t].flatten())
+
         if all_depths:
-            # Concatenate all depth values
             all_depths = np.concatenate(all_depths)
-            
             if self.depth_normalization_method == 'minmax':
-                # Min-max normalization to [0, 1]
-                min_val = np.min(all_depths)
-                max_val = np.max(all_depths)
-                range_val = max_val - min_val
-                if range_val == 0:
-                    range_val = 1
-                self.depth_stats = {
-                    'method': 'minmax',
-                    'min': min_val,
-                    'range': range_val
-                }
-            elif self.depth_normalization_method == 'zscore':
-                # Z-score normalization
-                mean = np.mean(all_depths)
-                std = np.std(all_depths)
-                if std == 0:
-                    std = 1
-                self.depth_stats = {
-                    'method': 'zscore',
-                    'mean': mean,
-                    'std': std
-                }
-            elif self.depth_normalization_method == 'unit':
-                # Unit normalization (0 mean, unit variance)
-                mean = np.mean(all_depths)
-                std = np.std(all_depths)
-                if std == 0:
-                    std = 1
-                self.depth_stats = {
-                    'method': 'unit',
-                    'mean': mean,
-                    'std': std
-                }
-        
-        self.logger.info(f"Computed depth normalization stats using {self.depth_normalization_method} method")
+                min_val, max_val = np.min(all_depths), np.max(all_depths)
+                range_val = max_val - min_val if max_val > min_val else 1
+                self.depth_stats = {'method': 'minmax', 'min': min_val, 'range': range_val}
+            elif self.depth_normalization_method in ['zscore', 'unit']:
+                mean, std = np.mean(all_depths), np.std(all_depths)
+                if std == 0: std = 1
+                self.depth_stats = {'method': self.depth_normalization_method, 'mean': mean, 'std': std}
+                
+        self.logger.info(f"Computed depth normalization stats using '{self.depth_normalization_method}' method")
 
     def _normalize_actions(self, actions: np.ndarray) -> np.ndarray:
-        """Apply normalization to actions."""
+        if not self.normalize_actions or self.action_stats is None: return actions
         if self.action_stats['method'] == 'minmax':
-            # Min-max normalization to [0, 1]
             return (actions - self.action_stats['min']) / self.action_stats['range']
         elif self.action_stats['method'] in ['zscore', 'unit']:
-            # Z-score normalization
             return (actions - self.action_stats['mean']) / self.action_stats['std']
         return actions
 
     def _normalize_depth(self, depth: np.ndarray) -> np.ndarray:
-        """Apply normalization to depth image."""
+        if not self.normalize_depth or self.depth_stats is None: return depth
         if self.depth_stats['method'] == 'minmax':
-            # Min-max normalization to [0, 1]
             return (depth - self.depth_stats['min']) / self.depth_stats['range']
         elif self.depth_stats['method'] in ['zscore', 'unit']:
-            # Z-score normalization
             return (depth - self.depth_stats['mean']) / self.depth_stats['std']
         return depth
-
+        
     def get_normalization_stats(self) -> Dict:
         """Get the computed normalization statistics."""
-        return {
-            'depth_stats': self.depth_stats,
-            'action_stats': self.action_stats
-        }
+        return {'depth_stats': self.depth_stats, 'action_stats': self.action_stats}
 
     def denormalize_actions(self, normalized_actions: np.ndarray) -> np.ndarray:
-        """Convert normalized actions back to original scale."""
-        if not self.normalize_actions or self.action_stats is None:
-            return normalized_actions
-            
+        if not self.normalize_actions or self.action_stats is None: return normalized_actions
         if self.action_stats['method'] == 'minmax':
-            # Reverse min-max normalization
             return normalized_actions * self.action_stats['range'] + self.action_stats['min']
         elif self.action_stats['method'] in ['zscore', 'unit']:
-            # Reverse z-score normalization
             return normalized_actions * self.action_stats['std'] + self.action_stats['mean']
         return normalized_actions
-
+        
     def get_demo_info(self) -> Dict[str, any]:
-        """Get information about the loaded demonstrations, adapted for the current mode."""
+        """Get information about the loaded demonstrations."""
         info = {
             'num_demonstrations': len(self.demonstrations),
             'sequence_length': self.sequence_length,
@@ -321,7 +286,7 @@ class ManipulationDataset(Dataset):
         if self.is_regression:
             info['total_samples'] = len(self.demonstrations)
         else:
-            info['total_sequences'] = len(self.valid_indices)
+            info['total_predictable_steps'] = len(self.valid_indices)
             if self.demonstrations:
                 demo_lengths = [demo['path'].shape[0] for demo in self.demonstrations]
                 info.update({
@@ -332,7 +297,7 @@ class ManipulationDataset(Dataset):
         return info
 
     def _load_demonstrations(self):
-        """Load demonstrations from the H5 file, branching logic based on mode."""
+        """Load demonstrations from the H5 file."""
         self.demonstrations: List[Dict] = []
         if not self.is_regression:
             self.valid_indices: List[tuple[int, int]] = []
@@ -350,19 +315,11 @@ class ManipulationDataset(Dataset):
                     else:
                         raise ValueError(f"Unsupported observation mode: {self.observation_mode}")
 
-                    # --- REGRESSION MODE ---
                     if self.is_regression:
-                        if path_data.shape != (self.action_dim,):
-                            continue
-                        if self.observation_mode == 'depth' and obs_data.ndim != 2:
-                            continue  # e.g. (H, W)
-
-                    # --- SEQUENCE MODE ---
+                        if path_data.shape != (self.action_dim,): continue
                     else:
-                        if path_data.ndim != 2 or path_data.shape[1] != self.action_dim:
-                            continue
-                        if self.observation_mode == 'depth':
-                            if obs_data.shape[0] != path_data.shape[0]: continue  # obs: (T, H, W)
+                        if path_data.ndim != 2 or path_data.shape[1] != self.action_dim: continue
+                        if obs_data.shape[0] != path_data.shape[0]: continue
 
                     demo_data = {
                         'path': path_data.astype(np.float32),
@@ -372,9 +329,14 @@ class ManipulationDataset(Dataset):
                     }
                     self.demonstrations.append(demo_data)
 
+                    # --- MODIFIED: Indexing logic ---
                     if not self.is_regression:
                         num_timesteps = path_data.shape[0]
-                        for t in range(num_timesteps - self.sequence_length):
+                        # Create a valid index for every possible step in the trajectory
+                        # where a next action can be predicted.
+                        # `t` represents the index of the *last observation* in the history.
+                        # The goal is to predict the action at `t+1`.
+                        for t in range(num_timesteps - 1):
                             self.valid_indices.append((demo_idx, t))
 
         except Exception as e:
@@ -393,28 +355,36 @@ class ManipulationDataset(Dataset):
         self.rng.shuffle(indices)
 
         split_idx = int(num_demos * train_split)
-        if self.split == 'train':
-            selected_ids = set(indices[:split_idx])
-        else: # 'val'
-            selected_ids = set(indices[split_idx:])
+        selected_ids = set(indices[:split_idx] if self.split == 'train' else indices[split_idx:])
 
         if self.is_regression:
             self.demonstrations = [d for d in self.demonstrations if d['demo_id'] in selected_ids]
         else:
-            self.valid_indices = [(d_idx, t) for d_idx, t in self.valid_indices if d_idx in selected_ids]
+            # We need to filter demonstrations first, then re-index `valid_indices`
+            original_demonstrations = self.demonstrations
+            self.demonstrations = [d for d in original_demonstrations if d['demo_id'] in selected_ids]
+            
+            # Create a map from old demo_id to new demo_id
+            demo_id_map = {d['demo_id']: new_id for new_id, d in enumerate(self.demonstrations)}
+            
+            # Rebuild valid_indices based on the filtered and re-indexed demonstrations
+            new_valid_indices = []
+            for old_demo_idx, t in self.valid_indices:
+                if old_demo_idx in selected_ids:
+                    new_demo_idx = demo_id_map[old_demo_idx]
+                    new_valid_indices.append((new_demo_idx, t))
+            self.valid_indices = new_valid_indices
 
     def _subsample_if_needed(self, subsample_demos: Optional[int]):
         """Subsample demonstrations if requested."""
         if subsample_demos is not None and subsample_demos > 0:
-            if self.is_regression:
-                if len(self.demonstrations) > subsample_demos:
-                    self.demonstrations = self.demonstrations[:subsample_demos]
-            else:
-                # For sequential mode, we need to be more careful about subsampling
-                if len(self.demonstrations) > subsample_demos:
-                    # Keep only first N demonstrations and update valid_indices
-                    kept_demo_ids = set(range(subsample_demos))
-                    self.demonstrations = self.demonstrations[:subsample_demos]
+            if len(self.demonstrations) > subsample_demos:
+                # This logic works for both modes because splitting/subsampling now filters
+                # `self.demonstrations` and rebuilds `valid_indices` accordingly.
+                self.demonstrations = self.demonstrations[:subsample_demos]
+                kept_demo_ids = {d['demo_id'] for d in self.demonstrations}
+                
+                if not self.is_regression:
                     self.valid_indices = [(d_idx, t) for d_idx, t in self.valid_indices if d_idx in kept_demo_ids]
 
 def create_dataloaders(

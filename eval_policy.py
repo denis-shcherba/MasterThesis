@@ -100,6 +100,16 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 
+import hydra
+import torch
+import logging
+import os
+import numpy as np
+from omegaconf import DictConfig, OmegaConf
+
+log = logging.getLogger(__name__)
+
+
 @hydra.main(config_path="configs", config_name="inference", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     """
@@ -131,9 +141,6 @@ def eval_policy(cfg: DictConfig) -> None:
     log.info(f"Model created: {type(model).__name__}")
 
     # --- 3. Load Trained Weights ---
-    # Determine checkpoint path.
-    # Option 1: Directly in config (e.g., cfg.inference.checkpoint_path)
-    # Option 2: Construct from training output directory (more robust if following a pattern)
     checkpoint_path_cfg = cfg.get("inference", {}).get("checkpoint_path", None)
     if checkpoint_path_cfg is None:
         log.error("Checkpoint path not found. Please specify `inference.checkpoint_path` in your config or command line.")
@@ -176,14 +183,13 @@ def eval_policy(cfg: DictConfig) -> None:
         # --- 4. Prepare Input Data for Inference ---
         pc = collector.render(observation_mode="POINTCLOUD", n_samples=cfg.get("data", {}).get("num_points", 4096))
         depth_ = collector.render(observation_mode=cfg.get("observation_mode"), n_samples=cfg.get("data", {}).get("num_points", 0))
-        depth = torch.from_numpy(depth_).float().to(default_device_str)
+        depth = torch.from_numpy(depth_).float().to(device)
         depth = depth.unsqueeze(0)
         robot_state = None
-        #if cfg.get() 
+        
         if cfg["model"]["action_dim"] == 9:
             robot_state = pose_7d_to_9d(collector.C.getJointState())
         elif cfg["model"]["action_dim"] == 3:
-            # if floatin
             robot_state = collector.C.getJointState()[:3] 
         raw_inference_data = {"point_cloud": pc, "robot_state": robot_state}
 
@@ -194,29 +200,54 @@ def eval_policy(cfg: DictConfig) -> None:
             return
 
         # --- 5. Perform Inference ---
-        log.info("Running model inference...")
+        log.info(f"Running model inference for step {i}...")
         with torch.no_grad(): # Disable gradient calculations
             try:
-
                 if policy_type == "multimodal":
-                    if cfg.get("model").get("policy_head_type") == "gru":
+                    policy_head_type = cfg.get("model").get("policy_head_type")
+                    if policy_head_type == "gru":
+                        # GRU-based policy head using point cloud
                         output, hidden_state = model(
                             input_for_model["point_cloud"], 
                             input_for_model["state"], 
                             hidden_state=hidden_state
                         )
-                    elif cfg.get("model").get("policy_head_type") == "mlp":
-                        output = model(depth, input_for_model["state"], torch.tensor(i).reshape(1))
+                    elif policy_head_type == "mlp":
+                        # MLP-based policy head using depth image
+                        log.debug("Running MLP (Depth) policy inference.")
+                        timestep = torch.tensor([[i]], dtype=torch.long, device=device)
+                        output = model(depth, input_for_model["state"], timestep)
+
+                    # --- Transformer Depth Inference Mode ---
+                    elif policy_head_type == "transformer":
+                        # Transformer-based policy head using depth image
+                        log.debug("Running Transformer (Depth) policy inference.")
+                        # Create timestep tensor with correct shape [1, 1], dtype, and device
+                        timestep = torch.tensor([[i]], dtype=torch.long, device=device)
+                        
+                        # Model expects (depth_image, robot_state, timestep)
+                        output = model(
+                            depth,                      # Pre-processed depth image tensor
+                            input_for_model["state"],   # Current robot state tensor
+                        )
+                    else:
+                        raise NotImplementedError(f"Policy head type '{policy_head_type}' not recognized for multimodal policy.")
+
                 elif policy_type == "regression":
+                    # Simple regression policy using point cloud
                     output = model(input_for_model["point_cloud"])
+                
+                else:
+                    raise NotImplementedError(f"Policy type '{policy_type}' not recognized.")
+
 
             except Exception as e:
                 log.error(f"Error during model forward pass: {e}")
-                # log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
-                # log.error(f"Input keys: {input_for_model.keys()}")
-                # for k, v in input_for_model.items():
-                #     if isinstance(v, torch.Tensor):
-                #         log.error(f"  {k}: shape {v.shape}, dtype {v.dtype}, device {v.device}")
+                log.error("Ensure the `input_for_model` structure and tensor shapes/types match your model's `forward` method.")
+                log.error(f"Input keys: {input_for_model.keys()}")
+                for k, v in input_for_model.items():
+                    if isinstance(v, torch.Tensor):
+                        log.error(f"  {k}: shape {v.shape}, dtype {v.dtype}, device {v.device}")
                 raise
 
         log.info(f"Inference output raw: {output}")
@@ -224,7 +255,7 @@ def eval_policy(cfg: DictConfig) -> None:
         if cfg["model"]["type"] == "regression":
             path_dataset = output.squeeze().cpu().numpy()
             
-            collector.C.setJointState([path_dataset[0], path_dataset[1], path_dataset[2], 1, 0, 0, 0])  # Assuming the first 7 values are joint angles
+            collector.C.setJointState([path_dataset[0], path_dataset[1], path_dataset[2], 1, 0, 0, 0])
             collector.C.view(True)
 
             collector.C.setJointState(q0)
@@ -237,20 +268,20 @@ def eval_policy(cfg: DictConfig) -> None:
             
         if cfg["model"]["action_dim"] == 9:
             pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
-            log.info("pose7d:", pose7d)
-            
+            log.info(f"Computed 7D pose: {pose7d}")
             collector.C.setJointState(pose7d)
         elif cfg["model"]["action_dim"] == 3:
             if cfg["env"]["path_mode"] == "DELTA3D":
                 delta_pos = output.squeeze().cpu().numpy()
-                collector.C.setJointState(collector.C.getJointState() + np.array([delta_pos[0], delta_pos[1], delta_pos[2], 0, 0, 0, 0]))
+                current_pose = collector.C.getJointState()
+                new_pose = current_pose + np.array([delta_pos[0], delta_pos[1], delta_pos[2], 0, 0, 0, 0])
+                collector.C.setJointState(new_pose)
 
             else:   
                 pos = output.squeeze().cpu().numpy()
-                collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0])) # Assuming a fixed orientation for the gripper
+                # Assuming a fixed orientation for the gripper
+                collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0]))
 
-
-        
         collector.C.view(False)
         if isinstance(output, torch.Tensor):
             log.info(f"Output tensor shape: {output.shape}")
@@ -260,9 +291,10 @@ def eval_policy(cfg: DictConfig) -> None:
                 if isinstance(v, torch.Tensor):
                     log.info(f"  {k} shape: {v.shape}")
 
-
     log.info("Policy evaluation/inference finished.")
 
 
 if __name__ == "__main__":
+    # Note: For this to run, you need to have the rest of the project
+    # structure (configs, models, etc.) in place.
     eval_policy()

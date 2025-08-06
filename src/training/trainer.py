@@ -147,7 +147,7 @@ class Trainer:
             elif self.model.policy_head_type == "transformer":
                 if not is_sequence:
                     raise ValueError("Transformer requires sequence input but got single timestep")
-                output = self.model(obs, state=state, time_steps=timestep)
+                output = self.model(obs, state=state)
                 
             else:
                 output = self.model(obs)
@@ -267,7 +267,7 @@ class Trainer:
                         output = self.model(obs, state=state, hidden_state=None)
                     elif self.model.policy_head_type == "transformer":
                         timestep = batch["timestep"].to(self.device) 
-                        output = self.model(obs, state=state, time_steps=timestep)
+                        output = self.model(obs, state=state)
                 else:
                     output = self.model(obs)
                 
