@@ -7,6 +7,8 @@ import os # For path joining
 from envs.create_env import ShelfPullDataCollector 
 from models.policy_head.policy_network import create_model # From your project
 from data_handling.processing import normalize_point_cloud_to_unit_sphere_torch, pose_9d_to_7d, pose_7d_to_9d
+from utils.data_utils import normalize_depth, normalize_state, denormalize_actions
+import yaml
 
 log = logging.getLogger(__name__)
 
@@ -100,16 +102,6 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 
-import hydra
-import torch
-import logging
-import os
-import numpy as np
-from omegaconf import DictConfig, OmegaConf
-
-log = logging.getLogger(__name__)
-
-
 @hydra.main(config_path="configs", config_name="inference", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     """
@@ -172,6 +164,20 @@ def eval_policy(cfg: DictConfig) -> None:
         log.error(f"Error loading checkpoint: {e}")
         raise
 
+    normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)
+    if normalization_stats_path is None:
+        log.error("normalization_stats_path path not found. Please specify `inference.normalization_stats_path` in your config or command line.")
+        return
+
+    with open(normalization_stats_path, 'r') as file:
+        normalization_stats = yaml.safe_load(file)
+
+    print("\nAction Stats:")
+    print(normalization_stats['action_stats'])
+    
+    print("\nDepth Stats:")
+    print(normalization_stats['depth_stats'])
+
     hidden_state = None 
     policy_type = cfg.get("model").get("type")
 
@@ -179,66 +185,80 @@ def eval_policy(cfg: DictConfig) -> None:
 
     log.info("Model set to evaluation mode.")
 
-    for i in range (64):
+    depth_sequence = []
+    state_sequence = []
+    sequence_length = 10
+
+    for i in range(64):
         # --- 4. Prepare Input Data for Inference ---
         pc = collector.render(observation_mode="POINTCLOUD", n_samples=cfg.get("data", {}).get("num_points", 4096))
         depth_ = collector.render(observation_mode=cfg.get("observation_mode"), n_samples=cfg.get("data", {}).get("num_points", 0))
-        depth = torch.from_numpy(depth_).float().to(device)
-        depth = depth.unsqueeze(0)
+        depth = torch.from_numpy(depth_).float().to(device)  # [H, W]
+        depth = depth.unsqueeze(0)  # [1, H, W]
+
+        # ✅ Normalize depth only for Transformer
+        if cfg["model"]["policy_head_type"] == "transformer":
+            depth = normalize_depth(depth, normalization_stats["depth_stats"])
+
         robot_state = None
-        
         if cfg["model"]["action_dim"] == 9:
             robot_state = pose_7d_to_9d(collector.C.getJointState())
         elif cfg["model"]["action_dim"] == 3:
-            robot_state = collector.C.getJointState()[:3] 
-        raw_inference_data = {"point_cloud": pc, "robot_state": robot_state}
+            robot_state = collector.C.getJointState()[:3]
 
+        raw_inference_data = {"point_cloud": pc, "robot_state": robot_state}
         input_for_model = preprocess_inference_input(raw_inference_data, cfg, device)
 
         if not input_for_model:
             log.error("Preprocessing did not return any data. Aborting.")
             return
 
+        # --- Maintain history buffers ---
+        depth_sequence.append(depth)  # [1, H, W]
+
+        state_tensor = torch.tensor(input_for_model["state"], dtype=torch.float32, device=device).unsqueeze(0)  # [1, 3]
+        
+        # ✅ Normalize state only for Transformer
+        if cfg["model"]["policy_head_type"] == "transformer":
+            state_tensor = normalize_state(state_tensor, normalization_stats["action_stats"])
+        
+        state_sequence.append(state_tensor)
+
+        # Trim and pad (same as before)
+        if len(depth_sequence) > sequence_length:
+            depth_sequence = depth_sequence[-sequence_length:]
+            state_sequence = state_sequence[-sequence_length:]
+
+        num_pad = sequence_length - len(depth_sequence)
+        if num_pad > 0:
+            dummy_depth = torch.zeros_like(depth)
+            dummy_state = torch.zeros_like(state_tensor)
+            depth_sequence = [dummy_depth] * num_pad + depth_sequence
+            state_sequence = [dummy_state] * num_pad + state_sequence
+
+        depth_seq = torch.stack(depth_sequence, dim=0).squeeze(1).unsqueeze(0)  # [1, seq_len, H, W]
+        state_seq = torch.stack(state_sequence, dim=0).squeeze(1).unsqueeze(0)  # [1, seq_len, 3]
+
         # --- 5. Perform Inference ---
         log.info(f"Running model inference for step {i}...")
-        with torch.no_grad(): # Disable gradient calculations
+        with torch.no_grad():
             try:
                 if policy_type == "multimodal":
                     policy_head_type = cfg.get("model").get("policy_head_type")
                     if policy_head_type == "gru":
-                        # GRU-based policy head using point cloud
-                        output, hidden_state = model(
-                            input_for_model["point_cloud"], 
-                            input_for_model["state"], 
-                            hidden_state=hidden_state
-                        )
+                        ...
                     elif policy_head_type == "mlp":
-                        # MLP-based policy head using depth image
-                        log.debug("Running MLP (Depth) policy inference.")
-                        timestep = torch.tensor([[i]], dtype=torch.long, device=device)
-                        output = model(depth, input_for_model["state"], timestep)
-
-                    # --- Transformer Depth Inference Mode ---
+                        ...
                     elif policy_head_type == "transformer":
-                        # Transformer-based policy head using depth image
                         log.debug("Running Transformer (Depth) policy inference.")
-                        # Create timestep tensor with correct shape [1, 1], dtype, and device
-                        timestep = torch.tensor([[i]], dtype=torch.long, device=device)
-                        
-                        # Model expects (depth_image, robot_state, timestep)
                         output = model(
-                            depth,                      # Pre-processed depth image tensor
-                            input_for_model["state"],   # Current robot state tensor
+                            depth_seq,  # Normalized
+                            state_seq   # Normalized
                         )
+
                     else:
                         raise NotImplementedError(f"Policy head type '{policy_head_type}' not recognized for multimodal policy.")
 
-                elif policy_type == "regression":
-                    # Simple regression policy using point cloud
-                    output = model(input_for_model["point_cloud"])
-                
-                else:
-                    raise NotImplementedError(f"Policy type '{policy_type}' not recognized.")
 
 
             except Exception as e:
@@ -278,6 +298,8 @@ def eval_policy(cfg: DictConfig) -> None:
                 collector.C.setJointState(new_pose)
 
             else:   
+                if cfg.get("model").get("policy_head_type") == "transformer":
+                    output = denormalize_actions(output, normalization_stats["action_stats"])
                 pos = output.squeeze().cpu().numpy()
                 # Assuming a fixed orientation for the gripper
                 collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0]))
