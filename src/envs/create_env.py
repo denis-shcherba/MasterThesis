@@ -140,7 +140,9 @@ class ShelfPullDataCollector:
                 .setShape(ry.ST.ssBox, size=[b_size_x, b_size_y, b_size_z, 0.005]) \
                 .setColor([1,0,0]) \
                 .setContact(1) \
-                .setMass(.1)
+                .setMass(.1) \
+                .setAttribute("friction", .01) 
+
             spawned_book_frames.append(frame_name)
         return spawned_book_frames
 

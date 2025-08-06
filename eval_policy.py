@@ -9,8 +9,10 @@ from models.policy_head.policy_network import create_model # From your project
 from data_handling.processing import normalize_point_cloud_to_unit_sphere_torch, pose_9d_to_7d, pose_7d_to_9d
 from utils.data_utils import normalize_depth, normalize_state, denormalize_actions
 import yaml
+import robotic as ry
 
 log = logging.getLogger(__name__)
+SIMULATE = True  # Set to False if you don't want to simulate the environment
 
 def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: torch.device) -> dict:
     """
@@ -189,6 +191,9 @@ def eval_policy(cfg: DictConfig) -> None:
     state_sequence = []
     sequence_length = 10
 
+    if SIMULATE:
+        sim = ry.Simulation(collector.C, ry.SimulationEngine.physx, verbose=0)
+
     for i in range(64):
         # --- 4. Prepare Input Data for Inference ---
         pc = collector.render(observation_mode="POINTCLOUD", n_samples=cfg.get("data", {}).get("num_points", 4096))
@@ -302,7 +307,14 @@ def eval_policy(cfg: DictConfig) -> None:
                     output = denormalize_actions(output, normalization_stats["action_stats"])
                 pos = output.squeeze().cpu().numpy()
                 # Assuming a fixed orientation for the gripper
-                collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0]))
+                if not SIMULATE:
+                    collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0]))
+                else:
+                    if i > 31:
+                        pos[2] -= .001
+                    for i in range(350):
+                        sim.step([pos[0], pos[1], pos[2], 1, 0, 0, 0], 0.01, ry.ControlMode.position)
+
 
         collector.C.view(False)
         if isinstance(output, torch.Tensor):
