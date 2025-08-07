@@ -17,6 +17,7 @@ class Simulator:
         verbose: int = 0,
         camera: str = "cameraStatic",
         base_removal: bool = False,  # if true, shelf will be removed from observation
+        visualize: bool = False,
     ):
         self._sim = ry.Simulation(config, engine, verbose=verbose)
         self.config = config
@@ -99,7 +100,7 @@ class Simulator:
 
         return rgb
 
-    def run_trajectory(
+    def run_trajectory_position_control(
         self,
         path: np.ndarray,
         n_steps: float,
@@ -113,25 +114,63 @@ class Simulator:
         Args:
             path:
                 The planned trajectory from KOMO.
-                Can also be an array of multiple trajectories.
             n_steps:
                 The number of steps that the trajectory entails.
                 For KOMO-based paths this is typically, phases * dur. per phase.
-            n_scenes:
-                Specifies how many scenes in parallel are being used.
             tau:
                 The time interval between steps in the simulation in seconds.
+            capture_points:
+                If True, the point cloud will be captured at each step.
+            capture_rgb:                    
+                If True, the RGB image will be captured at each step.
+            capture_depth:
+                If True, the depth image will be captured at each step. 
+
+        """
+
+        sim_steps = int(n_steps // tau)
+
+        for control_point in path:
+            if capture_depth:
+                depth = self.getDepth()
+                self.depth.append(depth)
+            for _ in range(10):
+                #time.sleep(tau)
+                self._sim.step(control_point, tau, ry.ControlMode.position)
+                #self.config.view()
 
 
-        Returns:
-            frame_trajectory: The sequence of frame states along the simulated traj.
-            joint_trajectory: The sequence of joint states along the simulated traj.
+    def run_trajectory_spline(
+        self,
+        path: np.ndarray,
+        n_steps: float,
+        tau: float = 5e-4,
+        capture_points: bool = False,
+        capture_rgb: bool = False,
+        capture_depth: bool = False,
+    ) -> [np.ndarray, np.ndarray, np.ndarray, np.ndarray]: # type: ignore
+        """Run a trajectory in simulation using the specified KOMO instance.
+
+        Args:
+            path:
+                The planned trajectory from KOMO.
+            n_steps:
+                The number of steps that the trajectory entails.
+                For KOMO-based paths this is typically, phases * dur. per phase.
+            tau:
+                The time interval between steps in the simulation in seconds.
+            capture_points:
+                If True, the point cloud will be captured at each step.
+            capture_rgb:
+                If True, the RGB image will be captured at each step.
+            capture_depth:
+                If True, the depth image will be captured at each step. 
+
         """
         sim_steps = int(n_steps // tau)
         times = np.linspace(n_steps / path.shape[-2], n_steps, path.shape[-2])
         self._sim.setSplineRef(path=path, times=times)
 
-        # TODO think about this, maybe change control mode, and then better capture points every path
         interval = max(1, sim_steps // 32)
         observations_captured = 0
         for i in range(1, sim_steps + 1):
@@ -148,6 +187,6 @@ class Simulator:
                 observations_captured += 1
             
             self._sim.step([], tau, ry.ControlMode.spline)
-            # if i % 100 == 0:
-                # self.config.view()
+            if i % 100 == 0:
+                self.config.view()
 
