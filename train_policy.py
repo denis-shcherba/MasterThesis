@@ -61,8 +61,8 @@ def train_policy(cfg: DictConfig) -> None:
         
         # --- Access normalization stats from the train dataset ---
         train_dataset = train_loader.dataset
-        action_stats = train_dataset.get_normalization_stats().get("action_stats")
-        depth_stats = train_dataset.get_normalization_stats().get("depth_stats")
+        action_stats = train_dataset.action_stats
+        depth_stats = train_dataset.depth_stats
 
         # Convert to clean dicts
         normalization_stats = {
