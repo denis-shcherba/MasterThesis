@@ -212,7 +212,7 @@ class RobotEnviroment:
         
         if self.sim == True:
             # TODO calculate offset for fix force given PD properties
-            offset = -.001
+            offset = -.01
             # same as path2 + np.array([0, 0, offset, 0, 0, 0, 0]) for floating gripper
             path2_after_offset = []       
             C2 = ry.Config()
@@ -234,8 +234,8 @@ class RobotEnviroment:
                 sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)
                 sim.run_trajectory_spline(np.asarray(path2_after_offset), 2, capture_depth=get_observation)
             else:
-                sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_depth=get_observation)
-                sim.run_trajectory_position_control(np.array(path2_after_offset), n_steps=2,  tau=0.01, capture_depth=get_observation)
+                sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_depth=get_observation, visualize=self.visualize)
+                sim.run_trajectory_position_control(np.array(path2_after_offset), n_steps=2,  tau=0.01, capture_depth=get_observation, visualize=self.visualize)
 
 
             if self.observation_mode == "POINTCLOUD":

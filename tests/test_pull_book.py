@@ -15,7 +15,7 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 25_000
+NUM_SAMPLES = 5_000
 VISUALIZE = False  # If true, the simulation will be visualized
 
 prefix = "l_"
@@ -33,7 +33,7 @@ elif ROBOT_MODE == "floating":
     C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
     gripper = "gripper"
     palm = "palm"
-    C.setJointState(C.getJointState() + np.array([.0, 0, .2, 0, 0, 0, 0]))
+    C.setJointState(C.getJointState() + np.array([.0, 0, .2]))
     prefix = ""
 
 # not necessary as it seems

@@ -56,7 +56,7 @@ class ShelfPullDataCollector:
             self.prefix = ""
             
             current_q = self.C.getJointState()
-            offset = np.array([.0, 0, .2, 0, 0, 0, 0]) 
+            offset = np.array([.0, 0, .2]) 
             current_q[:len(offset)] += offset 
             self.C.setJointState(current_q)
 

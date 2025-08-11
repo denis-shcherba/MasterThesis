@@ -188,7 +188,7 @@ def eval_policy(cfg: DictConfig) -> None:
                     collector.C.setJointState(np.array([pos[0], pos[1], pos[2], 1, 0, 0, 0]))
                 else:
                     for _ in range(50):
-                        sim.step([pos[0], pos[1], pos[2], 1, 0, 0, 0], 0.01, ry.ControlMode.position)
+                        sim.step([pos[0], pos[1], pos[2]], 0.01, ry.ControlMode.position)
 
         collector.C.view(False)
         log.info(f"Output tensor shape: {output.shape if isinstance(output, torch.Tensor) else 'dict'}")

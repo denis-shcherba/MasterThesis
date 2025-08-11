@@ -105,9 +105,8 @@ class Simulator:
         path: np.ndarray,
         n_steps: float,
         tau: float = 5e-4,
-        capture_points: bool = False,
-        capture_rgb: bool = False,
         capture_depth: bool = False,
+        visualize: bool = False,
     ) -> [np.ndarray, np.ndarray, np.ndarray, np.ndarray]: # type: ignore
         """Run a trajectory in simulation using the specified KOMO instance.
 
@@ -119,12 +118,10 @@ class Simulator:
                 For KOMO-based paths this is typically, phases * dur. per phase.
             tau:
                 The time interval between steps in the simulation in seconds.
-            capture_points:
-                If True, the point cloud will be captured at each step.
-            capture_rgb:                    
-                If True, the RGB image will be captured at each step.
             capture_depth:
                 If True, the depth image will be captured at each step. 
+            visualize:
+                If True, the simulation will be visualized.
 
         """
 
@@ -135,9 +132,11 @@ class Simulator:
                 depth = self.getDepth()
                 self.depth.append(depth)
             for _ in range(10):
-                #time.sleep(tau)
                 self._sim.step(control_point, tau, ry.ControlMode.position)
-                #self.config.view()
+                
+                if visualize:
+                    time.sleep(tau/10)
+                    self.config.view()
 
 
     def run_trajectory_spline(
