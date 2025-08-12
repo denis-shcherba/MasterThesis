@@ -16,7 +16,8 @@ class RobotEnviroment:
                  base_removal: bool=False,
                  observation_mode: str="POINTCLOUD",
                  visualize: bool=False,
-                 path_mode: str=None) -> None:
+                 path_mode: str=None,
+                 noise_dict: dict={}) -> None:
         self.C = C
         self.visuals = visuals
         self.verbose = verbose
@@ -29,6 +30,7 @@ class RobotEnviroment:
         self.observation_mode = observation_mode
         self.visualize = visualize
         self.path_mode = path_mode
+        self.noise_dict = noise_dict
 
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"

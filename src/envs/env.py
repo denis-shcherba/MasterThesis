@@ -3,20 +3,17 @@ from gymnasium import spaces
 import numpy as np
 
 import robotic as ry
-import h5py
 from envs.shelf import generate_shelf
 from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 from envs.simulator import Simulator
 
-# print("Importing ShelfEnv...")
 class ShelfEnv(gym.Env):
     # This metadata is used by the render function. 'rgb_array' is needed for video recording.
-    metadata = {"render_modes": ["rgb_array"], "render_fps": 30}
+    #metadata = {"render_modes": ["rgb_array"], "render_fps": 30}
 
     def __init__(self, 
-                 obs_type ="pixels_agent_pos",
-                 ############# ROBOT MODE #############
+                 obs_type="pixels_agent_pos",
                  robot_mode="floating",
                  collect_data=True,
                  path_mode="SE39D",
@@ -56,7 +53,8 @@ class ShelfEnv(gym.Env):
         self._create_shelf_scene(shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant)
         self.q0 = self.C.getJointState()
 
-        self.sim = Simulator(self.C, verbose=0)
+        if self.simulate:
+            self.sim = Simulator(self.C, verbose=0)
 
         # --- Define Action and Observation Spaces ---
         # These must match the policy's expectations.
@@ -127,7 +125,7 @@ class ShelfEnv(gym.Env):
             self.prefix = ""
             
             current_q = self.C.getJointState()
-            offset = np.array([.0, 0, .2, 0, 0, 0, 0]) 
+            offset = np.array([.0, 0, .2]) 
             current_q[:len(offset)] += offset 
             self.C.setJointState(current_q)
 
@@ -135,10 +133,10 @@ class ShelfEnv(gym.Env):
             raise ValueError(f"Unknown ROBOT_MODE: {self.robot_mode}")
 
         # Gripper friction
-        finger1 = self.C.getFrame(self.prefix + "finger1")
-        finger2 = self.C.getFrame(self.prefix + "finger2")
-        if finger1: finger1.setAttribute("friction", 1e5)
-        if finger2: finger2.setAttribute("friction", 1e5)
+        # finger1 = self.C.getFrame(self.prefix + "finger1")
+        # finger2 = self.C.getFrame(self.prefix + "finger2")
+        # if finger1: finger1.setAttribute("friction", 1e5)
+        # if finger2: finger2.setAttribute("friction", 1e5)
         
 
         # Shelf setup
@@ -199,9 +197,11 @@ class ShelfEnv(gym.Env):
                 .setPosition(book_center_position) \
                 .setQuaternion(q_orientation.asArr()) \
                 .setShape(ry.ST.ssBox, size=[b_size_x, b_size_y, b_size_z, 0.005]) \
-                .setColor(np.random.rand(3)) \
+                .setColor([1, 0, 0]) \
                 .setContact(1) \
-                .setMass(.1)
+                .setMass(.1) \
+                .setAttribute("friction", .01) 
+
 
     def _get_obs(self):
         agent_pos_raw = self.C.getJointState()[:3]
@@ -222,7 +222,7 @@ class ShelfEnv(gym.Env):
         return observation
 
     def _get_info(self):
-        # Returns auxiliary diagnostic information (optional)
+        # TODO Returns auxiliary diagnostic information (optional)
         return {"distance_to_goal": 0.1}
 
     def reset(self, seed=None, options=None):
@@ -254,12 +254,16 @@ class ShelfEnv(gym.Env):
         # `action` will be a numpy array matching `self.action_space`
         print(f"Executing action: {action}")
         
-        # --- Apply action and get new state ---
-        self.C.setJointState([action[0], action[1], action[2], 1, 0, 0, 0])  # Assuming the first 7 values are joint angles
+        if self.simulate:
+            for i in range(100):  # Simulate for 100 steps
+                self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
+
+        else:
+            self.C.setJointState([action[0], action[1], action[2]])  # Assuming the first 7 values are joint angles
 
         # --- After action, get the new results ---
         observation = self._get_obs()
-        reward = 1.0 # TODO Your logic for calculating reward
+        reward = 1.0 # TODO Your logic for calculating reward, if even necessary
         terminated = False # Your logic for whether the episode has ended (e.g., task success)
         truncated = False # Your logic for whether the episode was cut short (e.g., time limit)
         info = self._get_info()
@@ -269,9 +273,12 @@ class ShelfEnv(gym.Env):
         return observation, reward, terminated, truncated, info
 
     def render(self):
-        frame = self._get_obs()["depth"]
-        return frame
+        #TODO, if even necessary
+        pass
 
+    def getJointState(self):
+        return self.C.getJointState()
+    
     def close(self):
         # Clean up any resources (e.g., close simulator connection)
         print("Closing the environment.")

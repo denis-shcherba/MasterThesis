@@ -6,7 +6,7 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
-COLLECT_DATA = True
+COLLECT_DATA = False
 PATH_MODE = "POS3D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos"
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
@@ -15,8 +15,22 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 5_000
+NUM_SAMPLES = 1_000
 VISUALIZE = False  # If true, the simulation will be visualized
+
+# Noise settings
+# STATE_ADD_NOISE = 0   # bit coded, 1 is gaussian, 2 is waypoint noise
+# DEPTH_ADD_NOISE = 0   # 
+
+noise_dict = {
+    "stateNoise": {
+        "type": "gaussian",
+        "std": 0.01,
+        "mean": 0.0,
+    },
+    "depthNoise": {}
+}
+
 
 prefix = "l_"
 C = ry.Config()
@@ -108,7 +122,7 @@ for sample in samples:
         C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
 
-        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE)
+        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE, noise_dict=noise_dict)
 
         success = roboenv.pull("target_book_0", target, accumulated_collisions=False, get_observation=COLLECT_DATA)
         
