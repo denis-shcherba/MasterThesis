@@ -21,7 +21,7 @@ from utils.data_utils import numpy_to_python
 log = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="configs", config_name="config", version_base=None)
+@hydra.main(config_path="../configs", config_name="config", version_base=None)
 def train_policy(cfg: DictConfig) -> None:
     """
     Main training function for manipulation policy learning.

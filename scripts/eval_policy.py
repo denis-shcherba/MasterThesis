@@ -4,7 +4,6 @@ import torch
 import numpy as np
 import logging
 import os
-from envs.create_env import ShelfPullDataCollector
 from models.policy_head.policy_network import create_model
 from data_handling.processing import pose_9d_to_7d, pose_7d_to_9d
 from utils.data_utils import normalize_depth, normalize_state, denormalize_actions
@@ -14,7 +13,6 @@ import gymnasium as gym
 import envs.env  # noqa: F401 
 
 log = logging.getLogger(__name__)
-SIMULATE = True
 
 def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: torch.device) -> dict:
     """
@@ -54,7 +52,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 
-@hydra.main(config_path="configs", config_name="inference", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
@@ -63,14 +61,7 @@ def eval_policy(cfg: DictConfig) -> None:
     device = torch.device(device_str)
     log.info(f"Using device: {device}")
 
-    collector = ShelfPullDataCollector(**cfg.env)
-    collector.spawn_books_scene()
-    collector.C.view(False)
-    q0 = collector.C.getJointState()
-
-
-    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos")  # Adjust args as needed
-    obs, info = env.reset()
+    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", simulate=cfg.simulate)  # Adjust args as needed
 
     # Model
     log.info("Initializing model...")
@@ -117,60 +108,58 @@ def eval_policy(cfg: DictConfig) -> None:
     depth_sequence = []
     state_sequence = []
     sequence_length = cfg.get("data", {}).get("sequence_length", 0)
+    
+    for evaluation in range(cfg.get("num_eval_episodes")):
+        obs, info = env.reset()
 
+        for i in range(64+10):
+            depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
 
-    if SIMULATE:
-        sim = ry.Simulation(collector.C, ry.SimulationEngine.physx, verbose=0)
+            depth = normalize_depth(depth, normalization_stats["depth_stats"])
+            robot_state = obs["agent_pos"]
 
-    for i in range(64+30):
-        depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
+            raw_inference_data = {"robot_state": robot_state}
+            input_for_model = preprocess_inference_input(raw_inference_data, cfg, device)
 
-        depth = normalize_depth(depth, normalization_stats["depth_stats"])
-        robot_state = obs["agent_pos"]
+            depth_sequence.append(depth)
+            state_tensor = torch.tensor(input_for_model["state"], dtype=torch.float32, device=device).unsqueeze(0)
+            state_tensor = normalize_state(state_tensor, normalization_stats["action_stats"])
 
-        raw_inference_data = {"robot_state": robot_state}
-        input_for_model = preprocess_inference_input(raw_inference_data, cfg, device)
+            state_sequence.append(state_tensor)
 
-        depth_sequence.append(depth)
-        state_tensor = torch.tensor(input_for_model["state"], dtype=torch.float32, device=device).unsqueeze(0)
-        state_tensor = normalize_state(state_tensor, normalization_stats["action_stats"])
+            if len(depth_sequence) > sequence_length:
+                depth_sequence = depth_sequence[-sequence_length:]
+                state_sequence = state_sequence[-sequence_length:]
 
-        state_sequence.append(state_tensor)
+            num_pad = sequence_length - len(depth_sequence)
+            if num_pad > 0:
+                dummy_depth = torch.zeros_like(depth)
+                dummy_state = torch.zeros_like(state_tensor)
+                depth_sequence = [dummy_depth] * num_pad + depth_sequence
+                state_sequence = [dummy_state] * num_pad + state_sequence
 
-        if len(depth_sequence) > sequence_length:
-            depth_sequence = depth_sequence[-sequence_length:]
-            state_sequence = state_sequence[-sequence_length:]
+            depth_seq = torch.stack(depth_sequence, dim=0).squeeze(1).unsqueeze(0)
+            state_seq = torch.stack(state_sequence, dim=0).squeeze(1).unsqueeze(0)
 
-        num_pad = sequence_length - len(depth_sequence)
-        if num_pad > 0:
-            dummy_depth = torch.zeros_like(depth)
-            dummy_state = torch.zeros_like(state_tensor)
-            depth_sequence = [dummy_depth] * num_pad + depth_sequence
-            state_sequence = [dummy_state] * num_pad + state_sequence
+            log.info(f"Running model inference for step {i}...")
+            with torch.no_grad():
+                output = model(depth_seq, state_seq)
 
-        depth_seq = torch.stack(depth_sequence, dim=0).squeeze(1).unsqueeze(0)
-        state_seq = torch.stack(state_sequence, dim=0).squeeze(1).unsqueeze(0)
+            log.info(f"Inference output raw: {output}")
 
-        log.info(f"Running model inference for step {i}...")
-        with torch.no_grad():
-            output = model(depth_seq, state_seq)
-
-        log.info(f"Inference output raw: {output}")
-
-        if cfg["model"]["action_dim"] == 9:
-            pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
-            collector.C.setJointState(pose7d)
-        elif cfg["model"]["action_dim"] == 3:
-            if cfg.get("model").get("policy_head_type") == "transformer":
-                output = denormalize_actions(output, normalization_stats["action_stats"])
-            pos = output.squeeze().cpu().numpy()
-            if not SIMULATE:
-                collector.C.setJointState(np.array([pos[0], pos[1], pos[2]]))
-            else:
-                #sim.step([pos[0], pos[1], pos[2]], 0.01, ry.ControlMode.position)
+            if cfg["model"]["action_dim"] == 9:
+                pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
+            elif cfg["model"]["action_dim"] == 3:
+                if cfg.get("model").get("policy_head_type") == "transformer":
+                    output = denormalize_actions(output, normalization_stats["action_stats"])
+                pos = output.squeeze().cpu().numpy()
                 obs, reward, terminated, truncated, info = env.step([pos[0], pos[1], pos[2]])
 
-        log.info(f"Output tensor shape: {output.shape if isinstance(output, torch.Tensor) else 'dict'}")
+            log.info(f"Output tensor shape: {output.shape if isinstance(output, torch.Tensor) else 'dict'}")
+            
+        log.info(f"Evaluation {evaluation} finished with distance to goal {info.get('distance_to_goal', 'N/A')} and success {info.get('success', 'N/A')}.")
+
+        env.unwrapped.C.view(True)
 
     log.info("Policy evaluation/inference finished.")
 

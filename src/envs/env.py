@@ -7,6 +7,7 @@ from envs.shelf import generate_shelf
 from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 from envs.simulator import Simulator
+import time
 
 class ShelfEnv(gym.Env):
     # This metadata is used by the render function. 'rgb_array' is needed for video recording.
@@ -54,7 +55,7 @@ class ShelfEnv(gym.Env):
         self.q0 = self.C.getJointState()
 
         if self.simulate:
-            self.sim = Simulator(self.C, verbose=0)
+            self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0)
 
         # --- Define Action and Observation Spaces ---
         # These must match the policy's expectations.
@@ -96,7 +97,6 @@ class ShelfEnv(gym.Env):
             )
         else:
             raise ValueError(f"Unknown observation type: {obs_type}")
-
 
 
     def _create_shelf_scene(self, shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant):
@@ -168,8 +168,6 @@ class ShelfEnv(gym.Env):
         shelf_center_pos = self.shelf_bottom_frame.getPosition()[:3]
         self.shelf_corner_ref_point = shelf_center_pos + np.array([-self.shelf_width/2, -self.shelf_depth/2, 0])
 
-        self.C.view(True)
-
     def _spawn_books_scene(self):
         sample = generate_random_box_params(
             shelf_size=self.shelf_dims_for_spawning, # (shelf_width, shelf_depth, shelf_plate_thickness)
@@ -201,7 +199,15 @@ class ShelfEnv(gym.Env):
                 .setContact(1) \
                 .setMass(.1) \
                 .setAttribute("friction", .01) 
+            
 
+        # target at the middle of the shelf ending for goal evaluation
+        target = np.array([
+            (self.shelf_bottom_frame.getPosition()[:2] + np.array([-self.shelf_depth/2, 0])),
+        ])
+        target = np.append(target, self.C.getFrame("target_book_0").getPosition()[2])
+
+        self.C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
     def _get_obs(self):
         agent_pos_raw = self.C.getJointState()[:3]
@@ -222,8 +228,9 @@ class ShelfEnv(gym.Env):
         return observation
 
     def _get_info(self):
-        # TODO Returns auxiliary diagnostic information (optional)
-        return {"distance_to_goal": 0.1}
+        distance_to_goal = np.linalg.norm(self.C.getFrame("target").getPosition() - self.C.getFrame("target_book_0").getPosition())
+        success = distance_to_goal < 0.075
+        return {"distance_to_goal": distance_to_goal, "success": success}
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -238,7 +245,10 @@ class ShelfEnv(gym.Env):
 
         self._spawn_books_scene()
 
-        self.C.view(True)
+        del self.sim
+
+        if self.simulate:
+            self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0)
         observation = self._get_obs()
         info = self._get_info()
         
@@ -255,8 +265,9 @@ class ShelfEnv(gym.Env):
         print(f"Executing action: {action}")
         
         if self.simulate:
-            for i in range(100):  # Simulate for 100 steps
+            for _ in range(100):  # Simulate for 100 steps
                 self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
+                self.C.view()
 
         else:
             self.C.setJointState([action[0], action[1], action[2]])  # Assuming the first 7 values are joint angles
@@ -268,7 +279,7 @@ class ShelfEnv(gym.Env):
         truncated = False # Your logic for whether the episode was cut short (e.g., time limit)
         info = self._get_info()
         
-        self.C.view(True)  # Update the view after the action
+        self.C.view(False)  # Update the view after the action
         # The step function MUST return these five values in this order
         return observation, reward, terminated, truncated, info
 
