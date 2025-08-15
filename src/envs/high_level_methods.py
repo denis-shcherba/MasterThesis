@@ -14,7 +14,10 @@ class RobotEnviroment:
                  sim: bool=False,
                  gripper: str="l_gripper",
                  base_removal: bool=False,
-                 observation_mode: str="POINTCLOUD") -> None:
+                 observation_mode: str="POINTCLOUD",
+                 visualize: bool=False,
+                 path_mode: str=None,
+                 noise_dict: dict={}) -> None:
         self.C = C
         self.visuals = visuals
         self.verbose = verbose
@@ -25,6 +28,9 @@ class RobotEnviroment:
         self.gripper = gripper
         self.base_removal = base_removal
         self.observation_mode = observation_mode
+        self.visualize = visualize
+        self.path_mode = path_mode
+        self.noise_dict = noise_dict
 
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"
@@ -129,7 +135,7 @@ class RobotEnviroment:
     def run_path(self, path):
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose)
-            sim.run_trajectory(path, 2)
+            sim.run_trajectory_spline(path, 2)
         else:
             for t in range(path.shape[0]):
                 self.C.setJointState(path[t])
@@ -143,7 +149,7 @@ class RobotEnviroment:
         if feasible:
             if self.sim == True:
                 sim = Simulator(self.C, verbose=self.verbose)
-                sim.run_trajectory(path, 2)
+                sim.run_trajectory_spline(path, 2)
             
             else:
                 for t in range(path.shape[0]):
@@ -208,7 +214,7 @@ class RobotEnviroment:
         
         if self.sim == True:
             # TODO calculate offset for fix force given PD properties
-            offset = -.001
+            offset = -.01
             # same as path2 + np.array([0, 0, offset, 0, 0, 0, 0]) for floating gripper
             path2_after_offset = []       
             C2 = ry.Config()
@@ -222,20 +228,23 @@ class RobotEnviroment:
                 delta_q = np.linalg.pinv(J) @ delta_x
                 path2_after_offset.append(q + delta_q)
             
+            path2 = path2_after_offset
             del C2
 
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
+            if "SPLINE" in self.path_mode == "DELTA3DSPLINE":
+                sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)
+                sim.run_trajectory_spline(np.asarray(path2_after_offset), 2, capture_depth=get_observation)
+            else:
+                sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_depth=get_observation, visualize=self.visualize)
+                sim.run_trajectory_position_control(np.array(path2_after_offset), n_steps=2,  tau=0.01, capture_depth=get_observation, visualize=self.visualize)
+
+
             if self.observation_mode == "POINTCLOUD":
-                sim.run_trajectory(np.array(path1), 2, capture_points=get_observation)
-                sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_points=get_observation)
                 self.points = sim.points
             elif self.observation_mode == "RGB":
-                sim.run_trajectory(np.array(path1), 2, capture_rgb=get_observation)
-                sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_rgb=get_observation)
                 self.rgb_image = sim.rgb
             elif self.observation_mode == "DEPTH":
-                sim.run_trajectory(np.array(path1), 2, capture_depth=get_observation)
-                sim.run_trajectory(np.asarray(path2_after_offset), 2, capture_depth=get_observation)
                 self.depth_image = sim.depth
 
         else:
@@ -260,7 +269,7 @@ class RobotEnviroment:
 
         self.C.delFrame("tmp")
 
-        self.path = np.concatenate((path1, path2), axis=0)
+        self.path = np.concatenate((path1, path2_after_offset), axis=0)
         return True
 
     def pull_point():

@@ -8,19 +8,8 @@ import logging
 
 class ManipulationDataset(Dataset):
     """
-    A flexible dataset for loading manipulation demonstrations from H5 files,
-    supporting both sequential and static regression tasks with normalization.
-    This version uses zero-padding for initial sequences.
-
-    Expected H5 structure for sequential data:
-    - /demo_0/path: (trajectory_length, action_dim)
-    - /demo_0/points: (trajectory_length, num_points, 3)
-    - /demo_0/depth: (trajectory_length, height, width)
-
-    Expected H5 structure for regression data:
-    - /demo_0/path: (action_dim,)
-    - /demo_0/points: (num_points, 3)
-    - /demo_0/depth: (height, width)
+    Streaming HDF5 dataset for imitation learning.
+    Loads only the data slice needed for each __getitem__ call.
     """
 
     def __init__(
@@ -41,8 +30,6 @@ class ManipulationDataset(Dataset):
         depth_normalization_method: str = 'minmax',     # 'minmax', 'zscore', or 'unit'
         action_normalization_method: str = 'minmax',    # 'minmax', 'zscore', or 'unit'
     ):
-        """Initializes the dataset."""
-        # --- Configuration ---
         self.h5_file_path = h5_file_path
         self.is_regression = is_regression
         self.sequence_length = sequence_length if not is_regression else 1
@@ -56,336 +43,237 @@ class ManipulationDataset(Dataset):
         self.depth_normalization_method = depth_normalization_method
         self.action_normalization_method = action_normalization_method
 
-        # --- Setup ---
         self.logger = logging.getLogger(__name__)
         self.rng = np.random.default_rng(random_seed)
-        
-        # Normalization statistics
-        self.depth_stats = None
-        self.action_stats = None
-        
-        # --- Data Loading and Processing ---
-        self._load_demonstrations()
-        
-        # Compute normalization statistics if needed
-        if self.normalize_depth and self.observation_mode == 'depth':
-            self._compute_depth_normalization_stats()
-        if self.normalize_actions:
-            self._compute_action_normalization_stats()
-        
+
+        # We'll store only dataset metadata, not the arrays
+        self.demo_meta: List[Dict] = []
+        self.valid_indices: List[Tuple[int, int]] = []
+
+        # Load just the metadata first
+        self._index_demonstrations()
+
+        # Create train/val split
         if self.split in ['train', 'val']:
             self._create_split(train_split)
-            
+
+        # Optional subsampling
         self._subsample_if_needed(subsample_demos)
 
-        self.logger.info(
-            f"Dataset initialized with {len(self)} samples for split '{self.split}' "
-            f"(mode: {'regression' if self.is_regression else 'sequence'})."
-        )
-
-    def __len__(self) -> int:
-        """Return the total number of samples in the dataset."""
-        if self.is_regression:
-            return len(self.demonstrations)
-        
-        if hasattr(self, 'valid_indices'):
-            return len(self.valid_indices)
-        return 0
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """
-        Fetches a sample. For sequential mode, this consists of a sequence of 
-        (obs, action) pairs (padded if necessary) and a target action.
-        """
-        if self.is_regression:
-            demo_data = self.demonstrations[idx]
-            raw_obs = demo_data['obs']
-
-            # Process observation
-            if self.observation_mode == 'depth':
-                processed_obs = self._process_single_depth_image(raw_obs)
+        # Compute normalization stats by streaming through the file
+        with h5py.File(self.h5_file_path, 'r') as f:
+            if self.normalize_actions:
+                self.action_stats = self._compute_action_normalization_stats(f)
             else:
-                processed_obs = raw_obs
+                self.action_stats = None
 
-            # Process action
-            action = demo_data['path']
-            if self.normalize_actions and self.action_stats is not None:
+            if self.normalize_depth and self.observation_mode == 'depth':
+                self.depth_stats = self._compute_depth_normalization_stats(f)
+            else:
+                self.depth_stats = None
+
+    def _index_demonstrations(self):
+        """Read only the shapes and keys from the file, no data."""
+        with h5py.File(self.h5_file_path, 'r') as f:
+            demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')],
+                               key=lambda x: int(x.split('_')[1]))
+            for demo_idx, demo_key in enumerate(demo_keys):
+                path_shape = f[f'{demo_key}/path'].shape
+                if self.observation_mode == 'depth':
+                    obs_shape = f[f'{demo_key}/depth'].shape
+                else:
+                    obs_shape = f[f'{demo_key}/points'].shape
+
+                if self.is_regression:
+                    if path_shape != (self.action_dim,):
+                        continue
+                else:
+                    if len(path_shape) != 2 or path_shape[1] != self.action_dim:
+                        continue
+                    if obs_shape[0] != path_shape[0]:
+                        continue
+
+                self.demo_meta.append({
+                    'demo_id': demo_idx,
+                    'demo_key': demo_key,
+                    'path_shape': path_shape,
+                    'obs_shape': obs_shape
+                })
+
+                if not self.is_regression:
+                    num_timesteps = path_shape[0]
+                    for t in range(num_timesteps - 1):
+                        self.valid_indices.append((demo_idx, t))
+
+        if not self.demo_meta:
+            raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
+
+    def _create_split(self, train_split: float):
+        """Filter demos for train/val split."""
+        indices = np.arange(len(self.demo_meta))
+        self.rng.shuffle(indices)
+        split_idx = int(len(self.demo_meta) * train_split)
+        selected_ids = set(indices[:split_idx] if self.split == 'train' else indices[split_idx:])
+
+        self.demo_meta = [d for i, d in enumerate(self.demo_meta) if i in selected_ids]
+        if not self.is_regression:
+            self.valid_indices = [(d_idx, t) for d_idx, t in self.valid_indices if d_idx in selected_ids]
+
+        # Remap demo_id to sequential
+        old_to_new = {old['demo_id']: i for i, old in enumerate(self.demo_meta)}
+        for d in self.demo_meta:
+            d['demo_id'] = old_to_new[d['demo_id']]
+        if not self.is_regression:
+            self.valid_indices = [(old_to_new[d_idx], t) for d_idx, t in self.valid_indices]
+
+    def _subsample_if_needed(self, subsample_demos: Optional[int]):
+        if subsample_demos is not None and subsample_demos > 0:
+            if len(self.demo_meta) > subsample_demos:
+                self.demo_meta = self.demo_meta[:subsample_demos]
+                kept_ids = {d['demo_id'] for d in self.demo_meta}
+                if not self.is_regression:
+                    self.valid_indices = [(d_idx, t) for d_idx, t in self.valid_indices if d_idx in kept_ids]
+
+    def _compute_action_normalization_stats(self, f):
+        min_vals = np.full(self.action_dim, np.inf, dtype=np.float64)
+        max_vals = np.full(self.action_dim, -np.inf, dtype=np.float64)
+        sum_vals = np.zeros(self.action_dim, dtype=np.float64)
+        sum_sq_vals = np.zeros(self.action_dim, dtype=np.float64)
+        count = 0
+
+        for meta in self.demo_meta:
+            arr = f[f"{meta['demo_key']}/path"][...]
+            if not self.is_regression:
+                count += arr.shape[0]
+                min_vals = np.minimum(min_vals, arr.min(axis=0))
+                max_vals = np.maximum(max_vals, arr.max(axis=0))
+                sum_vals += arr.sum(axis=0)
+                sum_sq_vals += (arr ** 2).sum(axis=0)
+            else:
+                count += 1
+                min_vals = np.minimum(min_vals, arr)
+                max_vals = np.maximum(max_vals, arr)
+                sum_vals += arr
+                sum_sq_vals += arr ** 2
+
+        if self.action_normalization_method == 'minmax':
+            range_vals = np.where(max_vals - min_vals == 0, 1, max_vals - min_vals)
+            return {'method': 'minmax', 'min': min_vals, 'range': range_vals}
+        else:
+            mean = sum_vals / count
+            var = (sum_sq_vals / count) - mean ** 2
+            std = np.where(var == 0, 1, np.sqrt(var))
+            return {'method': self.action_normalization_method, 'mean': mean, 'std': std}
+
+    def _compute_depth_normalization_stats(self, f):
+        min_val, max_val = np.inf, -np.inf
+        sum_val, sum_sq_val, count = 0.0, 0.0, 0
+
+        for meta in self.demo_meta:
+            arr = f[f"{meta['demo_key']}/depth"][...]
+            flat = arr.flatten()
+            count += flat.size
+            min_val = min(min_val, flat.min())
+            max_val = max(max_val, flat.max())
+            sum_val += flat.sum()
+            sum_sq_val += (flat ** 2).sum()
+
+        if self.depth_normalization_method == 'minmax':
+            range_val = max(max_val - min_val, 1)
+            return {'method': 'minmax', 'min': min_val, 'range': range_val}
+        else:
+            mean = sum_val / count
+            var = (sum_sq_val / count) - mean ** 2
+            std = np.sqrt(var) if var > 0 else 1
+            return {'method': self.depth_normalization_method, 'mean': mean, 'std': std}
+
+    def __len__(self):
+        if self.is_regression:
+            return len(self.demo_meta)
+        return len(self.valid_indices)
+
+    def __getitem__(self, idx):
+        # Open file per worker lazily
+        if not hasattr(self, 'h5_file'):
+            self.h5_file = h5py.File(self.h5_file_path, 'r')
+
+        if self.is_regression:
+            meta = self.demo_meta[idx]
+            action = self.h5_file[f"{meta['demo_key']}/path"][...].astype(np.float32)
+            obs = self._load_obs(meta['demo_key'])
+
+            if self.normalize_actions:
                 action = self._normalize_actions(action)
+            if self.observation_mode == 'depth' and self.normalize_depth:
+                obs = self._normalize_depth(obs)
 
-            sample = {
-                'observation': torch.from_numpy(processed_obs).float(),
+            return {
+                'observation': torch.from_numpy(obs).float(),
                 'action': torch.from_numpy(action).float(),
-                'demo_id': torch.tensor(demo_data['demo_id'], dtype=torch.long)
+                'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
             }
-            return sample
 
-        # --- MODIFIED: Sequential mode with padding ---
+        # sequential mode
         demo_idx, t = self.valid_indices[idx]
-        demo_data = self.demonstrations[demo_idx]
-        
-        # `t` is the index of the last observation in the history.
-        # The target action is at `t + 1`.
-        target_action = demo_data['path'][t + 1]
+        meta = self.demo_meta[demo_idx]
 
-        # Determine the start of the sequence slice from the demonstration
+        target_action = self.h5_file[f"{meta['demo_key']}/path"][t + 1].astype(np.float32)
         start_idx = max(0, t - self.sequence_length + 1)
-        
-        # Get the available history slices
-        obs_slice = demo_data['obs'][start_idx : t + 1]
-        action_slice = demo_data['path'][start_idx : t + 1]
-        timestep_slice = np.arange(start_idx, t + 1, dtype=np.int64)
+        obs_seq = self._load_obs(meta['demo_key'], start_idx, t + 1)
+        action_seq = self.h5_file[f"{meta['demo_key']}/path"][start_idx: t + 1].astype(np.float32)
 
-        actual_seq_len = len(obs_slice)
-        num_padding = self.sequence_length - actual_seq_len
-
-        # --- Process and Normalize Slices ---
-        # Process observations first to get the correct shape for padding
-        if self.observation_mode == 'depth':
-            processed_obs_slice = np.stack(
-                [self._process_single_depth_image(obs) for obs in obs_slice], axis=0
-            )
-        else: # 'points'
-            processed_obs_slice = obs_slice
-
-        # Normalize actions (if enabled)
-        if self.normalize_actions and self.action_stats is not None:
-            action_slice = self._normalize_actions(action_slice)
+        if self.normalize_actions:
+            action_seq = self._normalize_actions(action_seq)
             target_action = self._normalize_actions(target_action)
+        if self.observation_mode == 'depth' and self.normalize_depth:
+            obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
 
-        # --- Create Padding ---
-        # Create zero-padding for observations
-        obs_padding_shape = (num_padding,) + processed_obs_slice.shape[1:]
-        obs_padding = np.zeros(obs_padding_shape, dtype=processed_obs_slice.dtype)
+        # padding
+        actual_len = len(obs_seq)
+        pad_len = self.sequence_length - actual_len
+        obs_pad_shape = (pad_len,) + obs_seq.shape[1:]
+        obs_pad = np.zeros(obs_pad_shape, dtype=obs_seq.dtype)
+        act_pad = np.zeros((pad_len, self.action_dim), dtype=action_seq.dtype)
+        time_pad = np.zeros(pad_len, dtype=np.int64)
+        obs_seq = np.concatenate([obs_pad, obs_seq], axis=0)
+        action_seq = np.concatenate([act_pad, action_seq], axis=0)
+        timestep_seq = np.concatenate([time_pad, np.arange(start_idx, t + 1)], axis=0)
+        attention_mask = np.zeros(self.sequence_length, dtype=bool)
+        attention_mask[-actual_len:] = True
 
-        # Create zero-padding for actions and timesteps
-        action_padding = np.zeros((num_padding, self.action_dim), dtype=action_slice.dtype)
-        timestep_padding = np.zeros(num_padding, dtype=np.int64)
-
-        # --- Combine Padding and Data ---
-        obs_seq = np.concatenate([obs_padding, processed_obs_slice], axis=0)
-        action_seq = np.concatenate([action_padding, action_slice], axis=0)
-        timestep_seq = np.concatenate([timestep_padding, timestep_slice], axis=0)
-
-        # --- Create Attention Mask ---
-        # `True` for real data, `False` for padding. Crucial for Transformers.
-        attention_mask = np.zeros(self.sequence_length, dtype=np.bool_)
-        attention_mask[-actual_seq_len:] = True
-
-        # --- Assemble Final Sample ---
-        sample = {
+        return {
             'observation': torch.from_numpy(obs_seq).float(),
             'previous_actions': torch.from_numpy(action_seq).float(),
             'action': torch.from_numpy(target_action).float(),
             'timestep': torch.from_numpy(timestep_seq).long(),
-            'attention_mask': torch.from_numpy(attention_mask), # NEW
-            'demo_id': torch.tensor(demo_idx, dtype=torch.long)
+            'attention_mask': torch.from_numpy(attention_mask),
+            'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
         }
 
-        return sample
+    def _load_obs(self, demo_key, start=None, end=None):
+        if self.observation_mode == 'depth':
+            if start is None:
+                return self.h5_file[f"{demo_key}/depth"][...].astype(np.float32)
+            return self.h5_file[f"{demo_key}/depth"][start:end].astype(np.float32)
+        elif self.observation_mode == 'points':
+            if start is None:
+                return self.h5_file[f"{demo_key}/points"][...].astype(np.float32)
+            return self.h5_file[f"{demo_key}/points"][start:end].astype(np.float32)
+        else:
+            raise ValueError(f"Unsupported observation mode: {self.observation_mode}")
 
-    def _process_single_depth_image(self, depth: np.ndarray) -> np.ndarray:
-        """Process a single depth image with optional normalization."""
-        if self.normalize_depth and self.depth_stats is not None:
-            depth = self._normalize_depth(depth)
-        
-        return depth
-
-    def _compute_action_normalization_stats(self):
-        """Compute normalization statistics for actions."""
-        all_actions = []
-        
-        for demo in self.demonstrations:
-            if self.is_regression:
-                all_actions.append(demo['path'])
-            else:
-                all_actions.extend(demo['path'])
-        
-        if all_actions:
-            all_actions = np.array(all_actions)
-            if self.action_normalization_method == 'minmax':
-                min_vals = np.min(all_actions, axis=0)
-                max_vals = np.max(all_actions, axis=0)
-                range_vals = max_vals - min_vals
-                range_vals[range_vals == 0] = 1
-                self.action_stats = {'method': 'minmax', 'min': min_vals, 'range': range_vals}
-            elif self.action_normalization_method in ['zscore', 'unit']:
-                mean = np.mean(all_actions, axis=0)
-                std = np.std(all_actions, axis=0)
-                std[std == 0] = 1
-                self.action_stats = {'method': self.action_normalization_method, 'mean': mean, 'std': std}
-        
-        self.logger.info(f"Computed action normalization stats using '{self.action_normalization_method}' method")
-
-    def _compute_depth_normalization_stats(self):
-        """Compute normalization statistics for depth images."""
-        all_depths = []
-        
-        for demo in self.demonstrations:
-            data = demo['obs']
-            if data.ndim == 2: # Regression
-                all_depths.append(data.flatten())
-            else: # Sequence
-                for t in range(data.shape[0]):
-                    all_depths.append(data[t].flatten())
-
-        if all_depths:
-            all_depths = np.concatenate(all_depths)
-            if self.depth_normalization_method == 'minmax':
-                min_val, max_val = np.min(all_depths), np.max(all_depths)
-                range_val = max_val - min_val if max_val > min_val else 1
-                self.depth_stats = {'method': 'minmax', 'min': min_val, 'range': range_val}
-            elif self.depth_normalization_method in ['zscore', 'unit']:
-                mean, std = np.mean(all_depths), np.std(all_depths)
-                if std == 0: std = 1
-                self.depth_stats = {'method': self.depth_normalization_method, 'mean': mean, 'std': std}
-                
-        self.logger.info(f"Computed depth normalization stats using '{self.depth_normalization_method}' method")
-
-    def _normalize_actions(self, actions: np.ndarray) -> np.ndarray:
-        if not self.normalize_actions or self.action_stats is None: return actions
+    def _normalize_actions(self, actions):
         if self.action_stats['method'] == 'minmax':
             return (actions - self.action_stats['min']) / self.action_stats['range']
-        elif self.action_stats['method'] in ['zscore', 'unit']:
+        else:
             return (actions - self.action_stats['mean']) / self.action_stats['std']
-        return actions
 
-    def _normalize_depth(self, depth: np.ndarray) -> np.ndarray:
-        if not self.normalize_depth or self.depth_stats is None: return depth
+    def _normalize_depth(self, depth):
         if self.depth_stats['method'] == 'minmax':
             return (depth - self.depth_stats['min']) / self.depth_stats['range']
-        elif self.depth_stats['method'] in ['zscore', 'unit']:
+        else:
             return (depth - self.depth_stats['mean']) / self.depth_stats['std']
-        return depth
-        
-    def get_normalization_stats(self) -> Dict:
-        """Get the computed normalization statistics."""
-        return {'depth_stats': self.depth_stats, 'action_stats': self.action_stats}
 
-    def denormalize_actions(self, normalized_actions: np.ndarray) -> np.ndarray:
-        if not self.normalize_actions or self.action_stats is None: return normalized_actions
-        if self.action_stats['method'] == 'minmax':
-            return normalized_actions * self.action_stats['range'] + self.action_stats['min']
-        elif self.action_stats['method'] in ['zscore', 'unit']:
-            return normalized_actions * self.action_stats['std'] + self.action_stats['mean']
-        return normalized_actions
-        
-    def get_demo_info(self) -> Dict[str, any]:
-        """Get information about the loaded demonstrations."""
-        info = {
-            'num_demonstrations': len(self.demonstrations),
-            'sequence_length': self.sequence_length,
-            'action_dim': self.action_dim,
-            'num_points': self.num_points,
-            'split': self.split,
-            'mode': 'regression' if self.is_regression else 'sequence',
-            'observation_mode': self.observation_mode,
-            'normalize_depth': self.normalize_depth,
-            'normalize_actions': self.normalize_actions
-        }
-        
-        if self.is_regression:
-            info['total_samples'] = len(self.demonstrations)
-        else:
-            info['total_predictable_steps'] = len(self.valid_indices)
-            if self.demonstrations:
-                demo_lengths = [demo['path'].shape[0] for demo in self.demonstrations]
-                info.update({
-                    'min_demo_length': min(demo_lengths) if demo_lengths else 0,
-                    'max_demo_length': max(demo_lengths) if demo_lengths else 0,
-                    'avg_demo_length': np.mean(demo_lengths) if demo_lengths else 0
-                })
-        return info
-
-    def _load_demonstrations(self):
-        """Load demonstrations from the H5 file."""
-        self.demonstrations: List[Dict] = []
-        if not self.is_regression:
-            self.valid_indices: List[tuple[int, int]] = []
-
-        try:
-            with h5py.File(self.h5_file_path, 'r') as f:
-                demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
-
-                for demo_idx, demo_key in enumerate(demo_keys):
-                    path_data = f[f'{demo_key}/path'][()]
-                    if self.observation_mode == 'depth':
-                        obs_data = f[f'{demo_key}/depth'][()]
-                    elif self.observation_mode == 'points':
-                        obs_data = f[f'{demo_key}/points'][()]
-                    else:
-                        raise ValueError(f"Unsupported observation mode: {self.observation_mode}")
-
-                    if self.is_regression:
-                        if path_data.shape != (self.action_dim,): continue
-                    else:
-                        if path_data.ndim != 2 or path_data.shape[1] != self.action_dim: continue
-                        if obs_data.shape[0] != path_data.shape[0]: continue
-
-                    demo_data = {
-                        'path': path_data.astype(np.float32),
-                        'obs': obs_data.astype(np.float32),
-                        'demo_id': demo_idx,
-                        'demo_key': demo_key
-                    }
-                    self.demonstrations.append(demo_data)
-
-                    # --- MODIFIED: Indexing logic ---
-                    if not self.is_regression:
-                        num_timesteps = path_data.shape[0]
-                        # Create a valid index for every possible step in the trajectory
-                        # where a next action can be predicted.
-                        # `t` represents the index of the *last observation* in the history.
-                        # The goal is to predict the action at `t+1`.
-                        for t in range(num_timesteps - 1):
-                            self.valid_indices.append((demo_idx, t))
-
-        except Exception as e:
-            self.logger.error(f"Failed to load H5 file {self.h5_file_path}: {e}")
-            raise
-
-        if not self.demonstrations:
-            raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
-
-    def _create_split(self, train_split: float):
-        """Create train/validation split based on demonstration indices."""
-        num_demos = len(self.demonstrations)
-        if num_demos == 0: return
-
-        indices = np.arange(num_demos)
-        self.rng.shuffle(indices)
-
-        split_idx = int(num_demos * train_split)
-        selected_ids = set(indices[:split_idx] if self.split == 'train' else indices[split_idx:])
-
-        if self.is_regression:
-            self.demonstrations = [d for d in self.demonstrations if d['demo_id'] in selected_ids]
-        else:
-            # We need to filter demonstrations first, then re-index `valid_indices`
-            original_demonstrations = self.demonstrations
-            self.demonstrations = [d for d in original_demonstrations if d['demo_id'] in selected_ids]
-            
-            # Create a map from old demo_id to new demo_id
-            demo_id_map = {d['demo_id']: new_id for new_id, d in enumerate(self.demonstrations)}
-            
-            # Rebuild valid_indices based on the filtered and re-indexed demonstrations
-            new_valid_indices = []
-            for old_demo_idx, t in self.valid_indices:
-                if old_demo_idx in selected_ids:
-                    new_demo_idx = demo_id_map[old_demo_idx]
-                    new_valid_indices.append((new_demo_idx, t))
-            self.valid_indices = new_valid_indices
-
-    def _subsample_if_needed(self, subsample_demos: Optional[int]):
-        """Subsample demonstrations if requested."""
-        if subsample_demos is not None and subsample_demos > 0:
-            if len(self.demonstrations) > subsample_demos:
-                # This logic works for both modes because splitting/subsampling now filters
-                # `self.demonstrations` and rebuilds `valid_indices` accordingly.
-                self.demonstrations = self.demonstrations[:subsample_demos]
-                kept_demo_ids = {d['demo_id'] for d in self.demonstrations}
-                
-                if not self.is_regression:
-                    self.valid_indices = [(d_idx, t) for d_idx, t in self.valid_indices if d_idx in kept_demo_ids]
 
 def create_dataloaders(
     h5_file_path: str,

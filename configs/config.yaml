@@ -9,9 +9,9 @@ defaults:
 train:
   batch_size: 128
   num_workers: 8
-  epochs: 50
+  epochs: 100
   device: cuda
-  #grad_clip: 1.0
+  grad_clip: 1.0
 
 # Global settings
 observation_mode: 'depth'  

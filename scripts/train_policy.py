@@ -21,7 +21,7 @@ from utils.data_utils import numpy_to_python
 log = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="configs", config_name="config", version_base=None)
+@hydra.main(config_path="../configs", config_name="config", version_base=None)
 def train_policy(cfg: DictConfig) -> None:
     """
     Main training function for manipulation policy learning.
@@ -61,8 +61,8 @@ def train_policy(cfg: DictConfig) -> None:
         
         # --- Access normalization stats from the train dataset ---
         train_dataset = train_loader.dataset
-        action_stats = train_dataset.get_normalization_stats().get("action_stats")
-        depth_stats = train_dataset.get_normalization_stats().get("depth_stats")
+        action_stats = train_dataset.action_stats
+        depth_stats = train_dataset.depth_stats
 
         # Convert to clean dicts
         normalization_stats = {

@@ -1,20 +1,19 @@
-# HARD TODO
+# TODO
 
 import hydra
 from omegaconf import DictConfig
-from envs.create_env import ShelfPullDataCollector 
 import logging
 
 log = logging.getLogger(__name__)
 
-@hydra.main(config_path="configs", config_name="data_collection", version_base=None)
+@hydra.main(config_path="../configs", config_name="data_collection", version_base=None)
 def main(cfg: DictConfig):
 
     log.info("Starting policy evaluation/inference...")
 
-    collector = ShelfPullDataCollector(**cfg.env)
-    collector.spawn_books_scene()
-    collector.C.view(True) 
+    # collector = ShelfPullDataCollector(**cfg.env)
+    # collector.spawn_books_scene()
+    # collector.C.view(True) 
     run_data_collection(cfg.env)
 
 
@@ -23,11 +22,11 @@ def run_data_collection(config: dict):
 
     collector = None  # Initialize for finally block
     try:
-        print("Initializing ShelfPullDataCollector...")
-        collector = ShelfPullDataCollector(**config)
+        # print("Initializing ShelfPullDataCollector...")
+        # collector = ShelfPullDataCollector(**config)
         
-        print("Initialization complete. Starting data collection experiment...")
-        collector.run_experiment(view_simulation_steps=True) # Set to False for headless execution TODO
+        # print("Initialization complete. Starting data collection experiment...")
+        # collector.run_experiment(view_simulation_steps=True) # Set to False for headless execution TODO
         
         print("Data collection experiment finished.")
 

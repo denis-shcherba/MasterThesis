@@ -6,8 +6,8 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
-COLLECT_DATA = True
-PATH_MODE = "POS3D" # "JOINT7D", "SE39D", "POS3D", "DELTA3D", "RegressPC2Pos"
+COLLECT_DATA = False
+PATH_MODE = "POS3D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos"
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
@@ -15,7 +15,22 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 1000
+NUM_SAMPLES = 1_000
+VISUALIZE = False  # If true, the simulation will be visualized
+
+# Noise settings
+# STATE_ADD_NOISE = 0   # bit coded, 1 is gaussian, 2 is waypoint noise
+# DEPTH_ADD_NOISE = 0   # 
+
+noise_dict = {
+    "stateNoise": {
+        "type": "gaussian",
+        "std": 0.01,
+        "mean": 0.0,
+    },
+    "depthNoise": {}
+}
+
 
 prefix = "l_"
 C = ry.Config()
@@ -32,11 +47,12 @@ elif ROBOT_MODE == "floating":
     C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
     gripper = "gripper"
     palm = "palm"
-    C.setJointState(C.getJointState() + np.array([.0, 0, .2, 0, 0, 0, 0]))
+    C.setJointState(C.getJointState() + np.array([.0, 0, .2]))
     prefix = ""
 
-C.getFrame(prefix+"finger1").setAttribute("friction", 1e5)
-C.getFrame(prefix+"finger2").setAttribute("friction", 1e5)
+# not necessary as it seems
+# C.getFrame(prefix+"finger1").setAttribute("friction", 1)
+# C.getFrame(prefix+"finger2").setAttribute("friction", 1)
 
 q0 = C.getJointState()
 
@@ -106,7 +122,7 @@ for sample in samples:
         C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
 
-        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE)
+        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE, noise_dict=noise_dict)
 
         success = roboenv.pull("target_book_0", target, accumulated_collisions=False, get_observation=COLLECT_DATA)
         
@@ -116,9 +132,9 @@ for sample in samples:
 
             demo_group = h5file.create_group(f"demo_{demo_id}")
 
-            if PATH_MODE == "JOINT7D":
+            if PATH_MODE == "JOINT7DSPLINE":
                 demo_group.create_dataset("path", data=roboenv.path)
-            if PATH_MODE == "SE39D":
+            if PATH_MODE == "SE39DSPLINE":
                 se3_path = np.zeros((roboenv.path.shape[0], 9))
                 
                 for i in range(roboenv.path.shape[0]):
@@ -131,10 +147,16 @@ for sample in samples:
                 # Now use se3_path instead of the original path
                 demo_group.create_dataset("path", data=se3_path)
 
-            elif PATH_MODE == "POS3D":
+            elif PATH_MODE == "POS3DSPLINE":
+                # save the spline path 3D control points
                 demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
 
-            elif PATH_MODE == "DELTA3D":
+            elif PATH_MODE == "POS3D":
+                # save the spline path 3D control points
+                demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
+
+
+            elif PATH_MODE == "DELTA3DSPLINE":
                 delta_paths = np.empty((64, 3))
                 delta_paths[0] = roboenv.path[0][:3]-C.getJointState()[:3]
                 for i in range(1, roboenv.path.shape[0]):

@@ -122,7 +122,7 @@ class Trainer:
             is_sequence = obs.shape[1] > 1  
     
             # Debug shapes
-            tqdm.write(f"Obs shape: {obs.shape}, Actions shape: {actions.shape}, Is sequence: {is_sequence}")
+            #tqdm.write(f"Obs shape: {obs.shape}, Actions shape: {actions.shape}, Is sequence: {is_sequence}")
             
             # Forward pass
             self.optimizer.zero_grad()
@@ -209,17 +209,33 @@ class Trainer:
                 tqdm.write(f"Target actions stats: mean={actions.mean():.3f}, std={actions.std():.3f}")
                 continue  # Skip this batch
             
-            # Backward pass
             loss.backward()
-            
+
+            # Log gradient norm BEFORE clipping
+            if num_batches % 10 == 0:
+                pre_clip_norm = 0.0
+                for p in self.model.parameters():
+                    if p.grad is not None:
+                        param_norm = p.grad.data.norm(2)
+                        pre_clip_norm += param_norm.item() ** 2
+                pre_clip_norm = pre_clip_norm ** 0.5
+                tqdm.write(f"Pre-clip gradient norm: {pre_clip_norm:.3f}")
+
             # Gradient clipping if specified
             if self.cfg.get('train', {}).get('grad_clip', 0) > 0:
-                grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), 
-                    self.cfg.get('train').get('grad_clip')
+                _ = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(),
+                    self.cfg['train']['grad_clip']
                 )
+
                 if num_batches % 10 == 0:
-                    tqdm.write(f"Gradient norm: {grad_norm:.3f}")
+                    post_clip_norm = 0.0
+                    for p in self.model.parameters():
+                        if p.grad is not None:
+                            param_norm = p.grad.data.norm(2)
+                            post_clip_norm += param_norm.item() ** 2
+                    post_clip_norm = post_clip_norm ** 0.5
+                    tqdm.write(f"Post-clip gradient norm: {post_clip_norm:.3f}")
             
             self.optimizer.step()
             
