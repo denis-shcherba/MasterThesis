@@ -15,8 +15,8 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 1_000
-VISUALIZE = False  # If true, the simulation will be visualized
+NUM_SAMPLES = 10
+VISUALIZE = True  # If true, the simulation will be visualized
 
 # Noise settings
 # STATE_ADD_NOISE = 0   # bit coded, 1 is gaussian, 2 is waypoint noise
@@ -24,13 +24,14 @@ VISUALIZE = False  # If true, the simulation will be visualized
 
 noise_dict = {
     "stateNoise": {
-        "type": "gaussian",
-        "std": 0.01,
+        "type": "gaussianToWaypoint",
+        "std": 0.02,
         "mean": 0.0,
     },
     "depthNoise": {}
 }
 
+# State noise variants: gaussianToPath, gaussianToWaypoint, randomWaypoint
 
 prefix = "l_"
 C = ry.Config()
