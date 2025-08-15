@@ -135,7 +135,7 @@ class Simulator:
                 self._sim.step(control_point, tau, ry.ControlMode.position)
                 
                 if visualize:
-                    time.sleep(tau/10)
+                    time.sleep(tau/5)
                     self.config.view()
 
 
