@@ -213,7 +213,7 @@ class ManipulationDataset(Dataset):
             demo_idx, t = self.valid_indices[idx]
             meta = self.demo_meta[demo_idx]
 
-            target_action = self.h5_file[f"{meta['demo_key']}/path"][t + 1].astype(np.float32)
+            target_timing = self.h5_file[f"{meta['demo_key']}/timings"][t + 1].astype(np.int8)-1  # Convert to zero-based index
             start_idx = max(0, t - self.sequence_length + 1)
             obs_seq = self._load_obs(meta['demo_key'], start_idx, t + 1)
             action_seq = self.h5_file[f"{meta['demo_key']}/path"][start_idx: t + 1].astype(np.float32)
@@ -222,7 +222,7 @@ class ManipulationDataset(Dataset):
 
             if self.normalize_actions:
                 action_seq = self._normalize_actions(action_seq)
-                target_action = self._normalize_actions(target_action)
+                #target_action = self._normalize_actions(target_action)
             if self.observation_mode == 'depth' and self.normalize_depth:
                 obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
 
@@ -246,11 +246,10 @@ class ManipulationDataset(Dataset):
             return {
                 'observation': torch.from_numpy(obs_seq).float(),
                 'previous_actions': torch.from_numpy(action_seq).float(),
-                'action': torch.from_numpy(target_action).float(),
-                'attention_mask': torch.from_numpy(attention_mask),
+                'action': torch.tensor(target_timing, dtype=torch.long),               
                 'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
                 'waypoint': torch.from_numpy(waypoints).float(),
-                'previous_timings': torch.from_numpy(timing_seq).float()
+                #'previous_timings': torch.from_numpy(timing_seq).int()
 
             }
 

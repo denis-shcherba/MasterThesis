@@ -193,6 +193,29 @@ class MSELoss(nn.Module):
         return loss
 
 
+class CrossEntropyLoss(nn.Module):
+    """
+    Computes Cross Entropy loss for discrete classification.
+    Useful for predicting discrete timing classes.
+    """
+    def __init__(self, ignore_index=-100, label_smoothing=0.0):
+        super().__init__()
+        # Initialize the Cross Entropy loss function
+        self.ce_loss = nn.CrossEntropyLoss(ignore_index=ignore_index, label_smoothing=label_smoothing)
+        
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            prediction (torch.Tensor): The predicted logits tensor of shape (N, C) or (N, C, ...)
+                                     where N is batch size and C is number of classes
+            target (torch.Tensor): The ground truth class indices tensor of shape (N,) or (N, ...)
+                                 containing class indices in range [0, C-1]
+        Returns:
+            torch.Tensor: Scalar tensor representing the cross entropy loss.
+        """
+        loss = self.ce_loss(prediction, target)
+        return loss
+
 
 # --- Main Loss Creation Function (Factory) ---
 log = logging.getLogger(__name__)
@@ -225,6 +248,13 @@ def create_loss_function(loss_cfg_global):
         # If the name is 'MSELoss', we create a simple MSE loss function.
         log.info("Creating MSELoss.")
         return MSELoss()
+
+    elif loss_name == "CrossEntropyLoss":
+        # Create cross entropy loss for discrete predictions
+        log.info("Creating CrossEntropyLoss.")
+        ignore_index = loss_cfg_global.get("ignore_index", -100)
+        label_smoothing = loss_cfg_global.get("label_smoothing", 0.0)
+        return CrossEntropyLoss(ignore_index=ignore_index, label_smoothing=label_smoothing)
 
     elif loss_name is not None:
         # If a name is given and it's not PoseLoss9D, assume it's an individual loss type.

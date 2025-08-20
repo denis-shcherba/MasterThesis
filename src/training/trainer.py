@@ -282,7 +282,6 @@ class Trainer:
                     elif self.model.policy_head_type == "gru":
                         output = self.model(obs, state=state, hidden_state=None)
                     elif self.model.policy_head_type == "transformer":
-                        timestep = batch["timestep"].to(self.device) 
                         output = self.model(obs, state=state)
                 else:
                     output = self.model(obs)
