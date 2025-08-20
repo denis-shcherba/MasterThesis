@@ -16,6 +16,7 @@ class ManipulationDataset(Dataset):
         self,
         h5_file_path: str,
         is_regression: bool = False,
+        is_waypointPlusTimings: bool = False,
         sequence_length: int = 1,
         action_dim: int = 9,
         num_points: int = 1000,
@@ -32,6 +33,7 @@ class ManipulationDataset(Dataset):
     ):
         self.h5_file_path = h5_file_path
         self.is_regression = is_regression
+        self.is_waypointPlusTimings = is_waypointPlusTimings
         self.sequence_length = sequence_length if not is_regression else 1
         self.action_dim = action_dim
         self.num_points = num_points
@@ -76,7 +78,7 @@ class ManipulationDataset(Dataset):
         """Read only the shapes and keys from the file, no data."""
         with h5py.File(self.h5_file_path, 'r') as f:
             demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')],
-                               key=lambda x: int(x.split('_')[1]))
+                            key=lambda x: int(x.split('_')[1]))
             for demo_idx, demo_key in enumerate(demo_keys):
                 path_shape = f[f'{demo_key}/path'].shape
                 if self.observation_mode == 'depth':
@@ -93,12 +95,19 @@ class ManipulationDataset(Dataset):
                     if obs_shape[0] != path_shape[0]:
                         continue
 
-                self.demo_meta.append({
+                # Build metadata dictionary once
+                meta = {
                     'demo_id': demo_idx,
                     'demo_key': demo_key,
                     'path_shape': path_shape,
                     'obs_shape': obs_shape
-                })
+                }
+
+                # Extend conditionally
+                if self.is_waypointPlusTimings:
+                    meta['num_waypoints'] = f[f'{demo_key}/ways'].shape
+
+                self.demo_meta.append(meta)
 
                 if not self.is_regression:
                     num_timesteps = path_shape[0]
@@ -199,56 +208,89 @@ class ManipulationDataset(Dataset):
 
         if self.is_regression:
             meta = self.demo_meta[idx]
-            action = self.h5_file[f"{meta['demo_key']}/path"][...].astype(np.float32)
-            obs = self._load_obs(meta['demo_key'])
+        elif self.is_waypointPlusTimings:
+
+            demo_idx, t = self.valid_indices[idx]
+            meta = self.demo_meta[demo_idx]
+
+            target_action = self.h5_file[f"{meta['demo_key']}/path"][t + 1].astype(np.float32)
+            start_idx = max(0, t - self.sequence_length + 1)
+            obs_seq = self._load_obs(meta['demo_key'], start_idx, t + 1)
+            action_seq = self.h5_file[f"{meta['demo_key']}/path"][start_idx: t + 1].astype(np.float32)
+            waypoints = np.array(self.h5_file[f"{meta['demo_key']}/ways"], dtype=np.float32)
+            timings_sequence = self.h5_file[f"{meta['demo_key']}/timings"][start_idx: t + 1].astype(np.float32)
 
             if self.normalize_actions:
-                action = self._normalize_actions(action)
+                action_seq = self._normalize_actions(action_seq)
+                target_action = self._normalize_actions(target_action)
             if self.observation_mode == 'depth' and self.normalize_depth:
-                obs = self._normalize_depth(obs)
+                obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
+
+            # TODO normalize waypoint if needed
+
+            # padding
+            actual_len = len(obs_seq)
+            pad_len = self.sequence_length - actual_len
+            obs_pad_shape = (pad_len,) + obs_seq.shape[1:]
+            obs_pad = np.zeros(obs_pad_shape, dtype=obs_seq.dtype)
+            act_pad = np.zeros((pad_len, self.action_dim), dtype=action_seq.dtype)
+            time_pad = np.zeros(pad_len, dtype=np.int64)
+
+            obs_seq = np.concatenate([obs_pad, obs_seq], axis=0)
+            action_seq = np.concatenate([act_pad, action_seq], axis=0)
+            timing_seq = np.concatenate([time_pad, timings_sequence], axis=0)
+            attention_mask = np.zeros(self.sequence_length, dtype=bool)
+            attention_mask[-actual_len:] = True
+
 
             return {
-                'observation': torch.from_numpy(obs).float(),
-                'action': torch.from_numpy(action).float(),
-                'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
+                'observation': torch.from_numpy(obs_seq).float(),
+                'previous_actions': torch.from_numpy(action_seq).float(),
+                'action': torch.from_numpy(target_action).float(),
+                'attention_mask': torch.from_numpy(attention_mask),
+                'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
+                'waypoint': torch.from_numpy(waypoints).float(),
+                'previous_timings': torch.from_numpy(timing_seq).float()
+
             }
 
+        else:
         # sequential mode
-        demo_idx, t = self.valid_indices[idx]
-        meta = self.demo_meta[demo_idx]
+            demo_idx, t = self.valid_indices[idx]
+            meta = self.demo_meta[demo_idx]
 
-        target_action = self.h5_file[f"{meta['demo_key']}/path"][t + 1].astype(np.float32)
-        start_idx = max(0, t - self.sequence_length + 1)
-        obs_seq = self._load_obs(meta['demo_key'], start_idx, t + 1)
-        action_seq = self.h5_file[f"{meta['demo_key']}/path"][start_idx: t + 1].astype(np.float32)
+            target_action = self.h5_file[f"{meta['demo_key']}/path"][t + 1].astype(np.float32)
+            start_idx = max(0, t - self.sequence_length + 1)
+            obs_seq = self._load_obs(meta['demo_key'], start_idx, t + 1)
+            action_seq = self.h5_file[f"{meta['demo_key']}/path"][start_idx: t + 1].astype(np.float32)
 
-        if self.normalize_actions:
-            action_seq = self._normalize_actions(action_seq)
-            target_action = self._normalize_actions(target_action)
-        if self.observation_mode == 'depth' and self.normalize_depth:
-            obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
+            if self.normalize_actions:
+                action_seq = self._normalize_actions(action_seq)
+                target_action = self._normalize_actions(target_action)
+            if self.observation_mode == 'depth' and self.normalize_depth:
+                obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
 
-        # padding
-        actual_len = len(obs_seq)
-        pad_len = self.sequence_length - actual_len
-        obs_pad_shape = (pad_len,) + obs_seq.shape[1:]
-        obs_pad = np.zeros(obs_pad_shape, dtype=obs_seq.dtype)
-        act_pad = np.zeros((pad_len, self.action_dim), dtype=action_seq.dtype)
-        time_pad = np.zeros(pad_len, dtype=np.int64)
-        obs_seq = np.concatenate([obs_pad, obs_seq], axis=0)
-        action_seq = np.concatenate([act_pad, action_seq], axis=0)
-        timestep_seq = np.concatenate([time_pad, np.arange(start_idx, t + 1)], axis=0)
-        attention_mask = np.zeros(self.sequence_length, dtype=bool)
-        attention_mask[-actual_len:] = True
+            # padding
+            actual_len = len(obs_seq)
+            pad_len = self.sequence_length - actual_len
+            obs_pad_shape = (pad_len,) + obs_seq.shape[1:]
+            obs_pad = np.zeros(obs_pad_shape, dtype=obs_seq.dtype)
+            act_pad = np.zeros((pad_len, self.action_dim), dtype=action_seq.dtype)
+            time_pad = np.zeros(pad_len, dtype=np.int64)
+            obs_seq = np.concatenate([obs_pad, obs_seq], axis=0)
+            action_seq = np.concatenate([act_pad, action_seq], axis=0)
+            timestep_seq = np.concatenate([time_pad, np.arange(start_idx, t + 1)], axis=0)
+            attention_mask = np.zeros(self.sequence_length, dtype=bool)
+            attention_mask[-actual_len:] = True
 
-        return {
-            'observation': torch.from_numpy(obs_seq).float(),
-            'previous_actions': torch.from_numpy(action_seq).float(),
-            'action': torch.from_numpy(target_action).float(),
-            'timestep': torch.from_numpy(timestep_seq).long(),
-            'attention_mask': torch.from_numpy(attention_mask),
-            'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
-        }
+            return {
+                'observation': torch.from_numpy(obs_seq).float(),
+                'previous_actions': torch.from_numpy(action_seq).float(),
+                'action': torch.from_numpy(target_action).float(),
+                'timestep': torch.from_numpy(timestep_seq).long(),
+                'attention_mask': torch.from_numpy(attention_mask),
+                'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
+            }
 
     def _load_obs(self, demo_key, start=None, end=None):
         if self.observation_mode == 'depth':
@@ -287,6 +329,7 @@ def create_dataloaders(
     subsample_demos: Optional[int] = None,
     random_seed: int = 42,
     is_regression: bool = False,
+    is_waypointPlusTimings: bool = False,
     observation_mode: str = 'points',
     normalize_depth: bool = True,
     normalize_actions: bool = True,
@@ -305,6 +348,7 @@ def create_dataloaders(
         split='train',
         random_seed=random_seed,
         is_regression=is_regression,
+        is_waypointPlusTimings=is_waypointPlusTimings,
         observation_mode=observation_mode,
         normalize_depth=normalize_depth,
         normalize_actions=normalize_actions,
@@ -323,6 +367,7 @@ def create_dataloaders(
         split='val',
         random_seed=random_seed,
         is_regression=is_regression,
+        is_waypointPlusTimings=is_waypointPlusTimings,
         observation_mode=observation_mode,
         normalize_depth=normalize_depth,
         normalize_actions=normalize_actions,
@@ -366,6 +411,7 @@ def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
         subsample_demos=data_cfg.get('subsample_demos', None),
         random_seed=data_cfg.random_seed,
         is_regression=data_cfg.get('is_regression', False),
+        is_waypointPlusTimings=data_cfg.get('is_waypointPlusTimings', False),
         observation_mode=cfg.get('observation_mode', 'points')
     )
 

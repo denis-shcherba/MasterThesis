@@ -306,6 +306,22 @@ class RobotEnviroment:
 
         self.C.delFrame("tmp")
 
+        if self.path_mode == "WAYplusTIMING":
+            #TODO what about other cases (more pulls, pushes?)
+            
+            self.ways = []
+            C2 = ry.Config()
+            C2.addConfigurationCopy(self.C)
+            
+            C2.setJointState(path1[-1])
+            self.ways.append(C2.getFrame(self.gripper).getPosition())
+            
+            C2.setJointState(path2_after_offset[-1])
+            self.ways.append(C2.getFrame(self.gripper).getPosition())
+            del C2
+
+            self.timings = np.concatenate([np.full(32, 1), np.full(32, 2)])
+
         self.path = np.concatenate((path1, path2_after_offset), axis=0)
         return True
 
