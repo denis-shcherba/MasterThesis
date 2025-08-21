@@ -1,49 +1,12 @@
 import numpy as np
 
-class GaussianNoiseAdder:
-    def __init__(self, mean=0.0, std=0.01):
-        self.mean = mean
-        self.std = std
-        self.previous_noise = None
 
-    def add_noise(self, data, num_states_to_perturb=2):
-        # Ensure data is a NumPy array
-        data = np.asarray(data)
-        
-        # Check if the data has enough elements to perturb
-        if data.size < num_states_to_perturb:
-            raise ValueError(f"Data has size {data.size} but needs at least {num_states_to_perturb} elements to perturb.")
-
-        # Generate fresh Gaussian noise for the specified number of states
-        noise = np.random.normal(self.mean, self.std, size=num_states_to_perturb)
-        
-        # Accumulate with previous noise (if any)
-        if self.previous_noise is not None:
-            # Check if previous noise shape matches the current one
-            if self.previous_noise.shape[0] != num_states_to_perturb:
-                # Reset if the number of states to perturb changes
-                print("Warning: Number of states to perturb changed. Resetting accumulated noise.")
-                self.previous_noise = None
-            else:
-                noise += self.previous_noise
-
-        # Save current noise for the next time
-        self.previous_noise = noise
-
-        # Create a copy of the data to avoid modifying the original array
-        noisy_data = data.copy()
-        
-        # Add the 2D noise to the first 'num_states_to_perturb' elements of the data
-        noisy_data[:num_states_to_perturb] += noise
-
-        return noisy_data
-
-def random_waypoint_3d(P0, P1, max_radius_frac=0.2, radial_mode="uniform"):
+def random_waypoint_3d(P0, P1, fraction, max_radius_frac=0.2, radial_mode="uniform"):
     """
     Insert a random waypoint between P0 and P1, offset within a disk
-    perpendicular to the segment at a random along-path fraction t.
+    perpendicular to the segment at a random along-path fraction t.    Args:
 
-    Args:
+
         P0, P1: (3,) arrays
         max_radius_frac: disk radius as a fraction of segment length
         radial_mode: "uniform" (area-uniform in disk) or "gaussian" (isotropic)
@@ -58,7 +21,7 @@ def random_waypoint_3d(P0, P1, max_radius_frac=0.2, radial_mode="uniform"):
     d = seg / L  # unit direction
 
     # 1) choose along-path fraction
-    t = np.random.uniform(0.0, 1.0)
+    t = fraction
     base = (1 - t) * P0 + t * P1
 
     # 2) build an orthonormal basis (u, v) for the plane perpendicular to d
@@ -83,11 +46,6 @@ def random_waypoint_3d(P0, P1, max_radius_frac=0.2, radial_mode="uniform"):
     else:
         raise ValueError("radial_mode must be 'uniform' or 'gaussian'.")
 
-    return base + offset, t
+    return base + offset, 
 
-# ---- example usage ----
-P0 = np.array([0.0, 0.0, 0.0])
-P1 = np.array([3.0, 4.0, 5.0])
-
-waypoint, t = random_waypoint_3d(P0, P1, max_radius_frac=0.25, radial_mode="uniform")
-print(f"t={t:.3f}, waypoint={waypoint}")
+#

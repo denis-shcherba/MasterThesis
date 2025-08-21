@@ -3,8 +3,7 @@ import envs.manipulation as manip
 import numpy as np
 import robotic as ry
 import time
-from envs.noise_handling import GaussianNoiseAdder
-
+from envs.noise_handling import random_waypoint_3d
 
 class RobotEnviroment:
     def __init__(self,
@@ -171,20 +170,38 @@ class RobotEnviroment:
     def pull(self, object_, placePosition, accumulated_collisions=True, get_observation=False) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         
+        #  --- Noise addition for demos ---
         wayOffset1 = np.array([0,0], dtype=float)
         wayOffset2 = np.array([0,0], dtype=float)
+        noiseWaypoints = []
+        
         if self.noise_dict:
-            if self.state_noise.get("type") == "randomWaypoint":
-                number_of_points = self.state_noise.get("numberOfPoints", 2)
-                print(number_of_points)
+            for state_noise in self.state_noise:
+                if state_noise.get("type") == "randomWaypoint":
+                    number_of_points = state_noise.get("numberOfPoints", 2)
+                    print(number_of_points)
 
-                points = np.random.uniform(0, 2, size=2)
-                print(points)
-                exit()
-            elif self.state_noise.get("type") == "gaussianToWaypoint":
-                wayOffset1 += np.random.normal(self.state_noise.get("mean"), self.state_noise.get("std"), size=2)
-                wayOffset2 += np.random.normal(self.state_noise.get("mean"), self.state_noise.get("std"), size=2)
+                    points = np.random.uniform(0, 2, size=2)
+                    print(points)
+                    for fraction in points:
+                        if fraction < 1: 
+                            noiseWaypoints.append(random_waypoint_3d(self.C.getFrame(self.gripper).getPosition(), self.C.getFrame(object_).getPosition(), fraction, max_radius_frac=0.01, radial_mode="uniform"))
+                        elif fraction > 1:
+                            noiseWaypoints.append(random_waypoint_3d(self.C.getFrame(object_).getPosition(), placePosition, fraction-1, max_radius_frac=0.01, radial_mode="uniform"))
 
+
+                    for i in range(len(noiseWaypoints)):
+                        self.C.addFrame(f"noise_waypoint_{i}").setPosition(noiseWaypoints[i]).setPosition(noiseWaypoints[i]) \
+                            .setShape(ry.ST.marker, [.1]) \
+
+                    self.C.view(True)
+                elif state_noise.get("type") == "gaussianToWaypoint":
+                    wayOffset1 += np.random.normal(state_noise.get("mean"), state_noise.get("std"), size=2)
+                    wayOffset2 += np.random.normal(state_noise.get("mean"), state_noise.get("std"), size=2)
+
+
+
+        # -----------------------------------
 
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
@@ -195,10 +212,12 @@ class RobotEnviroment:
         M.komo.addObjective([1], ry.FS.vectorZ, [object_], ry.OT.eq, [1e1], np.array([0,0,1]))
         M.komo.addObjective([2], ry.FS.vectorZ, [object_], ry.OT.eq, [1e1], np.array([0,0,1]))
         M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1])
+        for i in range(len(noiseWaypoints)):
+            M.komo.addObjective([points[i]], ry.FS.position, [self.gripper], ry.OT.eq, [1e0], noiseWaypoints[i])
         print(self.C.getFrame(object_).getSize()[2])
-        M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([wayOffset1[0], wayOffset1[1], .01-.5*self.C.getFrame(object_).getSize()[2]]))
+        M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, [1e2], np.array([wayOffset1[0], wayOffset1[1], .01-.5*self.C.getFrame(object_).getSize()[2]]))
 
-        M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition + np.append(wayOffset2, 0))
+        M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, [1e1], placePosition + np.append(wayOffset2, 0))
         M.komo.addObjective([1,2], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1], [self.C.getFrame(object_).getSize()[2]+self.C.getFrame(object_).getPosition()[2]])   
 
         M.solve()
@@ -252,22 +271,6 @@ class RobotEnviroment:
             path2 = path2_after_offset
             del C2
     
-            if self.noise_dict:
-                if self.state_noise is not None:
-                    if self.state_noise.get("type") == "gaussianToPath":
-                        mean = self.state_noise.get("mean")
-                        std = self.state_noise.get("std")
-                        # add to path1 with NoiseAdder
-                        adder = GaussianNoiseAdder(mean, std)
-                        
-                        for i in range(len(path1)):
-                            path1[i] = adder.add_noise(path1[i], 2) 
-                        for i in range(len(path2)):
-                            path2[i] = adder.add_noise(path2[i], 2)
-
-
-                elif self.depth_noise is not None:
-                    pass
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
             if "SPLINE" in self.path_mode:
                 sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)

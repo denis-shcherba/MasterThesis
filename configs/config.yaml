@@ -24,4 +24,4 @@ is_regression: false
 is_waypointPlusTimings: true
 
 wandb:
-  enabled: true
+  enabled: false

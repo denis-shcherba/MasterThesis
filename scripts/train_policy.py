@@ -11,7 +11,7 @@ import yaml
 
 from data_handling.dataset import create_dataloaders_from_config
 from models.policy_head.policy_network import create_model
-from training.trainer import Trainer
+from training.trainer import ActionPolicyTrainer
 from training.losses import create_loss_function
 from training.optimizer import create_optimizer
 from models.policy_head.policy_network import MultiModalPolicy, SimplePCToPosRegressor, PositionalEncoding
@@ -156,7 +156,7 @@ def train_policy(cfg: DictConfig) -> None:
 
         # Initialize trainer
         log.info("Initializing trainer...")
-        trainer = Trainer(model, optimizer, criterion, device, cfg)
+        trainer = ActionPolicyTrainer(model, optimizer, criterion, device, cfg)
 
         # Start training
         log.info("Starting training...")

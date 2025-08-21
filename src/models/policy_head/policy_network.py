@@ -57,6 +57,100 @@ class PositionalEncoding(nn.Module):
         else:
             raise ValueError("time_steps must be of shape (batch,) or (batch, seq_len)")
 
+class WayPlusTimingsPolicy(nn.Module):
+    """
+    Multi-head policy:
+      - Transformer head on depth sequence -> predicts timings
+      - N waypoint regressors on the *first depth image* -> predicts key waypoints
+    """
+
+    def __init__(self,
+                 feature_dim=256,
+                 state_dim=0,
+                 action_dim=6,
+                 dropout_rate=0.3,
+                 fusion_method='concat',
+                 max_timesteps=64,
+                 embed_dim=256,
+                 num_layers=4,
+                 num_heads=4,
+                 num_waypoints=2,   # <--- NEW
+                 waypoint_dim=3     # <--- xyz
+                 ):
+        super().__init__()
+
+        self.feature_dim = feature_dim
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.num_waypoints = num_waypoints
+        self.waypoint_dim = waypoint_dim
+
+        # Depth encoder (used for both transformer and waypoint regressors)
+        self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
+
+        # Optional state encoder
+        self.state_encoder = nn.Linear(state_dim, feature_dim) if state_dim > 0 else None
+        policy_input_dim = feature_dim + (feature_dim if state_dim > 0 and fusion_method == 'concat' else 0)
+
+        # Transformer head for sequence prediction
+        self.transformer_head = TransformerHead(
+            input_dim=policy_input_dim,
+            output_dim=action_dim,
+            context_length=max_timesteps,
+            embed_dim=embed_dim,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            dropout=dropout_rate,
+            output_activation=None,
+        )
+
+        # MLP regressors for waypoints
+        self.waypoint_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(feature_dim, 128),
+                nn.ReLU(),
+                nn.Linear(128, waypoint_dim)
+            ) for _ in range(num_waypoints)
+        ])
+
+    def forward(self, depth_sequence: torch.Tensor,
+                state: Optional[torch.Tensor] = None) -> dict:
+        """
+        Args:
+            depth_sequence: (B, T, 1, H, W)
+            state: optional robot state (B, T, state_dim)
+
+        Returns:
+            dict with:
+              - 'timings': (B, action_dim)
+              - 'waypoints': list of (B, waypoint_dim)
+        """
+        B, T = depth_sequence.shape[:2]
+
+        # Flatten time for encoder
+        depth_in = depth_sequence.view(B * T, 1, *depth_sequence.shape[3:])
+        features = self.obs_encoder(depth_in)              # (B*T, D)
+        features = features.view(B, T, -1)                 # (B, T, D)
+
+        # State fusion
+        if state is not None and self.state_encoder is not None:
+            state_f = self.state_encoder(state.view(B * T, -1)).view(B, T, -1)
+            features = torch.cat([features, state_f], dim=-1)
+
+        # Transformer forward
+        timing_pred = self.transformer_head(features)[:, -1, :]  # (B, action_dim)
+
+        # Waypoints from *first depth image only*
+        first_frame = depth_sequence[:, 0, :, :, :]              # (B, 1, H, W)
+        first_features = self.obs_encoder(first_frame)           # (B, D)
+        waypoint_preds = [head(first_features) for head in self.waypoint_heads]
+
+        return {
+            "timings": timing_pred,
+            "waypoints": waypoint_preds
+        }
+
+
 
 class MultiModalPolicy(nn.Module):
     """

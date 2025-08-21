@@ -28,7 +28,7 @@ noise_dict = {
     # "depthNoise": {}
 }
 
-# State noise variants: gaussianToPath, gaussianToWaypoint, randomWaypoint
+# State noise variants:  gaussianToWaypoint, randomWaypoint
 
 prefix = "l_"
 C = ry.Config()
