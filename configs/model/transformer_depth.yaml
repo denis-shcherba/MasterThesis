@@ -21,5 +21,3 @@ context_length: 10
 embed_dim: 256
 num_layers: 4
 num_heads: 4
-
-is_waypointPlusTimings: ${is_waypointPlusTimings}  

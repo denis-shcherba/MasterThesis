@@ -262,7 +262,7 @@ class ShelfEnv(gym.Env):
     def step(self, action):
         # Your logic to apply an action to the environment
         # `action` will be a numpy array matching `self.action_space`
-        print(f"Executing action: {action}")
+        #print(f"Executing action: {action}")
         
         if self.simulate:
             for _ in range(100):  # Simulate for 100 steps

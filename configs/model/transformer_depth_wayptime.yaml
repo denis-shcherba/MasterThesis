@@ -14,7 +14,7 @@ fusion_method: concat  # Method to fuse modalities (concat, add, concat_project)
 time_encoding: positional
 
 max_timesteps: 64
-observation_mode: ${observation_mode}  # inherit from global config
+observation_mode: 'depth'  # inherit from global config
 
 # Transformer settings
 context_length: 10 

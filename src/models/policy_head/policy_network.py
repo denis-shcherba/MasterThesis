@@ -80,7 +80,6 @@ class MultiModalPolicy(nn.Module):
                  num_layers: int = 4,
                  num_heads: int = 4,
                  output_activation: str = "tanh",
-                 isWaypointPlusTimings: bool = True
                  ):
         super(MultiModalPolicy, self).__init__()
         
@@ -94,7 +93,6 @@ class MultiModalPolicy(nn.Module):
         self.max_timesteps = max_timesteps
         self.policy_head_type = policy_head_type
         self.observation_mode = observation_mode
-        self.is_waypointPlusTimings = isWaypointPlusTimings
 
 
 
@@ -160,9 +158,6 @@ class MultiModalPolicy(nn.Module):
             
             # For transformer, we don't add external time encoding
             # The transformer handles positional encoding internally
-
-            if isWaypointPlusTimings:
-                action_dim = 2  # For waypoint+timings, we only predict the timing with the transformer (as discrete classification problem)
             
             self.policy_head = TransformerHead(
                 input_dim=policy_input_dim,  # No time encoding added here
@@ -388,8 +383,6 @@ def create_model(model_cfg):
         embed_dim=model_cfg.get('embed_dim', 256),
         num_layers=model_cfg.get('num_layers', 4),
         num_heads=model_cfg.get('num_heads', 4),
-        # for wayplustime
-        is_waypointPlusTimings=model_cfg.get('is_waypointPlusTimings', False),
     )
     return model
 
