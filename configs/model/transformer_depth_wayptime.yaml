@@ -1,5 +1,5 @@
 # Base policy configuration
-type: multimodal         # Options: pointcloud, multimodal
+type: wayplustiming         # Options: pointcloud, multimodal
 
 action_dim: 2            # Dimension of action space (SE3 9D representation)
 dropout_rate: 0.2        # Dropout rate for regularization
@@ -21,3 +21,7 @@ context_length: 10
 embed_dim: 256
 num_layers: 4
 num_heads: 4
+
+# wayplustime settings
+num_waypoints: 2
+waypoint_dim: 3   

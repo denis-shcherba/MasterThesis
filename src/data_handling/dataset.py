@@ -248,7 +248,7 @@ class ManipulationDataset(Dataset):
                 'previous_actions': torch.from_numpy(action_seq).float(),
                 'action': torch.tensor(target_timing, dtype=torch.long),               
                 'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
-                'waypoint': torch.from_numpy(waypoints).float(),
+                'waypoints': torch.from_numpy(waypoints).float(),
                 #'previous_timings': torch.from_numpy(timing_seq).int()
 
             }

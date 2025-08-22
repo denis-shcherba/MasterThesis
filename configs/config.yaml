@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: transformer_depth
+  - model: transformer_depth_wayptime
   - loss: default_3d_ce
   - optimizer: adam
   - data: depth

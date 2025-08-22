@@ -70,7 +70,7 @@ class WayPlusTimingsPolicy(nn.Module):
                  action_dim=6,
                  dropout_rate=0.3,
                  fusion_method='concat',
-                 max_timesteps=64,
+                 context_length=5,
                  embed_dim=256,
                  num_layers=4,
                  num_heads=4,
@@ -96,7 +96,7 @@ class WayPlusTimingsPolicy(nn.Module):
         self.transformer_head = TransformerHead(
             input_dim=policy_input_dim,
             output_dim=action_dim,
-            context_length=max_timesteps,
+            context_length=context_length,
             embed_dim=embed_dim,
             num_layers=num_layers,
             num_heads=num_heads,
@@ -125,10 +125,21 @@ class WayPlusTimingsPolicy(nn.Module):
               - 'timings': (B, action_dim)
               - 'waypoints': list of (B, waypoint_dim)
         """
+        # elif self.policy_head_type == 'transformer':
+        #     # Reshape for transformer: (B, T, D)
+        #     seq_input = fused_features.view(batch_size, seq_len, -1)
+            
+        #     # Your transformer handles positional encoding internally
+        #     action_seq = self.policy_head(seq_input)  # (B, T, action_dim)
+            
+        #     # Return last action (most common use case)
+        #     # You could also return the full sequence if needed
+        #     return action_seq[:, -1, :]  # (B, action_dim)
+
         B, T = depth_sequence.shape[:2]
 
         # Flatten time for encoder
-        depth_in = depth_sequence.view(B * T, 1, *depth_sequence.shape[3:])
+        depth_in = depth_sequence.view(B * T, 1, *depth_sequence.shape[2:])
         features = self.obs_encoder(depth_in)              # (B*T, D)
         features = features.view(B, T, -1)                 # (B, T, D)
 
@@ -140,8 +151,8 @@ class WayPlusTimingsPolicy(nn.Module):
         # Transformer forward
         timing_pred = self.transformer_head(features)[:, -1, :]  # (B, action_dim)
 
-        # Waypoints from *first depth image only*
-        first_frame = depth_sequence[:, 0, :, :, :]              # (B, 1, H, W)
+        # Waypoints from *first depth image only* TODO
+        first_frame = depth_sequence[:, 0, :, :].unsqueeze(1)     # (B, 1, H, W)
         first_features = self.obs_encoder(first_frame)           # (B, D)
         waypoint_preds = [head(first_features) for head in self.waypoint_heads]
 
@@ -437,6 +448,9 @@ def create_policy(policy_type='multimodal', **kwargs):
     elif policy_type == 'regression':
         filtered = filter_kwargs(SimplePCToPosRegressor.__init__, kwargs)
         return SimplePCToPosRegressor(**filtered)
+    elif policy_type == 'wayplustiming':
+        filtered = filter_kwargs(WayPlusTimingsPolicy.__init__, kwargs)
+        return WayPlusTimingsPolicy(**filtered)
     else:
         raise ValueError(f"Unknown policy type: {policy_type}")
     

@@ -285,11 +285,13 @@ class WaypointTimingTrainer(BaseTrainer):
     def _compute_loss(self, batch):
         # This is the logic from your NEW train_epoch's for loop
         obs = batch["observation"].to(self.device)
+        state = batch['previous_actions'].to(self.device)
+
         actions = batch["action"].to(self.device)
         waypoints_gt = batch["waypoints"].to(self.device)
 
         # --- Forward pass ---
-        output = self.model(obs)
+        output = self.model(obs, state)
         timings_pred = output["timings"]
         waypoint_preds = output["waypoints"]
 
@@ -298,7 +300,7 @@ class WaypointTimingTrainer(BaseTrainer):
         timing_loss = self.criterion(timings_pred, target_actions)
 
         # --- Waypoint loss ---
-        # Note: A separate criterion might be better here, e.g., self.waypoint_criterion
+        # Note: A separate criterion here TODO, e.g., self.waypoint_criterion
         waypoint_loss = 0.0
         for i, wp_pred in enumerate(waypoint_preds):
             waypoint_loss += self.criterion(wp_pred, waypoints_gt[:, i, :])
@@ -307,12 +309,37 @@ class WaypointTimingTrainer(BaseTrainer):
             waypoint_loss /= len(waypoint_preds)
 
         # --- Total loss ---
-        # You might want to weight these, e.g., loss = timing_loss + 0.5 * waypoint_loss
+        # might want to weight these, e.g., loss = timing_loss + 0.5 * waypoint_loss
+        tqdm.write(f"Timing loss: {timing_loss:.3f}, Waypoint_Loss={waypoint_loss:.3f}")
+
         loss = timing_loss + waypoint_loss
         
         return loss
     
     
+# Factory function to create appropriate trainer
+def create_trainer(model, optimizer, criterion, device, cfg):
+    """
+    Factory function to create the appropriate trainer.
+    
+    Args:
+        trainer_type: 'policy' or 'waypoint_timing'
+        model: Model to train
+        optimizer: Optimizer
+        criterion: Loss function
+        device: Device
+        cfg: Configuration
+        
+    Returns:
+        Appropriate trainer instance
+    """
+    if cfg.get("is_waypointPlusTimings", False):
+        return WaypointTimingTrainer(model, optimizer, criterion, device, cfg)
+
+    else:
+        return ActionPolicyTrainer(model, optimizer, criterion, device, cfg)
+
+
 # class Trainer:
 #     """
 #     Trainer class for policy learning.
