@@ -14,7 +14,7 @@ from models.policy_head.policy_network import create_model
 from training.trainer import ActionPolicyTrainer, create_trainer
 from training.losses import create_loss_function
 from training.optimizer import create_optimizer
-from models.policy_head.policy_network import MultiModalPolicy, SimplePCToPosRegressor, PositionalEncoding
+from models.policy_head.policy_network import MultiModalPolicy, SimplePCToPosRegressor, PositionalEncoding, WayPlusTimingsPolicy
 from utils.data_utils import numpy_to_python
 
 
@@ -128,14 +128,38 @@ def train_policy(cfg: DictConfig) -> None:
                 log.info(f"  - Policy Head ({type(model.policy_head).__name__}) parameters: {policy_specific_params:,} ({policy_specific_params/total_params*100:.2f}%)")
                 component_params_sum += policy_specific_params
 
-
         elif isinstance(model, SimplePCToPosRegressor):
             # SimplifiedPolicy specific components
             if hasattr(model, 'regressor_head') and model.regressor_head is not None:
                 policy_specific_params = sum(p.numel() for p in model.regressor_head.parameters() if p.requires_grad)
                 log.info(f"  - Regressor Head parameters: {policy_specific_params:,} ({policy_specific_params/total_params*100:.2f}%)")
                 component_params_sum += policy_specific_params
-        
+                
+        elif isinstance(model, WayPlusTimingsPolicy):
+            # Observation encoder
+            if hasattr(model, 'obs_encoder') and model.obs_encoder is not None:
+                obs_encoder_params = sum(p.numel() for p in model.obs_encoder.parameters() if p.requires_grad)
+                log.info(f"  - Obs Encoder ({type(model.obs_encoder).__name__}) parameters: {obs_encoder_params:,} ({obs_encoder_params/total_params*100:.2f}%)")
+                component_params_sum += obs_encoder_params
+
+            # State encoder
+            if hasattr(model, 'state_encoder') and model.state_encoder is not None:
+                state_encoder_params = sum(p.numel() for p in model.state_encoder.parameters() if p.requires_grad)
+                log.info(f"  - State Encoder parameters: {state_encoder_params:,} ({state_encoder_params/total_params*100:.2f}%)")
+                component_params_sum += state_encoder_params
+
+            # Transformer head for timings
+            if hasattr(model, 'transformer_head') and model.transformer_head is not None:
+                transformer_params = sum(p.numel() for p in model.transformer_head.parameters() if p.requires_grad)
+                log.info(f"  - Transformer Head parameters: {transformer_params:,} ({transformer_params/total_params*100:.2f}%)")
+                component_params_sum += transformer_params
+            
+            # Waypoint regression heads
+            if hasattr(model, 'waypoint_heads') and model.waypoint_heads is not None:
+                waypoint_params = sum(p.numel() for p in model.waypoint_heads.parameters() if p.requires_grad)
+                log.info(f"  - Waypoint Heads ({len(model.waypoint_heads)} heads) parameters: {waypoint_params:,} ({waypoint_params/total_params*100:.2f}%)")
+                component_params_sum += waypoint_params
+
         else:
             log.warning("Unknown policy type encountered. Cannot provide detailed breakdown of policy-specific parameters.")
 

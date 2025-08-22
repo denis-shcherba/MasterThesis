@@ -219,13 +219,15 @@ class ManipulationDataset(Dataset):
             action_seq = self.h5_file[f"{meta['demo_key']}/path"][start_idx: t + 1].astype(np.float32)
             waypoints = np.array(self.h5_file[f"{meta['demo_key']}/ways"], dtype=np.float32)
             timings_sequence = self.h5_file[f"{meta['demo_key']}/timings"][start_idx: t + 1].astype(np.float32)
+            first_obs = self.h5_file[f"{meta['demo_key']}/depth"][0].astype(np.float32)
 
             if self.normalize_actions:
                 action_seq = self._normalize_actions(action_seq)
                 #target_action = self._normalize_actions(target_action)
             if self.observation_mode == 'depth' and self.normalize_depth:
                 obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
-
+                first_obs = self._normalize_depth(obs_seq[0])  # First observation for waypoints
+             
             # TODO normalize waypoint if needed
 
             # padding
@@ -249,7 +251,7 @@ class ManipulationDataset(Dataset):
                 'action': torch.tensor(target_timing, dtype=torch.long),               
                 'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
                 'waypoints': torch.from_numpy(waypoints).float(),
-                #'previous_timings': torch.from_numpy(timing_seq).int()
+                'first_obs': torch.from_numpy(first_obs).float(),
 
             }
 
@@ -268,7 +270,6 @@ class ManipulationDataset(Dataset):
                 target_action = self._normalize_actions(target_action)
             if self.observation_mode == 'depth' and self.normalize_depth:
                 obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
-
             # padding
             actual_len = len(obs_seq)
             pad_len = self.sequence_length - actual_len

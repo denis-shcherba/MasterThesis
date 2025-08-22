@@ -1,0 +1,13 @@
+# FILE: your_config.yaml
+
+name: MultiLoss
+losses:
+  - name: timing      # A unique key for this loss component
+    weight: 1.0
+    criterion:
+      name: CrossEntropyLoss    # The actual loss function for timings
+
+  - name: waypoint    # A unique key for the waypoint loss
+    weight: 0.5       # A different weight for this component
+    criterion:
+      name: MSELoss   # Using a different loss for demonstration

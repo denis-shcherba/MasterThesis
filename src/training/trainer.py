@@ -278,42 +278,42 @@ class ActionPolicyTrainer(BaseTrainer):
         return loss
 
 
+from tqdm import tqdm
+
 class WaypointTimingTrainer(BaseTrainer):
     """
     Trainer for models that predict both waypoints and timings.
     """
     def _compute_loss(self, batch):
-        # This is the logic from your NEW train_epoch's for loop
+        # --- Prepare Data ---
         obs = batch["observation"].to(self.device)
+        first_obs = batch["first_obs"].to(self.device) 
         state = batch['previous_actions'].to(self.device)
-
         actions = batch["action"].to(self.device)
         waypoints_gt = batch["waypoints"].to(self.device)
 
-        # --- Forward pass ---
-        output = self.model(obs, state)
-        timings_pred = output["timings"]
-        waypoint_preds = output["waypoints"]
+        # --- Forward Pass ---
+        output = self.model(obs, state, first_obs)
 
-        # --- Timing loss ---
-        target_actions = actions[:, -1, :] if actions.dim() == 3 else actions
-        timing_loss = self.criterion(timings_pred, target_actions)
+        # --- Prepare Predictions and Targets for Loss Module ---
+        predictions = {
+            "timing": output["timings"],
+            "waypoint": output["waypoints"] # Pass the list of tensors directly
+        }
 
-        # --- Waypoint loss ---
-        # Note: A separate criterion here TODO, e.g., self.waypoint_criterion
-        waypoint_loss = 0.0
-        for i, wp_pred in enumerate(waypoint_preds):
-            waypoint_loss += self.criterion(wp_pred, waypoints_gt[:, i, :])
+        targets = {
+            "timing": actions[:, -1, :] if actions.dim() == 3 else actions,
+            "waypoint": waypoints_gt
+        }
+
+        # --- Calculate Loss ---
+        # A single call to the criterion, which is now our MultiLoss module.
+        # It handles the weighting and sub-loss calculations internally.
+        loss = self.criterion(predictions, targets)
         
-        if waypoint_preds:
-            waypoint_loss /= len(waypoint_preds)
+        # Optional: You can still log individual components if needed,
+        # but the main calculation is now encapsulated.
 
-        # --- Total loss ---
-        # might want to weight these, e.g., loss = timing_loss + 0.5 * waypoint_loss
-        tqdm.write(f"Timing loss: {timing_loss:.3f}, Waypoint_Loss={waypoint_loss:.3f}")
-
-        loss = timing_loss + waypoint_loss
-        
         return loss
     
     

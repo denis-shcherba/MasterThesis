@@ -1,7 +1,7 @@
 defaults:
   - _self_  
   - model: transformer_depth_wayptime
-  - loss: default_3d_ce
+  - loss: default_3d_composite
   - optimizer: adam
   - data: depth
   - inference: mlp_depth

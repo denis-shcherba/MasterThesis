@@ -114,7 +114,7 @@ class WayPlusTimingsPolicy(nn.Module):
         ])
 
     def forward(self, depth_sequence: torch.Tensor,
-                state: Optional[torch.Tensor] = None) -> dict:
+                state: Optional[torch.Tensor] = None, first_obs: torch.Tensor = None) -> dict:
         """
         Args:
             depth_sequence: (B, T, 1, H, W)
@@ -125,16 +125,6 @@ class WayPlusTimingsPolicy(nn.Module):
               - 'timings': (B, action_dim)
               - 'waypoints': list of (B, waypoint_dim)
         """
-        # elif self.policy_head_type == 'transformer':
-        #     # Reshape for transformer: (B, T, D)
-        #     seq_input = fused_features.view(batch_size, seq_len, -1)
-            
-        #     # Your transformer handles positional encoding internally
-        #     action_seq = self.policy_head(seq_input)  # (B, T, action_dim)
-            
-        #     # Return last action (most common use case)
-        #     # You could also return the full sequence if needed
-        #     return action_seq[:, -1, :]  # (B, action_dim)
 
         B, T = depth_sequence.shape[:2]
 
@@ -152,8 +142,8 @@ class WayPlusTimingsPolicy(nn.Module):
         timing_pred = self.transformer_head(features)[:, -1, :]  # (B, action_dim)
 
         # Waypoints from *first depth image only* TODO
-        first_frame = depth_sequence[:, 0, :, :].unsqueeze(1)     # (B, 1, H, W)
-        first_features = self.obs_encoder(first_frame)           # (B, D)
+        #first_frame = depth_sequence[:, 0, :, :].unsqueeze(1)     # (B, 1, H, W)
+        first_features = self.obs_encoder(first_obs.unsqueeze(1))           # (B, D)
         waypoint_preds = [head(first_features) for head in self.waypoint_heads]
 
         return {
