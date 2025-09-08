@@ -7,7 +7,7 @@ from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
 COLLECT_DATA = True
-PATH_MODE = "WAYplusTIMING" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
+PATH_MODE = "POS3D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
@@ -15,20 +15,20 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 1000
+NUM_SAMPLES = 5000
 VISUALIZE = False  # If true, the simulation will be visualized
-
 
 noise_dict = {
     # "stateNoise": {
-    #     "type": "gaussianToWaypoint",
-    #     "std": 0.02,
+    #     "type": "singleGaussian",
+    #     "prob": 0.1,
+    #     "std": 0.0025,
     #     "mean": 0.0,
     # },
     # "depthNoise": {}
 }
 
-# State noise variants:  gaussianToWaypoint, randomWaypoint
+# State noise variants:  gaussianIntegratedOverPath, randomWaypoint, singleGaussian
 
 prefix = "l_"
 C = ry.Config()

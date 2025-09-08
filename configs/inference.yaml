@@ -8,6 +8,10 @@ defaults:
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: 'depth'
 output_subdir: null
-num_eval_episodes: 100
+num_eval_episodes: 10
 simulate: True
 is_waypointPlusTimings: False
+
+hydra:
+  run:
+    dir: ./eval_outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

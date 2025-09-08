@@ -17,4 +17,5 @@ demos/
 
 wandb/
 outputs/
+eval_outputs/
 checkpoints/

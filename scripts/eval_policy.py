@@ -8,6 +8,8 @@ from models.policy_head.policy_network import create_model
 from data_handling.processing import pose_9d_to_7d, pose_7d_to_9d
 from utils.data_utils import normalize_depth, normalize_state, denormalize_actions
 import yaml
+import json
+from hydra.core.hydra_config import HydraConfig
 import robotic as ry
 import gymnasium as gym
 import envs.env  # noqa: F401 
@@ -51,7 +53,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     log.info(f"Preprocessing complete. Final keys: {list(processed_input.keys())}")
     return processed_input
 
-
+info_dicts =[]
 @hydra.main(config_path="../configs", config_name="inference", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
@@ -158,9 +160,10 @@ def eval_policy(cfg: DictConfig) -> None:
             log.info(f"Output tensor shape: {output.shape if isinstance(output, torch.Tensor) else 'dict'}")
             
         log.info(f"Evaluation {evaluation} finished with distance to goal {info.get('distance_to_goal', 'N/A')} and success {info.get('success', 'N/A')}.")
-
-        env.unwrapped.C.view(True)
-
+        #env.unwrapped.C.view(False)
+        info_dicts.append(info)
+    with open(HydraConfig.get().run.dir+"/data.json", "w") as f:
+        json.dump(info_dicts, f, indent=4, default=lambda o: o.item() if hasattr(o, "item") else str(o))
     log.info("Policy evaluation/inference finished.")
 
 

@@ -1,10 +1,10 @@
 defaults:
   - _self_  
-  - model: transformer_depth_wayptime
-  - loss: default_3d_composite
+  - model: transformer_depth
+  - loss: default_3d_mse
   - optimizer: adam
   - data: depth
-  - inference: mlp_depth
+  # - inference: mlp_depth
   - scheduler: cosine
 train:
   batch_size: 128
@@ -21,7 +21,7 @@ output_dir: ${hydra:runtime.output_dir}
 
 is_regression: false
 # whether to use a separate network for waypoint and timing prediction naming
-is_waypointPlusTimings: true
+is_waypointPlusTimings: false
 
 wandb:
-  enabled: false
+  enabled: true

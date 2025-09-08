@@ -1,2 +1,2 @@
-checkpoint_path: outputs/final_outputs/transformer_depth_1000.pth
-normalization_stats_path: outputs/final_outputs/normalization_stats_1000.yaml
+checkpoint_path: outputs/final_outputs/transformer_depth_with_augmentation.pth
+normalization_stats_path: outputs/final_outputs/normalization_stats_with_augmentation.yaml
