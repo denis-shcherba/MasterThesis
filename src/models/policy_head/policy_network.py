@@ -85,8 +85,12 @@ class WayPlusTimingsPolicy(nn.Module):
         self.num_waypoints = num_waypoints
         self.waypoint_dim = waypoint_dim
 
-        # Depth encoder (used for both transformer and waypoint regressors)
-        self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
+        # Depth encoder with regularization
+        self.obs_encoder = DepthImageEncoder(
+            feature_dim=feature_dim, 
+            freeze_layers=True,      # Freeze layer3 and layer4
+            dropout_rate=0.1         # Lower dropout for encoder
+        )
 
         # Optional state encoder
         self.state_encoder = nn.Linear(state_dim, feature_dim) if state_dim > 0 else None
@@ -104,12 +108,13 @@ class WayPlusTimingsPolicy(nn.Module):
             output_activation=None,
         )
 
-        # MLP regressors for waypoints
+        # MLP regressors for waypoints - reduce dropout back to 0.3
         self.waypoint_heads = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(feature_dim, 128),
+                nn.Linear(feature_dim, 32),  # Keep smaller size
                 nn.ReLU(),
-                nn.Linear(128, waypoint_dim)
+                nn.Dropout(0.2),             # Reduce from 0.4 to 0.3
+                nn.Linear(32, waypoint_dim)
             ) for _ in range(num_waypoints)
         ])
 

@@ -277,6 +277,24 @@ class CrossEntropyLoss(nn.Module):
         loss = self.ce_loss(prediction, target)
         return loss
 
+class SmoothL1HuberLoss(nn.Module):
+    """
+    Computes Smooth L1 (Huber) loss for regression tasks.
+    This is more robust than MSE and smoother than L1.
+    
+    Args:
+        beta (float): Transition point from L2 to L1. Default = 1.0.
+                      Smaller values make it closer to L1, larger closer to MSE.
+                      Often set to something like 0.1 for normalized regression targets.
+        reduction (str): 'mean' (default) | 'sum' | 'none'
+    """
+    def __init__(self, beta: float = 1.0, reduction: str = 'mean'):
+        super().__init__()
+        self.smooth_l1 = nn.SmoothL1Loss(beta=beta, reduction=reduction)
+
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return self.smooth_l1(prediction, target)
+
 
 # --- Main Loss Creation Function (Factory) ---
 log = logging.getLogger(__name__)
@@ -315,6 +333,12 @@ def create_loss_function(loss_cfg_global):
     elif loss_name == "MSELoss":
         log.info("Creating MSELoss.")
         return MSELoss()
+
+    elif loss_name == "SmoothL1HuberLoss":
+        log.info("Creating SmoothL1HuberLoss.")
+        beta = loss_cfg_global.get("beta", 1.0)
+        reduction = loss_cfg_global.get("reduction", "mean")
+        return SmoothL1HuberLoss(beta=beta, reduction=reduction)
 
     elif loss_name == "CrossEntropyLoss":
         log.info("Creating CrossEntropyLoss.")
