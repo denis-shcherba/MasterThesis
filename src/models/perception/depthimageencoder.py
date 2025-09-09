@@ -5,11 +5,11 @@ import torchvision.models as models
 
 class DepthImageEncoder(nn.Module):
     """
-    ResNet-based encoder for depth images with regularization.
+    ResNet-based encoder for depth images.
     Input: (B, 1, H, W)
     Output: (B, feature_dim)
     """
-    def __init__(self, feature_dim=256, pretrained=False, freeze_layers=True, dropout_rate=0.1):
+    def __init__(self, feature_dim=256, pretrained=False, freeze_layers=False):
         super(DepthImageEncoder, self).__init__()
         self.feature_dim = feature_dim
 
@@ -42,11 +42,14 @@ class DepthImageEncoder(nn.Module):
                 param.requires_grad = False
             print("Frozen ResNet layer3 and layer4")
 
-        # Final projection layer with dropout
-        self.fc = nn.Sequential(
-            nn.Dropout(dropout_rate),
-            nn.Linear(512, feature_dim)
-        )
+        # Final projection layer
+        self.fc = nn.Linear(512, feature_dim)
+
+        # # Final projection layer with dropout
+        # self.fc = nn.Sequential(
+        #     nn.Dropout(dropout_rate),
+        #     nn.Linear(512, feature_dim)
+        # )
 
     def forward(self, x):
         """

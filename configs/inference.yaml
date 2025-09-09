@@ -8,7 +8,7 @@ defaults:
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: 'depth'
 output_subdir: null
-num_eval_episodes: 10
+num_eval_episodes: 500
 simulate: True
 is_waypointPlusTimings: False
 

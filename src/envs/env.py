@@ -27,7 +27,8 @@ class ShelfEnv(gym.Env):
                  num_boxes_per_sample=1,
                  allow_book_yaw=False,
                  box_size_ranges= {'x': (.1, .15), 'y': (.14, .23), 'z': (.009, .045)},
-                 h5_filename="variable_demo.h5"):
+                 h5_filename="variable_demo.h5",
+                 seed=42):
         super().__init__()
         
         # --- Your Custom Initialization ---
@@ -41,6 +42,9 @@ class ShelfEnv(gym.Env):
         self.camera_name = camera_name
         self.h5_filename = h5_filename
         self.C = ry.Config()
+        self.seed = seed
+        np.random.seed(self.seed)
+        
 
         self.num_boxes_per_sample = num_boxes_per_sample
         self.allow_book_yaw = allow_book_yaw

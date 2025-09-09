@@ -88,8 +88,7 @@ class WayPlusTimingsPolicy(nn.Module):
         # Depth encoder with regularization
         self.obs_encoder = DepthImageEncoder(
             feature_dim=feature_dim, 
-            freeze_layers=True,      # Freeze layer3 and layer4
-            dropout_rate=0.1         # Lower dropout for encoder
+            freeze_layers=False,      # Freeze layer3 and layer4
         )
 
         # Optional state encoder
