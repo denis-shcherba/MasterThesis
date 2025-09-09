@@ -3,7 +3,7 @@ import envs.manipulation as manip
 import numpy as np
 import robotic as ry
 import time
-
+from envs.noise_handling import random_waypoint_3d
 
 class RobotEnviroment:
     def __init__(self,
@@ -31,6 +31,10 @@ class RobotEnviroment:
         self.visualize = visualize
         self.path_mode = path_mode
         self.noise_dict = noise_dict
+        if self.noise_dict:
+            self.state_noise = self.noise_dict.get("stateNoise")
+            self.depth_noise = self.noise_dict.get("depthNoise")
+
 
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"
@@ -165,6 +169,27 @@ class RobotEnviroment:
 
     def pull(self, object_, placePosition, accumulated_collisions=True, get_observation=False) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
+        
+        #  --- Noise addition for demos ---
+        path1Offset = np.zeros((32, 3))
+        path2Offset = np.zeros((32, 3))
+
+        if self.noise_dict:
+            if self.state_noise.get("type") == "singleGaussian":  
+                for i in range(len(path1Offset)):
+                    if np.random.rand() < self.state_noise.get("prob", 0):
+                        path1Offset[i] += np.random.normal(self.state_noise.get("mean"), self.state_noise.get("std"), size=3)
+                for i in range(len(path1Offset)):
+                    if np.random.rand() < self.state_noise.get("prob", 0):
+                        path2Offset += np.random.normal(self.state_noise.get("mean"), self.state_noise.get("std"), size=3)
+
+            elif self.state_noise.get("type") == "TS":
+                # TODO add transition simulation
+                pass
+
+            # -----------------------------------
+
+        self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
         
@@ -206,6 +231,9 @@ class RobotEnviroment:
 
         path2 = M2.solve()
 
+        path1 += path1Offset
+        path2 += path2Offset
+
         if not M2.feasible:
             print("INFEASIBLE AT M2")
             self.C.delFrame("tmp")
@@ -214,7 +242,7 @@ class RobotEnviroment:
         
         if self.sim == True:
             # TODO calculate offset for fix force given PD properties
-            offset = -.01
+            offset = -0.005
             # same as path2 + np.array([0, 0, offset, 0, 0, 0, 0]) for floating gripper
             path2_after_offset = []       
             C2 = ry.Config()
@@ -230,14 +258,14 @@ class RobotEnviroment:
             
             path2 = path2_after_offset
             del C2
-
+    
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
-            if "SPLINE" in self.path_mode == "DELTA3DSPLINE":
+            if "SPLINE" in self.path_mode:
                 sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)
-                sim.run_trajectory_spline(np.asarray(path2_after_offset), 2, capture_depth=get_observation)
+                sim.run_trajectory_spline(np.asarray(path2), 2, capture_depth=get_observation)
             else:
                 sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_depth=get_observation, visualize=self.visualize)
-                sim.run_trajectory_position_control(np.array(path2_after_offset), n_steps=2,  tau=0.01, capture_depth=get_observation, visualize=self.visualize)
+                sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_depth=get_observation, visualize=self.visualize)
 
 
             if self.observation_mode == "POINTCLOUD":
@@ -268,6 +296,22 @@ class RobotEnviroment:
                         self.rgb_image = sim.getRGB()
 
         self.C.delFrame("tmp")
+
+        if self.path_mode == "WAYplusTIMING":
+            #TODO what about other cases (more pulls, pushes?)
+            
+            self.ways = []
+            C2 = ry.Config()
+            C2.addConfigurationCopy(self.C)
+            
+            C2.setJointState(path1[-1])
+            self.ways.append(C2.getFrame(self.gripper).getPosition())
+            
+            C2.setJointState(path2_after_offset[-1])
+            self.ways.append(C2.getFrame(self.gripper).getPosition())
+            del C2
+
+            self.timings = np.concatenate([np.full(32, 1), np.full(32, 2)])
 
         self.path = np.concatenate((path1, path2_after_offset), axis=0)
         return True

@@ -1,0 +1,2 @@
+checkpoint_path: outputs/final_outputs/transformer_just_timings.pth
+normalization_stats_path: outputs/final_outputs/tranformer_just_timings_normalization.yaml

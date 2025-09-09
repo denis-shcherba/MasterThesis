@@ -6,8 +6,8 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "floating" # "normal" or "floating"
-COLLECT_DATA = False
-PATH_MODE = "POS3D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos"
+COLLECT_DATA = True
+PATH_MODE = "POS3D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
@@ -15,22 +15,20 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 1_000
+NUM_SAMPLES = 5000
 VISUALIZE = False  # If true, the simulation will be visualized
 
-# Noise settings
-# STATE_ADD_NOISE = 0   # bit coded, 1 is gaussian, 2 is waypoint noise
-# DEPTH_ADD_NOISE = 0   # 
-
 noise_dict = {
-    "stateNoise": {
-        "type": "gaussian",
-        "std": 0.01,
-        "mean": 0.0,
-    },
-    "depthNoise": {}
+    # "stateNoise": {
+    #     "type": "singleGaussian",
+    #     "prob": 0.1,
+    #     "std": 0.0025,
+    #     "mean": 0.0,
+    # },
+    # "depthNoise": {}
 }
 
+# State noise variants:  gaussianIntegratedOverPath, randomWaypoint, singleGaussian
 
 prefix = "l_"
 C = ry.Config()
@@ -166,6 +164,12 @@ for sample in samples:
             elif PATH_MODE == "RegressPC2Pos":
                 print(roboenv.path.shape)
                 demo_group.create_dataset("path", data=roboenv.path[31, :3])  # Only position
+
+            elif PATH_MODE == "WAYplusTIMING":
+                # Save the waypoints and timing\
+                demo_group.create_dataset("path", data=roboenv.path[:, :3])  
+                demo_group.create_dataset("ways", data=roboenv.ways) 
+                demo_group.create_dataset("timings", data=roboenv.timings) 
 
             if OBSERVATION_MODE == "POINTCLOUD":
                 demo_group.create_dataset("points", data=roboenv.points)

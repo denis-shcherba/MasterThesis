@@ -1,10 +1,10 @@
 defaults:
   - _self_  
   - model: transformer_depth
-  - loss: default_3d
+  - loss: default_3d_mse
   - optimizer: adam
   - data: depth
-  - inference: mlp_depth
+  # - inference: mlp_depth
   - scheduler: cosine
 train:
   batch_size: 128
@@ -19,8 +19,9 @@ seed: 42
 experiment_name: "SimpleSingleStepBC"
 output_dir: ${hydra:runtime.output_dir}
 
-
 is_regression: false
+# whether to use a separate network for waypoint and timing prediction naming
+is_waypointPlusTimings: false
 
 wandb:
   enabled: true

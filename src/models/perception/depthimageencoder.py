@@ -9,7 +9,7 @@ class DepthImageEncoder(nn.Module):
     Input: (B, 1, H, W)
     Output: (B, feature_dim)
     """
-    def __init__(self, feature_dim=256, pretrained=False):
+    def __init__(self, feature_dim=256, pretrained=False, freeze_layers=False):
         super(DepthImageEncoder, self).__init__()
         self.feature_dim = feature_dim
 
@@ -33,8 +33,23 @@ class DepthImageEncoder(nn.Module):
             base_model.avgpool,  # Output shape: (B, 512, 1, 1)
         )
 
+        # Freeze later layers to reduce overfitting
+        if freeze_layers:
+            # Freeze layer3 and layer4 (the deepest, most specific layers)
+            for param in self.encoder[6].parameters():  # layer3
+                param.requires_grad = False
+            for param in self.encoder[7].parameters():  # layer4
+                param.requires_grad = False
+            print("Frozen ResNet layer3 and layer4")
+
         # Final projection layer
         self.fc = nn.Linear(512, feature_dim)
+
+        # # Final projection layer with dropout
+        # self.fc = nn.Sequential(
+        #     nn.Dropout(dropout_rate),
+        #     nn.Linear(512, feature_dim)
+        # )
 
     def forward(self, x):
         """

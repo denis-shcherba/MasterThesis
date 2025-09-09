@@ -57,6 +57,105 @@ class PositionalEncoding(nn.Module):
         else:
             raise ValueError("time_steps must be of shape (batch,) or (batch, seq_len)")
 
+class WayPlusTimingsPolicy(nn.Module):
+    """
+    Multi-head policy:
+      - Transformer head on depth sequence -> predicts timings
+      - N waypoint regressors on the *first depth image* -> predicts key waypoints
+    """
+
+    def __init__(self,
+                 feature_dim=256,
+                 state_dim=0,
+                 action_dim=6,
+                 dropout_rate=0.3,
+                 fusion_method='concat',
+                 context_length=5,
+                 embed_dim=256,
+                 num_layers=4,
+                 num_heads=4,
+                 num_waypoints=2,   # <--- NEW
+                 waypoint_dim=3     # <--- xyz
+                 ):
+        super().__init__()
+
+        self.feature_dim = feature_dim
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.num_waypoints = num_waypoints
+        self.waypoint_dim = waypoint_dim
+
+        # Depth encoder with regularization
+        self.obs_encoder = DepthImageEncoder(
+            feature_dim=feature_dim, 
+            freeze_layers=False,      # Freeze layer3 and layer4
+        )
+
+        # Optional state encoder
+        self.state_encoder = nn.Linear(state_dim, feature_dim) if state_dim > 0 else None
+        policy_input_dim = feature_dim + (feature_dim if state_dim > 0 and fusion_method == 'concat' else 0)
+
+        # Transformer head for sequence prediction
+        self.transformer_head = TransformerHead(
+            input_dim=policy_input_dim,
+            output_dim=action_dim,
+            context_length=context_length,
+            embed_dim=embed_dim,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            dropout=dropout_rate,
+            output_activation=None,
+        )
+
+        # MLP regressors for waypoints - reduce dropout back to 0.3
+        self.waypoint_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(feature_dim, 32),  # Keep smaller size
+                nn.ReLU(),
+                nn.Dropout(0.2),             # Reduce from 0.4 to 0.3
+                nn.Linear(32, waypoint_dim)
+            ) for _ in range(num_waypoints)
+        ])
+
+    def forward(self, depth_sequence: torch.Tensor,
+                state: Optional[torch.Tensor] = None, first_obs: torch.Tensor = None) -> dict:
+        """
+        Args:
+            depth_sequence: (B, T, 1, H, W)
+            state: optional robot state (B, T, state_dim)
+
+        Returns:
+            dict with:
+              - 'timings': (B, action_dim)
+              - 'waypoints': list of (B, waypoint_dim)
+        """
+
+        B, T = depth_sequence.shape[:2]
+
+        # Flatten time for encoder
+        depth_in = depth_sequence.view(B * T, 1, *depth_sequence.shape[2:])
+        features = self.obs_encoder(depth_in)              # (B*T, D)
+        features = features.view(B, T, -1)                 # (B, T, D)
+
+        # State fusion
+        if state is not None and self.state_encoder is not None:
+            state_f = self.state_encoder(state.view(B * T, -1)).view(B, T, -1)
+            features = torch.cat([features, state_f], dim=-1)
+
+        # Transformer forward
+        timing_pred = self.transformer_head(features)[:, -1, :]  # (B, action_dim)
+
+        # Waypoints from *first depth image only* TODO
+        #first_frame = depth_sequence[:, 0, :, :].unsqueeze(1)     # (B, 1, H, W)
+        first_features = self.obs_encoder(first_obs.unsqueeze(1))           # (B, D)
+        waypoint_preds = [head(first_features) for head in self.waypoint_heads]
+
+        return {
+            "timings": timing_pred,
+            "waypoints": waypoint_preds
+        }
+
+
 
 class MultiModalPolicy(nn.Module):
     """
@@ -93,6 +192,8 @@ class MultiModalPolicy(nn.Module):
         self.max_timesteps = max_timesteps
         self.policy_head_type = policy_head_type
         self.observation_mode = observation_mode
+
+
 
         # Observation encoder
         if self.observation_mode == 'points':
@@ -156,6 +257,7 @@ class MultiModalPolicy(nn.Module):
             
             # For transformer, we don't add external time encoding
             # The transformer handles positional encoding internally
+            
             self.policy_head = TransformerHead(
                 input_dim=policy_input_dim,  # No time encoding added here
                 output_dim=action_dim,
@@ -340,6 +442,9 @@ def create_policy(policy_type='multimodal', **kwargs):
     elif policy_type == 'regression':
         filtered = filter_kwargs(SimplePCToPosRegressor.__init__, kwargs)
         return SimplePCToPosRegressor(**filtered)
+    elif policy_type == 'wayplustiming':
+        filtered = filter_kwargs(WayPlusTimingsPolicy.__init__, kwargs)
+        return WayPlusTimingsPolicy(**filtered)
     else:
         raise ValueError(f"Unknown policy type: {policy_type}")
     

@@ -2,6 +2,67 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
+from tqdm import tqdm
+
+
+class MultiLoss(nn.Module):
+    """
+    A container to manage and apply multiple weighted loss functions.
+    """
+    def __init__(self, criteria, weights):
+        """
+        Args:
+            criteria (dict): A dictionary of loss functions (nn.Module),
+                             e.g., {'timing': MSELoss(), 'waypoint': L1Loss()}.
+            weights (dict): A dictionary of weights (float),
+                            e.g., {'timing': 1.0, 'waypoint': 0.5}.
+        """
+        super().__init__()
+        # Use nn.ModuleDict to ensure criteria are properly registered by PyTorch
+        self.criteria = nn.ModuleDict(criteria)
+        self.weights = weights
+
+    def forward(self, predictions, targets):
+        """
+        Calculates the total weighted loss.
+
+        Args:
+            predictions (dict): A dictionary of predicted tensors.
+                                Keys must match the keys in self.criteria.
+            targets (dict): A dictionary of ground truth tensors.
+                            Keys must match the keys in self.criteria.
+
+        Returns:
+            torch.Tensor: The final, scalar loss value.
+        """
+        total_loss = 0.0
+
+        for name, criterion in self.criteria.items():
+            pred = predictions[name]
+            target = targets[name]
+            weight = self.weights[name]
+
+            # Special handling for waypoints, which are a list of predictions
+            if name == 'waypoint' and isinstance(pred, list):
+                component_loss = 0.0
+                waypoint_preds = pred
+                waypoints_gt = target
+                if waypoint_preds:
+                    for i, wp_pred in enumerate(waypoint_preds):
+                        # Calculate loss for each waypoint prediction against its corresponding ground truth
+                        component_loss += criterion(wp_pred, waypoints_gt[:, i, :])
+                    component_loss /= len(waypoint_preds)
+
+                    tqdm.write(f"Waypoint loss for {len(waypoint_preds)} waypoints: {component_loss.item()} with weight {weight}")
+            else:
+                # Standard loss calculation for other components like 'timing'
+                component_loss = criterion(pred, target)
+                tqdm.write(f"Loss for {name}: {component_loss.item()} with weight {weight}")
+
+            total_loss += weight * component_loss
+
+        return total_loss
+
 
 def create_individual_loss_function(loss_cfg):
     """
@@ -193,64 +254,107 @@ class MSELoss(nn.Module):
         return loss
 
 
+class CrossEntropyLoss(nn.Module):
+    """
+    Computes Cross Entropy loss for discrete classification.
+    Useful for predicting discrete timing classes.
+    """
+    def __init__(self, ignore_index=-100, label_smoothing=0.0):
+        super().__init__()
+        # Initialize the Cross Entropy loss function
+        self.ce_loss = nn.CrossEntropyLoss(ignore_index=ignore_index, label_smoothing=label_smoothing)
+        
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            prediction (torch.Tensor): The predicted logits tensor of shape (N, C) or (N, C, ...)
+                                     where N is batch size and C is number of classes
+            target (torch.Tensor): The ground truth class indices tensor of shape (N,) or (N, ...)
+                                 containing class indices in range [0, C-1]
+        Returns:
+            torch.Tensor: Scalar tensor representing the cross entropy loss.
+        """
+        loss = self.ce_loss(prediction, target)
+        return loss
+
+class SmoothL1HuberLoss(nn.Module):
+    """
+    Computes Smooth L1 (Huber) loss for regression tasks.
+    This is more robust than MSE and smoother than L1.
+    
+    Args:
+        beta (float): Transition point from L2 to L1. Default = 1.0.
+                      Smaller values make it closer to L1, larger closer to MSE.
+                      Often set to something like 0.1 for normalized regression targets.
+        reduction (str): 'mean' (default) | 'sum' | 'none'
+    """
+    def __init__(self, beta: float = 1.0, reduction: str = 'mean'):
+        super().__init__()
+        self.smooth_l1 = nn.SmoothL1Loss(beta=beta, reduction=reduction)
+
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return self.smooth_l1(prediction, target)
+
 
 # --- Main Loss Creation Function (Factory) ---
 log = logging.getLogger(__name__)
 
+# Assuming log and create_individual_loss_function are defined elsewhere
+# from your_project import log, create_individual_loss_function, PoseLoss9D
+
 def create_loss_function(loss_cfg_global):
     """
-    Create the main loss function based on the global loss configuration.
-    This function acts as a factory.
-
-    Args:
-        loss_cfg_global: The main loss configuration object (e.g., from Hydra).
-                         Expected to have a 'name' field to dispatch to the correct loss.
-                         If 'name' is 'PoseLoss9D', it uses the specialized 9D pose loss.
-                         Otherwise, it attempts to create a simple individual loss.
-        
-    Returns:
-        criterion: An nn.Module loss function.
-    
-    Raises:
-        ValueError: If the loss configuration is invalid or the specified loss name is unknown.
+    Create a loss function based on the configuration.
+    This factory can now create a single loss or a MultiLoss container.
     """
-    loss_name = loss_cfg_global.get("name", None)
+    loss_name = loss_cfg_global.get("name")
 
-    if loss_name == 'PoseLoss9D':
-        # PoseLoss9D expects the full configuration, as it processes nested configs.
+    if loss_name == 'MultiLoss':
+        log.info("Creating MultiLoss container.")
+        criteria = {}
+        weights = {}
+        # Iterate over the list of loss components in the config
+        for loss_component in loss_cfg_global['losses']:
+            name = loss_component['name']
+            weight = loss_component['weight']
+            criterion_cfg = loss_component['criterion']
+
+            # Recursively call this factory to create the individual loss function
+            criteria[name] = create_loss_function(criterion_cfg)
+            weights[name] = weight
+            log.info(f"  - Added loss '{name}' with weight {weight} and criterion {criterion_cfg['name']}.")
+        
+        return MultiLoss(criteria, weights)
+
+    elif loss_name == 'PoseLoss9D':
         log.info("Creating PoseLoss9D.")
         return PoseLoss9D(loss_cfg_global)
-    
+
     elif loss_name == "MSELoss":
-        # If the name is 'MSELoss', we create a simple MSE loss function.
         log.info("Creating MSELoss.")
         return MSELoss()
 
-    elif loss_name is not None:
-        # If a name is given and it's not PoseLoss9D, assume it's an individual loss type.
-        # The 'name' field here corresponds to the 'type' field expected by create_individual_loss_function.
-        # We construct a new config dict to match the expected input for create_individual_loss_function.
-        # This assumes create_individual_loss_function expects a config like {'type': 'mse', 'param1': val1, ...}
-        
-        # Make a copy to avoid modifying the original config if it's shared
-        individual_loss_cfg = dict(loss_cfg_global) 
-        
-        # Use the 'name' from global config as 'type' for individual loss
-        individual_loss_cfg['type'] = loss_name 
-        
-        # Remove the 'name' field if it's not expected by individual_loss_cfg
-        # (This is optional, depends on how create_individual_loss_function handles extra keys)
-        del individual_loss_cfg['name'] 
+    elif loss_name == "SmoothL1HuberLoss":
+        log.info("Creating SmoothL1HuberLoss.")
+        beta = loss_cfg_global.get("beta", 1.0)
+        reduction = loss_cfg_global.get("reduction", "mean")
+        return SmoothL1HuberLoss(beta=beta, reduction=reduction)
 
+    elif loss_name == "CrossEntropyLoss":
+        log.info("Creating CrossEntropyLoss.")
+        ignore_index = loss_cfg_global.get("ignore_index", -100)
+        label_smoothing = loss_cfg_global.get("label_smoothing", 0.0)
+        return CrossEntropyLoss(ignore_index=ignore_index, label_smoothing=label_smoothing)
+
+    elif loss_name is not None:
+        individual_loss_cfg = dict(loss_cfg_global)
+        individual_loss_cfg['type'] = loss_name
+        del individual_loss_cfg['name']
         log.info(f"Creating individual loss function of type '{loss_name}'.")
         return create_individual_loss_function(individual_loss_cfg)
+
     else:
-        # If 'name' is not specified at all, it's ambiguous.
-        # It's better to explicitly require 'name' for clarity or define a clear default.
-        # For now, let's raise an error, forcing explicit configuration.
-        # Alternatively, if you *must* have a default, decide what it is (e.g., 'mse').
         raise ValueError(
             "Loss configuration is missing a 'name' field. "
-            "Please specify 'name: PoseLoss9D' or 'name: <individual_loss_type>'."
             f"Provided config: {loss_cfg_global}"
         )

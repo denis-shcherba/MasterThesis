@@ -1,5 +1,6 @@
 import hydra
 from omegaconf import DictConfig
+from omegaconf import OmegaConf
 import torch
 import numpy as np
 import logging
@@ -8,11 +9,10 @@ from models.policy_head.policy_network import create_model
 from data_handling.processing import pose_9d_to_7d, pose_7d_to_9d
 from utils.data_utils import normalize_depth, normalize_state, denormalize_actions
 import yaml
-import json
-from hydra.core.hydra_config import HydraConfig
 import robotic as ry
 import gymnasium as gym
 import envs.env  # noqa: F401 
+import time
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     """
     Preprocesses a single raw input data point for inference without point clouds.
     """
-    log.info("Preprocessing inference input...")
+    #log.info("Preprocessing inference input...")
     processed_input = {}
     model_cfg = cfg.model
 
@@ -50,10 +50,10 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
         log.error(f"Missing required model inputs: {missing_keys}")
         raise RuntimeError("Preprocessing failed to produce required inputs.")
 
-    log.info(f"Preprocessing complete. Final keys: {list(processed_input.keys())}")
+    #log.info(f"Preprocessing complete. Final keys: {list(processed_input.keys())}")
     return processed_input
 
-info_dicts =[]
+
 @hydra.main(config_path="../configs", config_name="inference", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
@@ -68,6 +68,12 @@ def eval_policy(cfg: DictConfig) -> None:
     # Model
     log.info("Initializing model...")
     model = create_model(cfg.model).to(device)
+    log.info(f"Model created: {type(model).__name__}")
+
+    # create timing model
+    cfg_timing_model = OmegaConf.load("./configs/model/transformer_depth_wayptime.yaml")
+    log.info("Initializing timing model...")
+    model_timing= create_model(cfg_timing_model).to(device)
     log.info(f"Model created: {type(model).__name__}")
 
     # Load checkpoint
@@ -89,6 +95,12 @@ def eval_policy(cfg: DictConfig) -> None:
     if any(key.startswith('module.') for key in state_dict.keys()):
         state_dict = {k.replace('module.', '', 1): v for k, v in state_dict.items()}
     model.load_state_dict(state_dict)
+
+
+    state_dict_timing = torch.load("outputs/final_outputs/transformer_just_timings.pth", map_location=device, weights_only=False)['model_state_dict']
+    if any(key.startswith('module.') for key in state_dict.keys()):
+        state_dict = {k.replace('module.', '', 1): v for k, v in state_dict.items()}
+    model_timing.load_state_dict(state_dict_timing)
     log.info("Model weights loaded successfully.")
 
     normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)
@@ -105,6 +117,7 @@ def eval_policy(cfg: DictConfig) -> None:
     print(normalization_stats['depth_stats'])
 
     model.eval()
+    model_timing.eval()
     log.info("Model set to evaluation mode.")
 
     depth_sequence = []
@@ -143,11 +156,12 @@ def eval_policy(cfg: DictConfig) -> None:
             depth_seq = torch.stack(depth_sequence, dim=0).squeeze(1).unsqueeze(0)
             state_seq = torch.stack(state_sequence, dim=0).squeeze(1).unsqueeze(0)
 
-            log.info(f"Running model inference for step {i}...")
+            #log.info(f"Running model inference for step {i}...")
             with torch.no_grad():
                 output = model(depth_seq, state_seq)
+                timing_output = model_timing(depth_seq, state_seq)
 
-            log.info(f"Inference output raw: {output}")
+            #log.info(f"Inference output raw: {output}")
 
             if cfg["model"]["action_dim"] == 9:
                 pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
@@ -156,14 +170,16 @@ def eval_policy(cfg: DictConfig) -> None:
                     output = denormalize_actions(output, normalization_stats["action_stats"])
                 pos = output.squeeze().cpu().numpy()
                 obs, reward, terminated, truncated, info = env.step([pos[0], pos[1], pos[2]])
+                
+                time.sleep(0.1)
+            #log.info(f"Output tensor shape: {output.shape if isinstance(output, torch.Tensor) else 'dict'}")
+            predicted_timing = torch.argmax(timing_output).item()+1
+            log.info(f"Predicted timing: {predicted_timing}")
 
-            log.info(f"Output tensor shape: {output.shape if isinstance(output, torch.Tensor) else 'dict'}")
-            
         log.info(f"Evaluation {evaluation} finished with distance to goal {info.get('distance_to_goal', 'N/A')} and success {info.get('success', 'N/A')}.")
-        #env.unwrapped.C.view(False)
-        info_dicts.append(info)
-    with open(HydraConfig.get().run.dir+"/data.json", "w") as f:
-        json.dump(info_dicts, f, indent=4, default=lambda o: o.item() if hasattr(o, "item") else str(o))
+
+        env.unwrapped.C.view(True)
+
     log.info("Policy evaluation/inference finished.")
 
 

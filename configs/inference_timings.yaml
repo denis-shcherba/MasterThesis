@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: transformer_depth
+  - model: transformer_depth_wayptime
   - data: depth
   - inference: transformer_depth
   - env: default_3d
@@ -8,10 +8,6 @@ defaults:
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: 'depth'
 output_subdir: null
-num_eval_episodes: 500
+num_eval_episodes: 100
 simulate: True
 is_waypointPlusTimings: False
-
-hydra:
-  run:
-    dir: ./eval_outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
