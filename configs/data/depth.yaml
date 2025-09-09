@@ -20,7 +20,7 @@ is_waypointPlusTimings: ${is_waypointPlusTimings}
 random_seed: 42         # Random seed for reproducibility
 
 #normalization options
-normalize_depth: true   # Normalize depth images
-normalize_actions: true # Normalize actions
+normalize_depth: false   # Normalize depth images
+normalize_actions: false # Normalize actions
 depth_normalization_method: 'minmax'  # Method for depth normalization
 action_normalization_method: 'zscore'  # Method for action normalization

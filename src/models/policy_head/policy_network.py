@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from models.perception.pointnet import PointNet
-from models.perception.depthimageencoder import DepthImageEncoder
+from models.perception.depthimageencoder import DepthImageEncoder, SimpleDepthEncoder
 from models.policy_head.policy_head import MLPHead, GRUHead, ResidualMLPHead, TransformerHead
 import math
 import inspect
@@ -85,11 +85,28 @@ class WayPlusTimingsPolicy(nn.Module):
         self.num_waypoints = num_waypoints
         self.waypoint_dim = waypoint_dim
 
-        # Depth encoder with regularization
-        self.obs_encoder = DepthImageEncoder(
-            feature_dim=feature_dim, 
-            freeze_layers=False,      # Freeze layer3 and layer4
-        )
+        use_simple_encoder = False
+
+        # Choose encoder
+        if use_simple_encoder:
+            self.obs_encoder = SimpleDepthEncoder(
+                feature_dim=feature_dim,
+                dropout_rate=0.2
+            )
+        else:
+            # Original ResNet encoder
+            self.obs_encoder = DepthImageEncoder(
+                feature_dim=feature_dim, 
+                freeze_layers=True,
+                dropout_rate=0.1
+            )
+
+        # # Depth encoder with regularization
+        # self.obs_encoder = DepthImageEncoder(
+        #     feature_dim=feature_dim, 
+        #     freeze_layers=True,      # Freeze layer3 and layer4
+        #     dropout_rate=0.1         # Lower dropout for encoder
+        # )
 
         # Optional state encoder
         self.state_encoder = nn.Linear(state_dim, feature_dim) if state_dim > 0 else None

@@ -5,7 +5,7 @@ import torchvision.models as models
 
 class DepthImageEncoder(nn.Module):
     """
-    ResNet-based encoder for depth images.
+    ResNet-based encoder for depth images with regularization. ~11M params
     Input: (B, 1, H, W)
     Output: (B, feature_dim)
     """
@@ -60,5 +60,79 @@ class DepthImageEncoder(nn.Module):
         """
         x = self.encoder(x)  # (B, 512, 1, 1)
         x = x.view(x.size(0), -1)  # (B, 512)
+        x = self.fc(x)  # (B, feature_dim)
+        return x
+
+
+
+class SimpleDepthEncoder(nn.Module):
+    """
+    Simple CNN encoder for depth images - much smaller than ResNet18. ~500k params
+    Input: (B, 1, H, W)
+    Output: (B, feature_dim)
+    """
+    def __init__(self, feature_dim=256, dropout_rate=0.2, input_size=(224, 224)):
+        super(SimpleDepthEncoder, self).__init__()
+        self.feature_dim = feature_dim
+        
+        # Simple CNN backbone
+        self.encoder = nn.Sequential(
+            # First conv block: 1 -> 32
+            nn.Conv2d(1, 32, kernel_size=7, stride=2, padding=3),  # H/2, W/2
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),      # H/4, W/4
+            
+            # Second conv block: 32 -> 64
+            nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2), # H/8, W/8
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),      # H/16, W/16
+            
+            # Third conv block: 64 -> 128
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1), # H/32, W/32
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            
+            # Fourth conv block: 128 -> 256
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # H/64, W/64
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            
+            # Global average pooling
+            nn.AdaptiveAvgPool2d((1, 1))  # (B, 256, 1, 1)
+        )
+        
+        # Final projection with dropout
+        self.fc = nn.Sequential(
+            nn.Dropout(dropout_rate),
+            nn.Linear(256, feature_dim)
+        )
+        
+        # Initialize weights
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+    
+    def forward(self, x):
+        """
+        Args:
+            x: Depth image tensor of shape (B, 1, H, W)
+        Returns:
+            Feature vector of shape (B, feature_dim)
+        """
+        x = self.encoder(x)  # (B, 256, 1, 1)
+        x = x.view(x.size(0), -1)  # (B, 256)
         x = self.fc(x)  # (B, feature_dim)
         return x
