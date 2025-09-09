@@ -90,106 +90,6 @@ class MLPHead(nn.Module):
         return self.network(x)
 
 
-class GRUHead(nn.Module):
-    """
-    A recurrent policy head using a GRU to maintain a memory of past states.
-    Takes a sequence of feature vectors and outputs a sequence of action predictions.
-    """
-    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int = 256, 
-                 num_layers: int = 2, dropout_rate: float = 0.3, 
-                 output_activation: Optional[str] = None):
-        """
-        Initialize the GRU-based policy head.
-        
-        Args:
-            input_dim (int): Dimension of the input features for each time step.
-            output_dim (int): Dimension of the output actions.
-            hidden_dim (int): The number of features in the hidden state of the GRU.
-            num_layers (int): Number of recurrent layers.
-            dropout_rate (float): If non-zero, introduces a Dropout layer on the outputs of each
-                                  GRU layer except the last layer.
-            output_activation (str, optional): Output activation ('tanh', 'sigmoid', etc.). Defaults to None.
-        """
-        super(GRUHead, self).__init__()
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
-
-        # The core of our policy is now a GRU
-        self.gru = nn.GRU(
-            input_size=input_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,  # Crucial for handling (batch, seq, feature) shaped data
-            dropout=dropout_rate if num_layers > 1 else 0
-        )
-        
-        # A linear layer to map the GRU's output to the action space
-        self.fc_out = nn.Linear(hidden_dim, output_dim)
-        
-        # Optional output activation
-        self.output_activation = self._get_activation(output_activation) if output_activation else None
-
-        self._initialize_weights()
-
-    def _get_activation(self, activation_name: str) -> nn.Module:
-        """Get an activation function module by name."""
-        activations = {
-            'relu': nn.ReLU(),
-            'tanh': nn.Tanh(),
-            'elu': nn.ELU(),
-            'sigmoid': nn.Sigmoid()
-        }
-        if activation_name not in activations:
-            raise ValueError(f"Unknown activation: {activation_name}")
-        return activations[activation_name]
-
-    def _initialize_weights(self):
-        """Initialize network weights."""
-        for name, param in self.named_parameters():
-            if 'gru' in name:
-                if 'weight' in name:
-                    nn.init.orthogonal_(param)
-                elif 'bias' in name:
-                    nn.init.constant_(param, 0)
-            elif 'fc' in name:
-                if 'weight' in name:
-                    nn.init.xavier_uniform_(param)
-                elif 'bias' in name:
-                    nn.init.constant_(param, 0)
-    
-    def forward(self, x: torch.Tensor, hidden_state: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward pass through the GRU head.
-        
-        Args:
-            x: Input tensor.
-               - During training (whole trajectory): (batch_size, sequence_length, input_dim)
-               - During inference (single step): (batch_size, 1, input_dim)
-            hidden_state: The hidden state from the previous time step.
-                          Shape: (num_layers, batch_size, hidden_dim)
-                          If None, it will be initialized to zeros.
-            
-        Returns:
-            A tuple containing:
-            - actions (torch.Tensor): The output actions. Shape is the same as the input's
-                                      batch and sequence dimensions.
-            - new_hidden_state (torch.Tensor): The new hidden state to be passed to the next step.
-                                               Shape: (num_layers, batch_size, hidden_dim)
-        """
-        # The GRU layer returns the output for each time step and the final hidden state.
-        gru_out, new_hidden_state = self.gru(x, hidden_state)
-        
-        # We pass the GRU's output through our final fully-connected layer.
-        actions = self.fc_out(gru_out)
-
-        if self.output_activation:
-            actions = self.output_activation(actions)
-            
-        return actions, new_hidden_state
-
-
 ### --- OMIT Maybe ---
 
 class ResidualMLPHead(nn.Module):
@@ -366,37 +266,37 @@ class ResidualBlock(nn.Module):
     
 
 class TransformerHead(nn.Module):
-    def __init__(self, input_dim, output_dim, context_length, embed_dim=128, 
+    def __init__(self, input_dim, output_dim, context_length, embed_dim=128,
                  num_layers=4, num_heads=4, dropout=0.1, output_activation='tanh'):
-        """
-        Transformer-based policy head.
-
-        Args:
-            input_dim: Dim of each input vector (e.g. obs dim)
-            output_dim: Dim of each output vector (e.g. action dim)
-            context_length: Number of timesteps in the input sequence
-            embed_dim: Dim of internal transformer embeddings
-            num_layers: Number of transformer blocks
-            num_heads: Number of attention heads
-            dropout: Dropout rate
-            output_activation: Activation function on output ('tanh', 'sigmoid', or None)
-        """
         super().__init__()
-        self.input_proj = nn.Linear(input_dim, embed_dim)
-        self.pos_emb = nn.Parameter(torch.randn(1, context_length, embed_dim))  # learnable positional encoding
+        self.context_length = context_length
+        self.output_dim = output_dim
 
+        # --- CHANGE 1: Create an embedding layer for actions ---
+        # This will be used for "teacher forcing" during training
+        self.action_embed = nn.Linear(output_dim, embed_dim)
+
+        self.input_proj = nn.Linear(input_dim, embed_dim)
+        self.pos_emb = nn.Parameter(torch.randn(1, context_length, embed_dim))
+        
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_heads,
-            dim_feedforward=4*embed_dim,
+            dim_feedforward=4 * embed_dim,
             dropout=dropout,
             activation="gelu",
             batch_first=True
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-
+        
         self.output_proj = nn.Linear(embed_dim, output_dim)
         self.output_activation = self._get_activation(output_activation)
+        
+        # --- CHANGE 2: Create and register the causal mask ---
+        # We use register_buffer so the mask is moved to the correct device (e.g., GPU)
+        # with the model, but is not considered a model parameter.
+        mask = self.generate_square_subsequent_mask(context_length)
+        self.register_buffer('causal_mask', mask)
 
     def _get_activation(self, name):
         if name is None:
@@ -408,14 +308,34 @@ class TransformerHead(nn.Module):
         else:
             raise ValueError(f"Unsupported activation: {name}")
 
-    def forward(self, x):
+    # --- New Helper Method ---
+    def generate_square_subsequent_mask(self, sz: int):
+        """Generates a square mask for the sequence. The masked positions are filled with float('-inf').
+           Unmasked positions are filled with float(0.0).
+        """
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+    def forward(self, obs_sequence, prev_actions_sequence):
         """
         Args:
-            x: Tensor of shape (batch_size, context_length, input_dim)
+            obs_sequence: Tensor of observations, shape (batch_size, context_length, input_dim)
+            prev_actions_sequence: Tensor of previous actions (for teacher forcing),
+                                   shape (batch_size, context_length, output_dim)
         Returns:
-            Tensor of shape (batch_size, context_length, output_dim)
+            Tensor of predicted actions, shape (batch_size, context_length, output_dim)
         """
-        x = self.input_proj(x) + self.pos_emb  # add positional encoding
-        x = self.transformer(x)
+        # Embed observations and previous actions
+        obs_embed = self.input_proj(obs_sequence)
+        action_embed = self.action_embed(prev_actions_sequence)
+        
+        # Combine embeddings (simple addition is common) and add positional encoding
+        x = obs_embed + action_embed + self.pos_emb
+        
+        # --- CHANGE 3: Apply the causal mask during the forward pass ---
+        # The mask ensures that attention is only paid to previous positions
+        x = self.transformer(x, mask=self.causal_mask)
+        
         x = self.output_proj(x)
         return self.output_activation(x)

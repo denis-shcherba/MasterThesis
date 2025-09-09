@@ -9,9 +9,9 @@ import logging
 class ManipulationDataset(Dataset):
     """
     Streaming HDF5 dataset for imitation learning.
-    Loads only the data slice needed for each __getitem__ call.
+    MODIFIED to support sequence-to-sequence training.
     """
-
+    # ... (all methods from __init__ to _compute_depth_normalization_stats remain the same) ...
     def __init__(
         self,
         h5_file_path: str,
@@ -34,7 +34,7 @@ class ManipulationDataset(Dataset):
         self.h5_file_path = h5_file_path
         self.is_regression = is_regression
         self.is_waypointPlusTimings = is_waypointPlusTimings
-        self.sequence_length = sequence_length if not is_regression else 1
+        self.sequence_length = sequence_length
         self.action_dim = action_dim
         self.num_points = num_points
         self.normalize_depth = normalize_depth
@@ -47,101 +47,90 @@ class ManipulationDataset(Dataset):
 
         self.logger = logging.getLogger(__name__)
         self.rng = np.random.default_rng(random_seed)
-
-        # We'll store only dataset metadata, not the arrays
         self.demo_meta: List[Dict] = []
         self.valid_indices: List[Tuple[int, int]] = []
-
-        # Load just the metadata first
         self._index_demonstrations()
-
-        # Create train/val split
         if self.split in ['train', 'val']:
             self._create_split(train_split)
-
-        # Optional subsampling
         self._subsample_if_needed(subsample_demos)
-
-        # Compute normalization stats by streaming through the file
         with h5py.File(self.h5_file_path, 'r') as f:
             if self.normalize_actions:
                 self.action_stats = self._compute_action_normalization_stats(f)
             else:
                 self.action_stats = None
-
             if self.normalize_depth and self.observation_mode == 'depth':
                 self.depth_stats = self._compute_depth_normalization_stats(f)
             else:
                 self.depth_stats = None
 
     def _index_demonstrations(self):
-        """Read only the shapes and keys from the file, no data."""
         with h5py.File(self.h5_file_path, 'r') as f:
-            demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')],
-                            key=lambda x: int(x.split('_')[1]))
+            demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
             for demo_idx, demo_key in enumerate(demo_keys):
                 path_shape = f[f'{demo_key}/path'].shape
                 if self.observation_mode == 'depth':
                     obs_shape = f[f'{demo_key}/depth'].shape
                 else:
                     obs_shape = f[f'{demo_key}/points'].shape
-
-                if self.is_regression:
-                    if path_shape != (self.action_dim,):
-                        continue
-                else:
-                    if len(path_shape) != 2 or path_shape[1] != self.action_dim:
-                        continue
-                    if obs_shape[0] != path_shape[0]:
-                        continue
-
-                # Build metadata dictionary once
-                meta = {
-                    'demo_id': demo_idx,
-                    'demo_key': demo_key,
-                    'path_shape': path_shape,
-                    'obs_shape': obs_shape
-                }
-
-                # Extend conditionally
-                if self.is_waypointPlusTimings:
-                    meta['num_waypoints'] = f[f'{demo_key}/ways'].shape
-
+                
+                # Basic validation
+                if len(path_shape) != 2 or path_shape[1] != self.action_dim or obs_shape[0] != path_shape[0]:
+                    continue
+                
+                meta = {'demo_id': demo_idx, 'demo_key': demo_key, 'num_timesteps': path_shape[0]}
                 self.demo_meta.append(meta)
-
-                if not self.is_regression:
-                    num_timesteps = path_shape[0]
-                    for t in range(num_timesteps - 1):
+                
+                num_timesteps = path_shape[0]
+                
+                ## --- CHANGE START ---
+                # An index 't' is valid if we can get a full sequence of length `sequence_length` starting from it.
+                if num_timesteps >= self.sequence_length:
+                    for t in range(num_timesteps - self.sequence_length + 1):
                         self.valid_indices.append((demo_idx, t))
-
+                ## --- CHANGE END ---
+                
         if not self.demo_meta:
             raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
 
+    # ... (_create_split, _subsample_if_needed, _compute_*_stats remain the same) ...
     def _create_split(self, train_split: float):
         """Filter demos for train/val split."""
-        indices = np.arange(len(self.demo_meta))
+        # Get the set of demo_ids belonging to this split
+        num_demos = len(self.demo_meta)
+        indices = np.arange(num_demos)
         self.rng.shuffle(indices)
-        split_idx = int(len(self.demo_meta) * train_split)
-        selected_ids = set(indices[:split_idx] if self.split == 'train' else indices[split_idx:])
+        split_idx = int(num_demos * train_split)
+        
+        if self.split == 'train':
+            selected_demo_indices = set(indices[:split_idx])
+        else: # 'val'
+            selected_demo_indices = set(indices[split_idx:])
+        
+        # Filter demo_meta
+        self.demo_meta = [meta for i, meta in enumerate(self.demo_meta) if i in selected_demo_indices]
+        
+        # Filter valid_indices based on the selected demos
+        self.valid_indices = [(demo_idx, t) for demo_idx, t in self.valid_indices if demo_idx in selected_demo_indices]
 
-        self.demo_meta = [d for i, d in enumerate(self.demo_meta) if i in selected_ids]
-        if not self.is_regression:
-            self.valid_indices = [(d_idx, t) for d_idx, t in self.valid_indices if d_idx in selected_ids]
+        # Remap demo_id to be contiguous (0, 1, 2...) for the new subset of demos
+        old_to_new_id_map = {old_meta['demo_id']: new_id for new_id, old_meta in enumerate(self.demo_meta)}
+        
+        for meta in self.demo_meta:
+            meta['demo_id'] = old_to_new_id_map[meta['demo_id']]
+            
+        self.valid_indices = [(old_to_new_id_map[demo_idx], t) for demo_idx, t in self.valid_indices]
 
-        # Remap demo_id to sequential
-        old_to_new = {old['demo_id']: i for i, old in enumerate(self.demo_meta)}
-        for d in self.demo_meta:
-            d['demo_id'] = old_to_new[d['demo_id']]
-        if not self.is_regression:
-            self.valid_indices = [(old_to_new[d_idx], t) for d_idx, t in self.valid_indices]
 
     def _subsample_if_needed(self, subsample_demos: Optional[int]):
         if subsample_demos is not None and subsample_demos > 0:
             if len(self.demo_meta) > subsample_demos:
+                # First, select a subset of demos
                 self.demo_meta = self.demo_meta[:subsample_demos]
-                kept_ids = {d['demo_id'] for d in self.demo_meta}
-                if not self.is_regression:
-                    self.valid_indices = [(d_idx, t) for d_idx, t in self.valid_indices if d_idx in kept_ids]
+                # Get the demo_ids of the kept demos
+                kept_demo_ids = {meta['demo_id'] for meta in self.demo_meta}
+                # Filter valid_indices to only include those from the kept demos
+                self.valid_indices = [(demo_idx, t) for demo_idx, t in self.valid_indices if demo_idx in kept_demo_ids]
+
 
     def _compute_action_normalization_stats(self, f):
         min_vals = np.full(self.action_dim, np.inf, dtype=np.float64)
@@ -149,21 +138,20 @@ class ManipulationDataset(Dataset):
         sum_vals = np.zeros(self.action_dim, dtype=np.float64)
         sum_sq_vals = np.zeros(self.action_dim, dtype=np.float64)
         count = 0
+        
+        demo_ids_in_split = {meta['demo_id'] for meta in self.demo_meta}
+        original_demo_meta = []
+        with h5py.File(self.h5_file_path, 'r') as temp_f:
+             all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
+             original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
 
-        for meta in self.demo_meta:
+        for meta in original_demo_meta:
             arr = f[f"{meta['demo_key']}/path"][...]
-            if not self.is_regression:
-                count += arr.shape[0]
-                min_vals = np.minimum(min_vals, arr.min(axis=0))
-                max_vals = np.maximum(max_vals, arr.max(axis=0))
-                sum_vals += arr.sum(axis=0)
-                sum_sq_vals += (arr ** 2).sum(axis=0)
-            else:
-                count += 1
-                min_vals = np.minimum(min_vals, arr)
-                max_vals = np.maximum(max_vals, arr)
-                sum_vals += arr
-                sum_sq_vals += arr ** 2
+            count += arr.shape[0]
+            min_vals = np.minimum(min_vals, arr.min(axis=0))
+            max_vals = np.maximum(max_vals, arr.max(axis=0))
+            sum_vals += arr.sum(axis=0)
+            sum_sq_vals += (arr ** 2).sum(axis=0)
 
         if self.action_normalization_method == 'minmax':
             range_vals = np.where(max_vals - min_vals == 0, 1, max_vals - min_vals)
@@ -171,14 +159,20 @@ class ManipulationDataset(Dataset):
         else:
             mean = sum_vals / count
             var = (sum_sq_vals / count) - mean ** 2
-            std = np.where(var == 0, 1, np.sqrt(var))
+            std = np.where(var <= 1e-8, 1, np.sqrt(var))
             return {'method': self.action_normalization_method, 'mean': mean, 'std': std}
 
     def _compute_depth_normalization_stats(self, f):
         min_val, max_val = np.inf, -np.inf
         sum_val, sum_sq_val, count = 0.0, 0.0, 0
 
-        for meta in self.demo_meta:
+        demo_ids_in_split = {meta['demo_id'] for meta in self.demo_meta}
+        original_demo_meta = []
+        with h5py.File(self.h5_file_path, 'r') as temp_f:
+             all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
+             original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
+
+        for meta in original_demo_meta:
             arr = f[f"{meta['demo_key']}/depth"][...]
             flat = arr.flatten()
             count += flat.size
@@ -188,133 +182,76 @@ class ManipulationDataset(Dataset):
             sum_sq_val += (flat ** 2).sum()
 
         if self.depth_normalization_method == 'minmax':
-            range_val = max(max_val - min_val, 1)
+            range_val = max(max_val - min_val, 1e-8)
             return {'method': 'minmax', 'min': min_val, 'range': range_val}
         else:
             mean = sum_val / count
             var = (sum_sq_val / count) - mean ** 2
-            std = np.sqrt(var) if var > 0 else 1
+            std = np.sqrt(var) if var > 1e-8 else 1
             return {'method': self.depth_normalization_method, 'mean': mean, 'std': std}
-
+            
     def __len__(self):
-        if self.is_regression:
-            return len(self.demo_meta)
         return len(self.valid_indices)
 
     def __getitem__(self, idx):
-        # Open file per worker lazily
         if not hasattr(self, 'h5_file'):
-            self.h5_file = h5py.File(self.h5_file_path, 'r')
+            self.h5_file = h5py.File(self.h5_file_path, 'r', libver='latest', swmr=True)
 
-        if self.is_regression:
-            meta = self.demo_meta[idx]
-        elif self.is_waypointPlusTimings:
+        # This will now handle both regression and waypoint timings if adapted
+        demo_idx, start_t = self.valid_indices[idx]
+        meta = self.demo_meta[demo_idx]
+        
+        ## --- CHANGE START ---
+        # 1. Define the full sequence slice
+        end_t = start_t + self.sequence_length
 
-            demo_idx, t = self.valid_indices[idx]
-            meta = self.demo_meta[demo_idx]
+        # 2. Load observation and action sequences
+        obs_sequence = self._load_obs(meta['demo_key'], start_t, end_t)
+        target_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][start_t:end_t].astype(np.float32)
 
-            target_timing = self.h5_file[f"{meta['demo_key']}/timings"][t + 1].astype(np.int8)-1  # Convert to zero-based index
-            start_idx = max(0, t - self.sequence_length + 1)
-            obs_seq = self._load_obs(meta['demo_key'], start_idx, t + 1)
-            action_seq = self.h5_file[f"{meta['demo_key']}/path"][start_idx: t + 1].astype(np.float32)
-            waypoints = np.array(self.h5_file[f"{meta['demo_key']}/ways"], dtype=np.float32)
-            timings_sequence = self.h5_file[f"{meta['demo_key']}/timings"][start_idx: t + 1].astype(np.float32)
-            first_obs = self.h5_file[f"{meta['demo_key']}/depth"][0].astype(np.float32)
+        # 3. Normalize if required
+        if self.normalize_actions:
+            target_actions_sequence = self._normalize_actions(target_actions_sequence)
+        if self.observation_mode == 'depth' and self.normalize_depth:
+            obs_sequence = np.stack([self._normalize_depth(o) for o in obs_sequence])
+            
+        # 4. Create the "previous actions" sequence for teacher forcing
+        # It's the target sequence shifted right, with a zero vector at the start.
+        start_action_token = np.zeros((1, self.action_dim), dtype=np.float32)
+        # We take the actions from the beginning up to the second-to-last one
+        prev_actions_input = np.concatenate([start_action_token, target_actions_sequence[:-1, :]], axis=0)
 
-            if self.normalize_actions:
-                action_seq = self._normalize_actions(action_seq)
-                #target_action = self._normalize_actions(target_action)
-            if self.observation_mode == 'depth' and self.normalize_depth:
-                obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
-                first_obs = self._normalize_depth(obs_seq[0])  # First observation for waypoints
-             
-            # TODO normalize waypoint if needed
-
-            # padding
-            actual_len = len(obs_seq)
-            pad_len = self.sequence_length - actual_len
-            obs_pad_shape = (pad_len,) + obs_seq.shape[1:]
-            obs_pad = np.zeros(obs_pad_shape, dtype=obs_seq.dtype)
-            act_pad = np.zeros((pad_len, self.action_dim), dtype=action_seq.dtype)
-            time_pad = np.zeros(pad_len, dtype=np.int64)
-
-            obs_seq = np.concatenate([obs_pad, obs_seq], axis=0)
-            action_seq = np.concatenate([act_pad, action_seq], axis=0)
-            timing_seq = np.concatenate([time_pad, timings_sequence], axis=0)
-            attention_mask = np.zeros(self.sequence_length, dtype=bool)
-            attention_mask[-actual_len:] = True
-
-
-            return {
-                'observation': torch.from_numpy(obs_seq).float(),
-                'previous_actions': torch.from_numpy(action_seq).float(),
-                'action': torch.tensor(target_timing, dtype=torch.long),               
-                'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
-                'waypoints': torch.from_numpy(waypoints).float(),
-                'first_obs': torch.from_numpy(first_obs).float(),
-
-            }
-
-        else:
-        # sequential mode
-            demo_idx, t = self.valid_indices[idx]
-            meta = self.demo_meta[demo_idx]
-
-            target_action = self.h5_file[f"{meta['demo_key']}/path"][t + 1].astype(np.float32)
-            start_idx = max(0, t - self.sequence_length + 1)
-            obs_seq = self._load_obs(meta['demo_key'], start_idx, t + 1)
-            action_seq = self.h5_file[f"{meta['demo_key']}/path"][start_idx: t + 1].astype(np.float32)
-
-            if self.normalize_actions:
-                action_seq = self._normalize_actions(action_seq)
-                target_action = self._normalize_actions(target_action)
-            if self.observation_mode == 'depth' and self.normalize_depth:
-                obs_seq = np.stack([self._normalize_depth(o) for o in obs_seq])
-            # padding
-            actual_len = len(obs_seq)
-            pad_len = self.sequence_length - actual_len
-            obs_pad_shape = (pad_len,) + obs_seq.shape[1:]
-            obs_pad = np.zeros(obs_pad_shape, dtype=obs_seq.dtype)
-            act_pad = np.zeros((pad_len, self.action_dim), dtype=action_seq.dtype)
-            time_pad = np.zeros(pad_len, dtype=np.int64)
-            obs_seq = np.concatenate([obs_pad, obs_seq], axis=0)
-            action_seq = np.concatenate([act_pad, action_seq], axis=0)
-            timestep_seq = np.concatenate([time_pad, np.arange(start_idx, t + 1)], axis=0)
-            attention_mask = np.zeros(self.sequence_length, dtype=bool)
-            attention_mask[-actual_len:] = True
-
-            return {
-                'observation': torch.from_numpy(obs_seq).float(),
-                'previous_actions': torch.from_numpy(action_seq).float(),
-                'action': torch.from_numpy(target_action).float(),
-                'timestep': torch.from_numpy(timestep_seq).long(),
-                'attention_mask': torch.from_numpy(attention_mask),
-                'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
-            }
-
+        # Note: Padding is no longer necessary because our indexing now guarantees full sequences.
+        
+        # 5. Return a dictionary with sequences
+        return {
+            'observation_sequence': torch.from_numpy(obs_sequence).float(),
+            'previous_actions_sequence': torch.from_numpy(prev_actions_input).float(),
+            'target_actions_sequence': torch.from_numpy(target_actions_sequence).float(),
+            'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
+        }
+        ## --- CHANGE END ---
+    
+    # ... (_load_obs, _normalize_actions, _normalize_depth methods remain the same) ...
     def _load_obs(self, demo_key, start=None, end=None):
-        if self.observation_mode == 'depth':
-            if start is None:
-                return self.h5_file[f"{demo_key}/depth"][...].astype(np.float32)
-            return self.h5_file[f"{demo_key}/depth"][start:end].astype(np.float32)
-        elif self.observation_mode == 'points':
-            if start is None:
-                return self.h5_file[f"{demo_key}/points"][...].astype(np.float32)
-            return self.h5_file[f"{demo_key}/points"][start:end].astype(np.float32)
-        else:
-            raise ValueError(f"Unsupported observation mode: {self.observation_mode}")
+        key = 'depth' if self.observation_mode == 'depth' else 'points'
+        if start is None:
+            return self.h5_file[f"{demo_key}/{key}"][...].astype(np.float32)
+        return self.h5_file[f"{demo_key}/{key}"][start:end].astype(np.float32)
 
     def _normalize_actions(self, actions):
-        if self.action_stats['method'] == 'minmax':
-            return (actions - self.action_stats['min']) / self.action_stats['range']
-        else:
-            return (actions - self.action_stats['mean']) / self.action_stats['std']
+        stats = self.action_stats
+        if stats['method'] == 'minmax':
+            return 2 * (actions - stats['min']) / stats['range'] - 1 # to [-1, 1]
+        else: # zscore
+            return (actions - stats['mean']) / stats['std']
 
     def _normalize_depth(self, depth):
-        if self.depth_stats['method'] == 'minmax':
-            return (depth - self.depth_stats['min']) / self.depth_stats['range']
-        else:
-            return (depth - self.depth_stats['mean']) / self.depth_stats['std']
+        stats = self.depth_stats
+        if stats['method'] == 'minmax':
+            return (depth - stats['min']) / stats['range']
+        else: # zscore
+            return (depth - stats['mean']) / stats['std']
 
 
 def create_dataloaders(

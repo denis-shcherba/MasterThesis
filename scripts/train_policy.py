@@ -8,6 +8,7 @@ import torch.nn as nn
 import numpy as np
 from pathlib import Path
 import yaml
+import socket
 
 from data_handling.dataset import create_dataloaders_from_config
 from models.policy_head.policy_network import create_model
@@ -33,8 +34,15 @@ def train_policy(cfg: DictConfig) -> None:
     log.info(f"Experiment: {cfg.experiment_name}")
     log.info(f"Config: {cfg}")
 
-    # Set device
-    device = torch.device(cfg.train.device if torch.cuda.is_available() else "cpu")
+    hostname = socket.gethostname()
+
+    if hostname=="hal-9000":
+        device_id = 0  # physical GPU ID seen free in nvidia-smi
+
+        device = torch.device(f"cuda:{device_id}" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(cfg.train.device if torch.cuda.is_available() else "cpu")
+
     log.info(f"Using device: {device}")
 
     # Set random seed for reproducibility
@@ -150,6 +158,8 @@ def train_policy(cfg: DictConfig) -> None:
 
             # Transformer head for timings
             if hasattr(model, 'transformer_head') and model.transformer_head is not None:
+                for p in model.transformer_head.parameters():
+                    p.requires_grad = False
                 transformer_params = sum(p.numel() for p in model.transformer_head.parameters() if p.requires_grad)
                 log.info(f"  - Transformer Head parameters: {transformer_params:,} ({transformer_params/total_params*100:.2f}%)")
                 component_params_sum += transformer_params

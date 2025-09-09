@@ -16,7 +16,6 @@ class ShelfEnv(gym.Env):
     def __init__(self, 
                  obs_type="pixels_agent_pos",
                  robot_mode="floating",
-                 collect_data=True,
                  path_mode="SE39D",
                  simulate=True,
                  camera_name="cameraStatic",
@@ -36,7 +35,6 @@ class ShelfEnv(gym.Env):
         print(f"Initializing MyCustomEnv with")
         self.obs_type = obs_type
         self.robot_mode = robot_mode
-        self.collect_data = collect_data
         self.path_mode = path_mode
         self.simulate = simulate
         self.camera_name = camera_name

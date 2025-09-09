@@ -11,3 +11,4 @@ output_subdir: null
 num_eval_episodes: 100
 simulate: True
 is_waypointPlusTimings: False
+seed: 42

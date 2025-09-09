@@ -61,43 +61,23 @@ class BaseTrainer(ABC):
     Subclasses must implement the _compute_loss method.
     """
     def __init__(self, model, optimizer, criterion, device, cfg):
-        """
-        Initialize trainer.
-        
-        Args:
-            model: Policy model
-            optimizer: Optimizer
-            criterion: Loss function
-            device: Training device
-            cfg: Configuration
-        """
         self.model = model
-        self.observation_mode = cfg.get('observation_mode', 'points')  # Default to 'points
+        self.observation_mode = cfg.get('observation_mode', 'points')
         self.optimizer = optimizer
         self.criterion = criterion
         self.device = device
         self.cfg = cfg
-        
-        # Create scheduler if specified
-        self.scheduler = create_scheduler(cfg.get('scheduler', {}), optimizer)
-        
-        # Training metrics
+        # self.scheduler = create_scheduler(cfg.get('scheduler', {}), optimizer)
+        self.scheduler = None # Placeholder
         self.train_losses = []
         self.val_losses = []
         self.best_val_loss = float('inf')
-        
-        # Create output directory
         self.output_dir = Path(cfg.get('output_dir', 'outputs'))
-
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize wandb if enabled
         if cfg.get('wandb', {}).get('enabled', False):
             self.init_wandb()
-        
-    
+
     def init_wandb(self):
-        """Initialize Weights & Biases logging."""
         wandb_cfg = self.cfg.wandb
         wandb.init(
             project=wandb_cfg.get('project', 'robot-manipulation'),
@@ -106,49 +86,30 @@ class BaseTrainer(ABC):
         )
         wandb.watch(self.model)
 
-    @abstractmethod 
+    @abstractmethod
     def _compute_loss(self, batch):
-        """
-        Computes the loss for a single batch.
-        THIS METHOD MUST BE IMPLEMENTED BY SUBCLASSES.
-        """
         pass
 
     def train_epoch(self, train_loader):
-        """
-        Generic training loop for one epoch.
-        """
         self.model.train()
         total_loss = 0.0
         num_batches = 0
         pbar = tqdm(train_loader, desc="Training")
-        
         for batch in pbar:
             self.optimizer.zero_grad()
-            
-            # The core logic is now delegated to _compute_loss
             loss = self._compute_loss(batch)
-            
             if torch.isnan(loss) or torch.isinf(loss):
                 tqdm.write(f"WARNING: Invalid loss detected: {loss.item()}")
                 continue
-            
             loss.backward()
-            
             if self.cfg.get('train', {}).get('grad_clip', 0) > 0:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.cfg['train']['grad_clip']
-                )
-            
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg['train']['grad_clip'])
             self.optimizer.step()
-            
             total_loss += loss.item()
             num_batches += 1
             pbar.set_postfix({'Loss': f'{loss.item():.6f}', 'Avg': f'{total_loss/num_batches:.6f}'})
-        
         return total_loss / num_batches if num_batches > 0 else float('inf')
 
-    # You would create a similar generic validate_epoch that calls _compute_loss
     def validate_epoch(self, val_loader):
         self.model.eval()
         total_loss = 0.0
@@ -156,20 +117,13 @@ class BaseTrainer(ABC):
         with torch.no_grad():
             pbar = tqdm(val_loader, desc="Validation")
             for batch in pbar:
-                loss = self._compute_loss(batch) # Re-use the same logic
+                loss = self._compute_loss(batch)
                 total_loss += loss.item()
                 num_batches += 1
                 pbar.set_postfix({'Loss': f'{loss.item():.6f}'})
         return total_loss / num_batches if num_batches > 0 else float('inf')
 
     def save_checkpoint(self, epoch, is_best=False):
-        """
-        Save model checkpoint.
-        
-        Args:
-            epoch: Current epoch
-            is_best: Whether this is the best model so far
-        """
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -179,62 +133,34 @@ class BaseTrainer(ABC):
             'best_val_loss': self.best_val_loss,
             'config': dict(self.cfg)
         }
-        
         if self.scheduler is not None:
             checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
-        
-        # Save latest checkpoint
         checkpoint_path = self.output_dir / 'latest_checkpoint.pth'
         torch.save(checkpoint, checkpoint_path)
-        
-        # Save best checkpoint
         if is_best:
             best_path = self.output_dir / 'best_checkpoint.pth'
             torch.save(checkpoint, best_path)
             log.info(f"New best model saved with validation loss: {self.best_val_loss:.6f}")
-    
+
     def train(self, train_loader, val_loader, num_epochs):
-        """
-        Main training loop.
-        
-        Args:
-            train_loader: Training data loader
-            val_loader: Validation data loader
-            num_epochs: Number of epochs to train
-        """
         log.info(f"Starting training for {num_epochs} epochs...")
-        
         for epoch in range(num_epochs):
             log.info(f"\nEpoch {epoch + 1}/{num_epochs}")
-            
-            # Train epoch
             train_loss = self.train_epoch(train_loader)
             self.train_losses.append(train_loss)
-            
-            # Validate epoch
             val_loss = self.validate_epoch(val_loader)
             self.val_losses.append(val_loss)
-            
-            # Update learning rate scheduler
             if self.scheduler is not None:
                 if isinstance(self.scheduler, ReduceLROnPlateau):
                     self.scheduler.step(val_loss)
                 else:
                     self.scheduler.step()
-            
-            # Check if this is the best model
             is_best = val_loss < self.best_val_loss
             if is_best:
                 self.best_val_loss = val_loss
-            
-            # Save checkpoint
             if (epoch + 1) % self.cfg.get('save_every', 10) == 0 or is_best:
                 self.save_checkpoint(epoch, is_best)
-            
-            # Log metrics
             log.info(f"Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
-            
-            # Log to wandb if enabled
             if self.cfg.get('wandb', {}).get('enabled', False):
                 wandb.log({
                     'epoch': epoch,
@@ -242,49 +168,54 @@ class BaseTrainer(ABC):
                     'val_loss': val_loss,
                     'learning_rate': self.optimizer.param_groups[0]['lr']
                 })
-        
         log.info(f"Training completed! Best validation loss: {self.best_val_loss:.6f}")
-
-        # --- Save training curves for plotting ---
-        curves = {
-            "train_losses": self.train_losses,
-            "val_losses": self.val_losses,
-        }
+        curves = {"train_losses": self.train_losses, "val_losses": self.val_losses}
         curves_path = self.output_dir / "training_curves.json"
         with open(curves_path, "w") as f:
             json.dump(curves, f, indent=4)
         log.info(f"Saved training curves to {curves_path}")
 
 
-class ActionPolicyTrainer(BaseTrainer):
+class SequencePolicyTrainer(BaseTrainer):
     """
-    Trainer for models that predict a single action vector.
+    Trainer for sequence-to-sequence models that predict an entire action sequence.
     """
     def _compute_loss(self, batch):
-        # This is the logic from your ORIGINAL train_epoch's for loop
-        obs = batch["observation"].to(self.device)
-        actions = batch['action'].to(self.device)
+        # 1. Get the sequences from the batch (from your new dataset)
+        obs_seq = batch["observation_sequence"].to(self.device)
+        prev_actions_seq = batch['previous_actions_sequence'].to(self.device)
+        target_actions_seq = batch['target_actions_sequence'].to(self.device)
+        
+        # 2. Forward pass with both observation and previous action sequences
+        predicted_actions_seq = self.model(obs_seq, prev_actions_seq)
+        
+        # 3. Compute loss between the predicted sequence and the target sequence
+        # The criterion (e.g., MSELoss) will automatically handle the sequence dimension.
+        loss = self.criterion(predicted_actions_seq, target_actions_seq)
+        
+        return loss
+
+class ActionPolicyTrainer(BaseTrainer):
+    """
+    Trainer for models that predict a SINGLE action vector from a history.
+    """
+    def _compute_loss(self, batch):
+        # This trainer expects a history of observations and a SINGLE target action.
+        # Your original dataset was structured this way.
+        obs_history = batch["observation_sequence"].to(self.device)
+        action_history = batch['previous_actions_sequence'].to(self.device) # This is the state/history
+        target_action = batch['target_actions_sequence'].to(self.device) # The single target action
         
         # --- Forward pass ---
-        # Note: This part can be simplified since it was so complex.
-        # This example assumes a generic model call for simplicity.
-        # You'd place your specific MLP/GRU/Transformer logic here.
-        # Only works for Transformer for now
-        state = batch['previous_actions'].to(self.device)
-
-        pred_actions = self.model(obs, state) 
+        # The model takes the history of observations and past actions
+        pred_actions = self.model(obs_history, action_history) 
         
-        # Handle cases where model output is a tuple (e.g., GRU)
-        if isinstance(pred_actions, tuple):
-            pred_actions = pred_actions[0]
+        # For a single-action prediction model, we might only care about the last output
+        if pred_actions.dim() == 3: # If model outputs a sequence, take the last step
+            pred_actions = pred_actions[:, -1, :]
 
         # --- Loss computation ---
-        # Flatten tensors for sequence-based loss calculation if needed
-        if pred_actions.dim() == 3 and actions.dim() == 3: # (B, T, A)
-            pred_actions = pred_actions.view(-1, pred_actions.shape[-1])
-            actions = actions.view(-1, actions.shape[-1])
-
-        loss = self.criterion(pred_actions, actions)
+        loss = self.criterion(pred_actions, target_action)
         return loss
 
 
@@ -347,4 +278,4 @@ def create_trainer(model, optimizer, criterion, device, cfg):
         return WaypointTimingTrainer(model, optimizer, criterion, device, cfg)
 
     else:
-        return ActionPolicyTrainer(model, optimizer, criterion, device, cfg)
+        return SequencePolicyTrainer(model, optimizer, criterion, device, cfg)

@@ -2,3 +2,4 @@ defaults:
   - env: default_9d
 
 output_subdir: null
+seed: 42

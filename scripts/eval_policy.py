@@ -63,7 +63,8 @@ def eval_policy(cfg: DictConfig) -> None:
     device = torch.device(device_str)
     log.info(f"Using device: {device}")
 
-    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", simulate=cfg.simulate)  # Adjust args as needed
+    torch.manual_seed(cfg.seed)
+    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", simulate=cfg.simulate, seed=cfg.seed)  # Adjust args as needed
 
     # Model
     log.info("Initializing model...")

@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from models.perception.pointnet import PointNet
 from models.perception.depthimageencoder import DepthImageEncoder
-from models.policy_head.policy_head import MLPHead, GRUHead, ResidualMLPHead, TransformerHead
+from models.policy_head.policy_head import MLPHead, ResidualMLPHead, TransformerHead
 import math
 import inspect
 from typing import Optional, Tuple
@@ -156,7 +156,6 @@ class WayPlusTimingsPolicy(nn.Module):
         }
 
 
-
 class MultiModalPolicy(nn.Module):
     """
     Policy network that handles multiple input modalities and supports both
@@ -170,8 +169,6 @@ class MultiModalPolicy(nn.Module):
                  observation_mode='points',
                  policy_head_type: str = 'mlp',
                  mlp_hidden_dims: Optional[list] = None,
-                 gru_hidden_dim: int = 256,
-                 gru_num_layers: int = 2,
                  use_residual: bool = False,
                  # for Transformer
                  context_length: int = None,
@@ -244,12 +241,6 @@ class MultiModalPolicy(nn.Module):
                     hidden_dims=mlp_hidden_dims, dropout_rate=dropout_rate
                 )
 
-        elif policy_head_type == 'gru':
-            self.policy_head = GRUHead(
-                input_dim=policy_input_dim, output_dim=action_dim,
-                hidden_dim=gru_hidden_dim, num_layers=gru_num_layers,
-                dropout_rate=dropout_rate
-            )
 
         elif policy_head_type == 'transformer':
             if context_length is None:
@@ -282,9 +273,8 @@ class MultiModalPolicy(nn.Module):
             return nn.Linear(1, embedding_dim)
         raise ValueError(f"Unknown time_encoding method: {encoding_type}")
 
-    def forward(self, observation: torch.Tensor, state: Optional[torch.Tensor] = None,
-                time_steps: Optional[torch.Tensor] = None,
-                hidden_state: Optional[torch.Tensor] = None) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, observations, states=None, timestep=None, 
+            prev_actions=None, return_full_sequence=False) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass through the policy. Handles both single-step and sequence data.
         
@@ -303,11 +293,11 @@ class MultiModalPolicy(nn.Module):
         """
 
         if self.observation_mode == 'depth':
-            obs_input, batch_size, seq_len = prepare_depth_input(observation)
+            obs_input, batch_size, seq_len = prepare_depth_input(observations)
             obs_features = self.obs_encoder(obs_input)  # (B*S, D)
 
-            if time_steps is not None:
-                time_steps = time_steps.view(batch_size * seq_len)
+            if timestep is not None:
+                timestep = timestep.view(batch_size * seq_len)
 
         elif self.observation_mode == 'points':
             obs_features = self.obs_encoder(obs_input)  # (B*S, feature_dim)
@@ -320,10 +310,10 @@ class MultiModalPolicy(nn.Module):
         features_list = [obs_features]
 
         # Encode state
-        if state is not None and self.state_encoder is not None:
+        if states is not None and self.state_encoder is not None:
 
-            state = state.reshape(batch_size * seq_len, -1)
-            state_features = self.state_encoder(state)
+            states = states.reshape(batch_size * seq_len, -1)
+            state_features = self.state_encoder(states)
 
             if self.fusion_method == 'add':
                 features_list[0] = features_list[0] + state_features
@@ -339,13 +329,13 @@ class MultiModalPolicy(nn.Module):
 
         # Encode time if enabled (ONLY for non-transformer heads)
         if self.time_encoder is not None:
-            if time_steps is None:
+            if timestep is None:
                 raise ValueError("time_steps must be provided for time encoding")
             if self.time_encoding == 'linear':
-                normalized_time = time_steps.float().unsqueeze(1) / self.max_timesteps
+                normalized_time = timestep.float().unsqueeze(1) / self.max_timesteps
                 time_features = self.time_encoder(normalized_time)
             else:
-                time_features = self.time_encoder(time_steps.long())
+                time_features = self.time_encoder(timestep.long())
             features_list.append(time_features)
 
         # Fuse all features
@@ -355,21 +345,39 @@ class MultiModalPolicy(nn.Module):
         if self.policy_head_type == 'mlp':
             return self.policy_head(fused_features)
 
-        elif self.policy_head_type == 'gru':
-            gru_input = fused_features.view(batch_size, seq_len, -1)
-            actions, new_hidden_state = self.policy_head(gru_input, hidden_state)
-            return actions, new_hidden_state
-
         elif self.policy_head_type == 'transformer':
             # Reshape for transformer: (B, T, D)
-            seq_input = fused_features.view(batch_size, seq_len, -1)
+            obs_sequence = fused_features.view(batch_size, seq_len, -1)
             
-            # Your transformer handles positional encoding internally
-            action_seq = self.policy_head(seq_input)  # (B, T, action_dim)
+            # Handle previous actions for teacher forcing
+            if prev_actions is None:
+                # If no previous actions provided, create zeros
+                # This happens during inference or first timestep
+                prev_actions = torch.zeros(batch_size, seq_len, self.action_dim, 
+                                        device=observations.device, 
+                                        dtype=observations.dtype)
             
-            # Return last action (most common use case)
-            # You could also return the full sequence if needed
-            return action_seq[:, -1, :]  # (B, action_dim)
+            # Ensure prev_actions has correct shape
+            if prev_actions.shape[1] != seq_len:
+                # If sequence lengths don't match, pad or truncate
+                if prev_actions.shape[1] < seq_len:
+                    # Pad with zeros at the beginning (shifted right)
+                    padding = torch.zeros(batch_size, seq_len - prev_actions.shape[1], 
+                                        self.action_dim, device=prev_actions.device)
+                    prev_actions = torch.cat([padding, prev_actions], dim=1)
+                else:
+                    # Truncate to match sequence length
+                    prev_actions = prev_actions[:, -seq_len:, :]
+            
+            # Forward through transformer
+            action_seq = self.policy_head(obs_sequence, prev_actions)  # (B, T, action_dim)
+            
+            # Return based on what's requested
+            if True:
+                return action_seq  # Full sequence
+            else:
+                return action_seq[:, -1, :]  # Last action only
+
 
         else:
             raise ValueError(f"Unknown policy_head_type: {self.policy_head_type}")
@@ -477,9 +485,6 @@ def create_model(model_cfg):
         time_encoding=model_cfg.get('time_encoding', 'none'),
         time_embedding_dim=model_cfg.get('time_embedding_dim', 128),
         max_timesteps=model_cfg.get('max_timesteps', 64),
-        # for rnn
-        gru_hidden_dim=model_cfg.get('gru_hidden_dim', 0),
-        gru_num_layers=model_cfg.get('gru_num_layers', 0), 
         # for transformer
         context_length=model_cfg.get('context_length', None),
         embed_dim=model_cfg.get('embed_dim', 256),
