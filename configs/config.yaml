@@ -4,14 +4,13 @@ defaults:
   - loss: default_3d_mse
   - optimizer: adam
   - data: depth
-  # - inference: mlp_depth
+  - trainer: steps
   - scheduler: cosine
 train:
   batch_size: 128
   num_workers: 8
-  epochs: 100
   device: cuda
-  grad_clip: .0
+  grad_clip: 1.0
 
 # Global settings
 observation_mode: 'depth'  
@@ -24,4 +23,4 @@ is_regression: false
 is_waypointPlusTimings: false
 
 wandb:
-  enabled: false
+  enabled: true

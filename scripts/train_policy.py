@@ -194,7 +194,7 @@ def train_policy(cfg: DictConfig) -> None:
 
         # Start training
         log.info("Starting training...")
-        trainer.train(train_loader, val_loader, cfg.train.epochs)
+        trainer.train(train_loader, val_loader)
 
         log.info("Training completed successfully!")
 

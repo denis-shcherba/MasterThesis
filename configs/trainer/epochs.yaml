@@ -1,0 +1,4 @@
+epochs: 100
+log_interval_epochs: 1
+eval_interval_epochs: 5
+checkpoint_interval_epochs: 10

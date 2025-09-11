@@ -278,7 +278,11 @@ class TransformerHead(nn.Module):
 
         self.input_proj = nn.Linear(input_dim, embed_dim)
         self.pos_emb = nn.Parameter(torch.randn(1, context_length, embed_dim))
-        
+
+        # Normalize and apply dropout (didnt make it better for now)
+        # self.input_norm = nn.LayerNorm(embed_dim)
+        # self.input_dropout = nn.Dropout(dropout)
+
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_heads,
@@ -332,7 +336,11 @@ class TransformerHead(nn.Module):
         
         # Combine embeddings (simple addition is common) and add positional encoding
         x = obs_embed + action_embed + self.pos_emb
-        
+
+        # Normalize and apply dropout (didnt make it better for now)
+        # x = self.input_norm(x)
+        # x = self.input_dropout(x)
+
         # --- CHANGE 3: Apply the causal mask during the forward pass ---
         # The mask ensures that attention is only paid to previous positions
         x = self.transformer(x, mask=self.causal_mask)

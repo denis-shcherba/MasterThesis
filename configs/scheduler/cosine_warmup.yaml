@@ -1,0 +1,4 @@
+use: true
+type: cosine_warmup
+T_max: 100     # or your total epochs
+eta_min: 1e-6
