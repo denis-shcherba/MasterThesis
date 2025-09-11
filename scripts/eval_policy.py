@@ -155,7 +155,20 @@ def eval_policy(cfg: DictConfig) -> None:
             elif cfg["model"]["action_dim"] == 3:
                 if cfg.get("model").get("policy_head_type") == "transformer":
                     output = denormalize_actions(output, normalization_stats["action_stats"])
-                pos = output.squeeze().cpu().numpy()
+                for j in range(10):
+                    pos = output[:, j, :].squeeze().cpu().numpy()
+                    state = denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze().cpu().numpy()
+                    env.unwrapped.C.addFrame(f"testWay{j}").setPosition(pos).setShape(ry.ST.sphere, [.02]).setColor([1,.1*j,1-.1*j])
+                    env.unwrapped.C.addFrame(f"testWay_{j}").setPosition(state[j, :]).setShape(ry.ST.box, [.05, .05, .05]).setColor([1,.1*j,1-.1*j])
+                    print("predicted_pos:", pos)
+                    print("buffer_pos:", state[j, :])
+                    env.unwrapped.C.view(True)
+
+                env.unwrapped.C.view(True)
+                for j in range(10):
+                    env.unwrapped.C.delFrame(f"testWay{j}")
+                    env.unwrapped.C.delFrame(f"testWay_{j}")
+
                 obs, reward, terminated, truncated, info = env.step([pos[0], pos[1], pos[2]])
 
             log.info(f"Output tensor shape: {output.shape if isinstance(output, torch.Tensor) else 'dict'}")

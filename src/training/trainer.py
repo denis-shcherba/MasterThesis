@@ -236,9 +236,12 @@ class BaseTrainer(ABC):
 
                         # Logging and evaluation for step-based training
                         if is_step_based:
-                            if steps_done % log_interval == 0 and self.cfg.get('wandb', {}).get('enabled', False):
-                                wandb.log({'train_loss': loss_value, 'step': steps_done})
+                            log_data = {}
+                            # Check if it's time to log training loss
+                            if steps_done % log_interval == 0:
+                                log_data['train_loss'] = loss_value
 
+                            # Check if it's time to evaluate
                             if steps_done % eval_interval == 0:
                                 # Temporarily hide the main progress bar during validation
                                 pbar.clear()
@@ -256,8 +259,13 @@ class BaseTrainer(ABC):
                                 if self.scheduler is not None and isinstance(self.scheduler, ReduceLROnPlateau):
                                     self.scheduler.step(val_loss)
                                 
-                                if self.cfg.get('wandb', {}).get('enabled', False):
-                                    wandb.log({'val_loss': val_loss, 'step': steps_done})
+                                log_data['val_loss'] = val_loss
+                                log_data['learning_rate'] = self.optimizer.param_groups[0]['lr']
+
+                            # If there is anything to log, send it to wandb with the correct step.
+                            if log_data and self.cfg.get('wandb', {}).get('enabled', False):
+                                wandb.log(log_data, step=steps_done)
+
 
                 # End of epoch processing
                 epoch += 1
