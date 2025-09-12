@@ -9,15 +9,15 @@ import logging
 class ManipulationDataset(Dataset):
     """
     Streaming HDF5 dataset for imitation learning.
-    MODIFIED to support sequence-to-sequence training.
+    MODIFIED to support sequence-to-sequence imitation learning.
     """
-    # ... (all methods from __init__ to _compute_depth_normalization_stats remain the same) ...
     def __init__(
         self,
         h5_file_path: str,
         is_regression: bool = False,
         is_waypointPlusTimings: bool = False,
         sequence_length: int = 1,
+        future_sequence_length: int = None,  # New parameter for future prediction length
         action_dim: int = 9,
         num_points: int = 1000,
         normalize_depth: bool = True,
@@ -35,6 +35,8 @@ class ManipulationDataset(Dataset):
         self.is_regression = is_regression
         self.is_waypointPlusTimings = is_waypointPlusTimings
         self.sequence_length = sequence_length
+        # If future_sequence_length is not specified, use the same as sequence_length
+        self.future_sequence_length = future_sequence_length if future_sequence_length is not None else sequence_length
         self.action_dim = action_dim
         self.num_points = num_points
         self.normalize_depth = normalize_depth
@@ -82,17 +84,15 @@ class ManipulationDataset(Dataset):
                 
                 num_timesteps = path_shape[0]
                 
-                ## --- CHANGE START ---
-                # An index 't' is valid if we can get a full sequence of length `sequence_length` starting from it.
-                if num_timesteps >= self.sequence_length:
-                    for t in range(num_timesteps - self.sequence_length + 1):
+                # For seq2seq imitation: we need enough timesteps for both past and future sequences
+                total_needed = self.sequence_length + self.future_sequence_length
+                if num_timesteps >= total_needed:
+                    for t in range(num_timesteps - total_needed + 1):
                         self.valid_indices.append((demo_idx, t))
-                ## --- CHANGE END ---
                 
         if not self.demo_meta:
             raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
 
-    # ... (_create_split, _subsample_if_needed, _compute_*_stats remain the same) ...
     def _create_split(self, train_split: float):
         """Filter demos for train/val split."""
         # Get the set of demo_ids belonging to this split
@@ -120,7 +120,6 @@ class ManipulationDataset(Dataset):
             
         self.valid_indices = [(old_to_new_id_map[demo_idx], t) for demo_idx, t in self.valid_indices]
 
-
     def _subsample_if_needed(self, subsample_demos: Optional[int]):
         if subsample_demos is not None and subsample_demos > 0:
             if len(self.demo_meta) > subsample_demos:
@@ -130,7 +129,6 @@ class ManipulationDataset(Dataset):
                 kept_demo_ids = {meta['demo_id'] for meta in self.demo_meta}
                 # Filter valid_indices to only include those from the kept demos
                 self.valid_indices = [(demo_idx, t) for demo_idx, t in self.valid_indices if demo_idx in kept_demo_ids]
-
 
     def _compute_action_normalization_stats(self, f):
         min_vals = np.full(self.action_dim, np.inf, dtype=np.float64)
@@ -142,9 +140,8 @@ class ManipulationDataset(Dataset):
         demo_ids_in_split = {meta['demo_id'] for meta in self.demo_meta}
         original_demo_meta = []
         with h5py.File(self.h5_file_path, 'r') as temp_f:
-             all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
-             original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
-
+            all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
+            original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
         for meta in original_demo_meta:
             arr = f[f"{meta['demo_key']}/path"][...]
             count += arr.shape[0]
@@ -169,9 +166,8 @@ class ManipulationDataset(Dataset):
         demo_ids_in_split = {meta['demo_id'] for meta in self.demo_meta}
         original_demo_meta = []
         with h5py.File(self.h5_file_path, 'r') as temp_f:
-             all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
-             original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
-
+            all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
+            original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
         for meta in original_demo_meta:
             arr = f[f"{meta['demo_key']}/depth"][...]
             flat = arr.flatten()
@@ -197,42 +193,39 @@ class ManipulationDataset(Dataset):
         if not hasattr(self, 'h5_file'):
             self.h5_file = h5py.File(self.h5_file_path, 'r', libver='latest', swmr=True)
 
-        # This will now handle both regression and waypoint timings if adapted
         demo_idx, start_t = self.valid_indices[idx]
         meta = self.demo_meta[demo_idx]
         
-        ## --- CHANGE START ---
-        # 1. Define the full sequence slice
-        end_t = start_t + self.sequence_length
+        # Define time ranges for past and future sequences
+        past_end_t = start_t + self.sequence_length
+        future_start_t = past_end_t  # Future starts right after past ends
+        future_end_t = future_start_t + self.future_sequence_length
+        
+        # Load observations for the past sequence
+        obs_sequence = self._load_obs(meta['demo_key'], start_t, past_end_t)
+        
+        # Load past actions (input to the model)
+        past_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][start_t:past_end_t].astype(np.float32)
+        
+        # Load future actions (target for the model to predict)
+        future_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][future_start_t:future_end_t].astype(np.float32)
 
-        # 2. Load observation and action sequences
-        obs_sequence = self._load_obs(meta['demo_key'], start_t, end_t)
-        target_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][start_t:end_t].astype(np.float32)
-
-        # 3. Normalize if required
+        # Normalize if required
         if self.normalize_actions:
-            target_actions_sequence = self._normalize_actions(target_actions_sequence)
+            past_actions_sequence = self._normalize_actions(past_actions_sequence)
+            future_actions_sequence = self._normalize_actions(future_actions_sequence)
+            
         if self.observation_mode == 'depth' and self.normalize_depth:
             obs_sequence = np.stack([self._normalize_depth(o) for o in obs_sequence])
             
-        # 4. Create the "previous actions" sequence for teacher forcing
-        # It's the target sequence shifted right, with a zero vector at the start.
-        start_action_token = np.zeros((1, self.action_dim), dtype=np.float32)
-        # We take the actions from the beginning up to the second-to-last one
-        prev_actions_input = np.concatenate([start_action_token, target_actions_sequence[:-1, :]], axis=0)
-
-        # Note: Padding is no longer necessary because our indexing now guarantees full sequences.
-        
-        # 5. Return a dictionary with sequences
+        # Return sequences for seq2seq imitation learning
         return {
             'observation_sequence': torch.from_numpy(obs_sequence).float(),
-            'previous_actions_sequence': torch.from_numpy(prev_actions_input).float(),
-            'target_actions_sequence': torch.from_numpy(target_actions_sequence).float(),
+            'previous_actions_sequence': torch.from_numpy(past_actions_sequence).float(),
+            'target_actions_sequence': torch.from_numpy(future_actions_sequence).float(),
             'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
         }
-        ## --- CHANGE END ---
     
-    # ... (_load_obs, _normalize_actions, _normalize_depth methods remain the same) ...
     def _load_obs(self, demo_key, start=None, end=None):
         key = 'depth' if self.observation_mode == 'depth' else 'points'
         if start is None:
@@ -252,12 +245,12 @@ class ManipulationDataset(Dataset):
             return (depth - stats['min']) / stats['range']
         else: # zscore
             return (depth - stats['mean']) / stats['std']
-
-
+        
 def create_dataloaders(
     h5_file_path: str,
     batch_size: int = 32,
     sequence_length: int = 1,
+    future_sequence_length: int = None,
     action_dim: int = 9,
     num_points: int = 1000,
     train_split: float = 0.8,
@@ -277,6 +270,7 @@ def create_dataloaders(
     train_dataset = ManipulationDataset(
         h5_file_path=h5_file_path,
         sequence_length=sequence_length,
+        future_sequence_length=future_sequence_length,
         action_dim=action_dim,
         num_points=num_points,
         augment_data=augment_data,
@@ -296,6 +290,7 @@ def create_dataloaders(
     val_dataset = ManipulationDataset(
         h5_file_path=h5_file_path,
         sequence_length=sequence_length,
+        future_sequence_length=future_sequence_length,
         action_dim=action_dim,
         num_points=num_points,
         augment_data=False,
@@ -338,6 +333,7 @@ def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
         h5_file_path=data_cfg.h5_file_path,
         batch_size=data_cfg.batch_size,
         sequence_length=data_cfg.sequence_length,
+        future_sequence_length=data_cfg.get('future_sequence_length', None),
         action_dim=data_cfg.action_dim,
         num_points=data_cfg.get('num_points', 0),
         train_split=data_cfg.train_split,
