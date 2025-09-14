@@ -19,3 +19,4 @@ wandb/
 outputs/
 eval_outputs/
 checkpoints/
+.vscode/

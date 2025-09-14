@@ -264,86 +264,75 @@ class ResidualBlock(nn.Module):
         
         return out
     
-
 class TransformerHead(nn.Module):
-    def __init__(self, input_dim, output_dim, context_length, embed_dim=128,
+    def __init__(self, input_dim, output_dim, context_length, 
+                 prediction_length, # <-- NEW: The length 'm' of the action chunk
+                 embed_dim=128,
                  num_layers=4, num_heads=4, dropout=0.1, output_activation='tanh'):
         super().__init__()
         self.context_length = context_length
+        self.prediction_length = prediction_length # <-- NEW
         self.output_dim = output_dim
-
-        # --- CHANGE 1: Create an embedding layer for actions ---
-        # This will be used for "teacher forcing" during training
+        
+        # Action embedding for the input sequence is still useful
         self.action_embed = nn.Linear(output_dim, embed_dim)
-
+        
+        # Project observation features into the embedding dimension
         self.input_proj = nn.Linear(input_dim, embed_dim)
+        
+        # Positional embedding for the input sequence
         self.pos_emb = nn.Parameter(torch.randn(1, context_length, embed_dim))
 
-        # Normalize and apply dropout (didnt make it better for now)
-        # self.input_norm = nn.LayerNorm(embed_dim)
-        # self.input_dropout = nn.Dropout(dropout)
-
+        # Standard Transformer Encoder (NO MASK)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_heads,
             dim_feedforward=4 * embed_dim,
             dropout=dropout,
             activation="gelu",
-            batch_first=True
+            batch_first=True  # Important!
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         
-        self.output_proj = nn.Linear(embed_dim, output_dim)
+        # --- KEY CHANGE: The Prediction Head ---
+        # This MLP takes the final encoded representation and predicts the entire future chunk.
+        self.prediction_head = nn.Linear(embed_dim, prediction_length * output_dim)
+        
         self.output_activation = self._get_activation(output_activation)
         
-        # --- CHANGE 2: Create and register the causal mask ---
-        # We use register_buffer so the mask is moved to the correct device (e.g., GPU)
-        # with the model, but is not considered a model parameter.
-        mask = self.generate_square_subsequent_mask(context_length)
-        self.register_buffer('causal_mask', mask)
-
     def _get_activation(self, name):
-        if name is None:
-            return nn.Identity()
-        elif name == 'tanh':
-            return nn.Tanh()
-        elif name == 'sigmoid':
-            return nn.Sigmoid()
-        else:
-            raise ValueError(f"Unsupported activation: {name}")
-
-    # --- New Helper Method ---
-    def generate_square_subsequent_mask(self, sz: int):
-        """Generates a square mask for the sequence. The masked positions are filled with float('-inf').
-           Unmasked positions are filled with float(0.0).
-        """
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        return mask
+        if name is None: return nn.Identity()
+        if name == 'tanh': return nn.Tanh()
+        if name == 'sigmoid': return nn.Sigmoid()
+        raise ValueError(f"Unsupported activation: {name}")
 
     def forward(self, obs_sequence, prev_actions_sequence):
         """
         Args:
-            obs_sequence: Tensor of observations, shape (batch_size, context_length, input_dim)
-            prev_actions_sequence: Tensor of previous actions (for teacher forcing),
-                                   shape (batch_size, context_length, output_dim)
+            obs_sequence: Tensor of observations, shape (B, context_length, input_dim)
+            prev_actions_sequence: Tensor of previous actions, shape (B, context_length, output_dim)
         Returns:
-            Tensor of predicted actions, shape (batch_size, context_length, output_dim)
+            Tensor of PREDICTED FUTURE actions, shape (B, prediction_length, output_dim)
         """
-        # Embed observations and previous actions
+        # 1. Embed inputs and add positional encoding
         obs_embed = self.input_proj(obs_sequence)
         action_embed = self.action_embed(prev_actions_sequence)
-        
-        # Combine embeddings (simple addition is common) and add positional encoding
         x = obs_embed + action_embed + self.pos_emb
-
-        # Normalize and apply dropout (didnt make it better for now)
-        # x = self.input_norm(x)
-        # x = self.input_dropout(x)
-
-        # --- CHANGE 3: Apply the causal mask during the forward pass ---
-        # The mask ensures that attention is only paid to previous positions
-        x = self.transformer(x, mask=self.causal_mask)
         
-        x = self.output_proj(x)
-        return self.output_activation(x)
+        # 2. Encode the entire input sequence (NO MASK)
+        # The output 'encoded_seq' has shape (B, context_length, embed_dim)
+        encoded_seq = self.transformer_encoder(x)
+        
+        # 3. Take the final hidden state as the context summary
+        # This vector at the last time step has seen all previous inputs.
+        context_summary = encoded_seq[:, -1, :] # Shape: (B, embed_dim)
+        
+        # 4. Use the prediction head to generate the future chunk
+        predicted_chunk_flat = self.prediction_head(context_summary) # Shape: (B, m * action_dim)
+        
+        # 5. Reshape to the desired output format
+        predicted_chunk = predicted_chunk_flat.view(
+            -1, self.prediction_length, self.output_dim
+        ) # Shape: (B, m, action_dim)
+        
+        return self.output_activation(predicted_chunk)

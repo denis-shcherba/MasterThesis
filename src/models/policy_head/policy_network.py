@@ -176,6 +176,7 @@ class MultiModalPolicy(nn.Module):
                  num_layers: int = 4,
                  num_heads: int = 4,
                  output_activation: str = "tanh",
+                 prediction_length: int = None
                  ):
         super(MultiModalPolicy, self).__init__()
         
@@ -189,8 +190,7 @@ class MultiModalPolicy(nn.Module):
         self.max_timesteps = max_timesteps
         self.policy_head_type = policy_head_type
         self.observation_mode = observation_mode
-
-
+        self.prediction_length = prediction_length if prediction_length is not None else context_length
 
         # Observation encoder
         if self.observation_mode == 'points':
@@ -246,18 +246,17 @@ class MultiModalPolicy(nn.Module):
             if context_length is None:
                 context_length = max_timesteps
             
-            # For transformer, we don't add external time encoding
-            # The transformer handles positional encoding internally
             
             self.policy_head = TransformerHead(
-                input_dim=policy_input_dim,  # No time encoding added here
+                input_dim=policy_input_dim,
                 output_dim=action_dim,
                 context_length=context_length,
+                prediction_length=self.prediction_length,
                 embed_dim=embed_dim,
                 num_layers=num_layers,
                 num_heads=num_heads,
                 dropout=dropout_rate,
-                output_activation=None,
+                output_activation=output_activation, # Pass the activation here
             )
         else:
             raise ValueError(f"Unknown policy_head_type: {policy_head_type}")
@@ -487,6 +486,7 @@ def create_model(model_cfg):
         max_timesteps=model_cfg.get('max_timesteps', 64),
         # for transformer
         context_length=model_cfg.get('context_length', None),
+        prediction_length = model_cfg.get('prediction_length', None),
         embed_dim=model_cfg.get('embed_dim', 256),
         num_layers=model_cfg.get('num_layers', 4),
         num_heads=model_cfg.get('num_heads', 4),
