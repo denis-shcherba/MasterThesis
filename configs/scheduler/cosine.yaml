@@ -1,4 +1,4 @@
 use: true
 type: cosine
-T_max: 100     # or your total epochs
+T_max: 100     # or your total epochs ${trainer.epochs}
 eta_min: 1e-6

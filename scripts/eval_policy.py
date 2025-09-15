@@ -192,6 +192,13 @@ def eval_policy(cfg: DictConfig) -> None:
             
             log.info(f"Step {i}: Executing action {action_index_in_chunk} from chunk.")
             obs, reward, terminated, truncated, info = env.step(pos)
+            denormalized_seq = denormalize_actions(state_seq, normalization_stats["action_stats"])
+            #env.unwrapped.C.addFrame(f"ball{i}{action_index_in_chunk}").setShape(ry.ST.sphere, size=[.02]).setColor([action_index_in_chunk/action_execution_horizon, action_index_in_chunk/action_execution_horizon, 0]).setPosition(obs["agent_pos"])
+            # for k in range(10):
+            #     tmpPos = denormalized_seq[:, k, :].cpu().numpy()
+            #     env.unwrapped.C.addFrame(f"past_ball{k}").setShape(ry.ST.sphere, size=[.02]).setColor([k/10, 0, 0]).setPosition(tmpPos)
+
+            #env.unwrapped.C.view(True)
             
             # Store the normalized observation in history (after action execution)
             depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)

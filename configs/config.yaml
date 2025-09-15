@@ -4,8 +4,8 @@ defaults:
   - loss: default_3d_mse
   - optimizer: adam
   - data: depth
-  - trainer: epochs
-  - scheduler: cosine
+  - trainer: steps
+  - scheduler: cosine_warmup
 train:
   batch_size: 128
   num_workers: 8
