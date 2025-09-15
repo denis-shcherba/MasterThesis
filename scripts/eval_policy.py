@@ -63,8 +63,14 @@ def eval_policy(cfg: DictConfig) -> None:
     device = torch.device(device_str)
     log.info(f"Using device: {device}")
 
+    # --- NEW: Get the padding strategy from the config ---
+    # Defaults to 'zero' if not specified. Options: 'zero', 'copy'
+    padding_strategy = cfg.get("inference", {}).get("padding_strategy", "zero")
+    log.info(f"Using padding strategy: {padding_strategy}")
+
     torch.manual_seed(cfg.seed)
-    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", simulate=cfg.simulate, seed=cfg.seed)  # Adjust args as needed
+    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", simulate=cfg.simulate, seed=cfg.seed)
+    action_execution_horizon = cfg.action_execution_horizon
 
     # Model
     log.info("Initializing model...")
@@ -100,86 +106,119 @@ def eval_policy(cfg: DictConfig) -> None:
     with open(normalization_stats_path, 'r') as file:
         normalization_stats = yaml.safe_load(file)
 
-    print("\nAction Stats:")
-    print(normalization_stats['action_stats'])
-    print("\nDepth Stats:")
-    print(normalization_stats['depth_stats'])
-
     model.eval()
     log.info("Model set to evaluation mode.")
 
-    depth_sequence = []
-    state_sequence = []
-    sequence_length = cfg.get("data", {}).get("sequence_length", 0)
+    info_dicts = []
+    sequence_length = cfg.model.context_length
     
     for evaluation in range(cfg.get("num_eval_episodes")):
         obs, info = env.reset()
 
-        for i in range(64+10):
+        # History lists
+        depth_sequence = []
+        state_sequence = []
+        
+        action_chunk = None
+        max_episode_length = 70
+
+        for i in range(max_episode_length):
+            if i % action_execution_horizon == 0:
+                log.info(f"--- Step {i}: Generating new action chunk ---")
+                
+                # Get current observation and normalize it
+                current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
+                current_state = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
+                normalized_current_depth = normalize_depth(current_depth, normalization_stats["depth_stats"])
+                normalized_current_state = normalize_state(current_state, normalization_stats["action_stats"])
+                
+                # --- MODIFIED: Fixed Zero Padding Logic ---
+                if padding_strategy == 'zero':
+                    # Create sequence with proper zero padding
+                    if len(depth_sequence) == 0:
+                        # First prediction: all zeros except last entry (current obs)
+                        dummy_depth = torch.zeros_like(normalized_current_depth)
+                        dummy_state = torch.zeros_like(normalized_current_state)
+                        
+                        padded_depth_list = [dummy_depth] * (sequence_length - 1) + [normalized_current_depth]
+                        padded_state_list = [dummy_state] * (sequence_length - 1) + [normalized_current_state]
+                    else:
+                        # Subsequent predictions: zero pad + history + current
+                        history_length = len(depth_sequence)
+                        num_zeros_needed = max(0, sequence_length - history_length - 1)
+                        
+                        dummy_depth = torch.zeros_like(normalized_current_depth)
+                        dummy_state = torch.zeros_like(normalized_current_state)
+                        
+                        # Build sequence: [zeros] + [history] + [current]
+                        padded_depth_list = ([dummy_depth] * num_zeros_needed + 
+                                           depth_sequence[-min(history_length, sequence_length-1):] + 
+                                           [normalized_current_depth])
+                        padded_state_list = ([dummy_state] * num_zeros_needed + 
+                                           state_sequence[-min(history_length, sequence_length-1):] + 
+                                           [normalized_current_state])
+                        
+                        # Ensure we don't exceed sequence_length
+                        if len(padded_depth_list) > sequence_length:
+                            padded_depth_list = padded_depth_list[-sequence_length:]
+                            padded_state_list = padded_state_list[-sequence_length:]
+                
+                elif padding_strategy == 'copy':
+                    # Original copy padding logic
+                    num_pad = sequence_length - len(depth_sequence) - 1  # -1 for current obs
+                    if num_pad > 0:
+                        # Replicate the current observation for padding
+                        padded_depth_list = [normalized_current_depth] * num_pad + depth_sequence + [normalized_current_depth]
+                        padded_state_list = [normalized_current_state] * num_pad + state_sequence + [normalized_current_state]
+                    else:
+                        # Use history + current
+                        padded_depth_list = depth_sequence[-(sequence_length-1):] + [normalized_current_depth]
+                        padded_state_list = state_sequence[-(sequence_length-1):] + [normalized_current_state]
+                
+                else:
+                    raise ValueError(f"Unknown padding_strategy: {padding_strategy}")
+                # ----------------------------------------------
+
+                # Stack history into a batch for the model
+                depth_seq = torch.stack(padded_depth_list, dim=1)
+                state_seq = torch.stack(padded_state_list, dim=1)
+
+                with torch.no_grad():
+                    action_chunk = model(depth_seq, state_seq)
+                action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])
+
+            action_index_in_chunk = i % action_execution_horizon
+            pos = action_chunk[:, action_index_in_chunk, :].squeeze().cpu().numpy()
+            
+            log.info(f"Step {i}: Executing action {action_index_in_chunk} from chunk.")
+            obs, reward, terminated, truncated, info = env.step(pos)
+            
+            # Store the normalized observation in history (after action execution)
             depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
-
             depth = normalize_depth(depth, normalization_stats["depth_stats"])
-            robot_state = obs["agent_pos"]
-
-            raw_inference_data = {"robot_state": robot_state}
-            input_for_model = preprocess_inference_input(raw_inference_data, cfg, device)
-
-            depth_sequence.append(depth)
-            state_tensor = torch.tensor(input_for_model["state"], dtype=torch.float32, device=device).unsqueeze(0)
+            
+            state_tensor = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
             state_tensor = normalize_state(state_tensor, normalization_stats["action_stats"])
-
+            
+            depth_sequence.append(depth)
             state_sequence.append(state_tensor)
 
+            # Keep only the most recent observations (sliding window)
             if len(depth_sequence) > sequence_length:
-                depth_sequence = depth_sequence[-sequence_length:]
-                state_sequence = state_sequence[-sequence_length:]
+                depth_sequence.pop(0)
+                state_sequence.pop(0)
 
-            num_pad = sequence_length - len(depth_sequence)
-            if num_pad > 0:
-                dummy_depth = torch.zeros_like(depth)
-                dummy_state = torch.zeros_like(state_tensor)
-                depth_sequence = [dummy_depth] * num_pad + depth_sequence
-                state_sequence = [dummy_state] * num_pad + state_sequence
+            if terminated or truncated:
+                log.info(f"Episode finished at step {i}.")
+                break
 
-            depth_seq = torch.stack(depth_sequence, dim=0).squeeze(1).unsqueeze(0)
-            state_seq = torch.stack(state_sequence, dim=0).squeeze(1).unsqueeze(0)
-
-            log.info(f"Running model inference for step {i}...")
-            with torch.no_grad():
-                output = model(depth_seq, state_seq)
-
-            log.info(f"Inference output raw: {output}")
-
-            if cfg["model"]["action_dim"] == 9:
-                pose7d = pose_9d_to_7d(output.squeeze().cpu().numpy())
-            elif cfg["model"]["action_dim"] == 3:
-                if cfg.get("model").get("policy_head_type") == "transformer":
-                    output = denormalize_actions(output, normalization_stats["action_stats"])
-                for j in range(10):
-                    pos = output[:, j, :].squeeze().cpu().numpy()
-                    state = denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze().cpu().numpy()
-                    env.unwrapped.C.addFrame(f"testWay{j}").setPosition(pos).setShape(ry.ST.sphere, [.02]).setColor([1,.1*j,1-.1*j])
-                    env.unwrapped.C.addFrame(f"testWay_{j}").setPosition(state[j, :]).setShape(ry.ST.box, [.05, .05, .05]).setColor([1,.1*j,1-.1*j])
-                    print("predicted_pos:", pos)
-                    print("buffer_pos:", state[j, :])
-                    env.unwrapped.C.view(True)
-
-                env.unwrapped.C.view(True)
-                for j in range(10):
-                    env.unwrapped.C.delFrame(f"testWay{j}")
-                    env.unwrapped.C.delFrame(f"testWay_{j}")
-
-                obs, reward, terminated, truncated, info = env.step([pos[0], pos[1], pos[2]])
-
-            log.info(f"Output tensor shape: {output.shape if isinstance(output, torch.Tensor) else 'dict'}")
-            
         log.info(f"Evaluation {evaluation} finished with distance to goal {info.get('distance_to_goal', 'N/A')} and success {info.get('success', 'N/A')}.")
-        #env.unwrapped.C.view(False)
         info_dicts.append(info)
-    with open(HydraConfig.get().run.dir+"/data.json", "w") as f:
-        json.dump(info_dicts, f, indent=4, default=lambda o: o.item() if hasattr(o, "item") else str(o))
-    log.info("Policy evaluation/inference finished.")
 
+    output_dir = HydraConfig.get().run.dir
+    with open(os.path.join(output_dir, "data.json"), "w") as f:
+        json.dump(info_dicts, f, indent=4, default=lambda o: o.item() if hasattr(o, "item") else str(o))
+    log.info(f"Policy evaluation finished. Results saved to {output_dir}")
 
 if __name__ == "__main__":
     eval_policy()

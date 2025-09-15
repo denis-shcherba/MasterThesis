@@ -18,7 +18,7 @@ observation_mode: ${observation_mode}  # inherit from global config
 
 # Transformer settings
 context_length: 10 
-prediction_length: 3
+prediction_length: 10
 embed_dim: 256
 num_layers: 4
 num_heads: 4
