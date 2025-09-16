@@ -7,7 +7,7 @@ num_workers: ${train.num_workers}
 
 # Sequence settings
 sequence_length: 10  # Number of consecutive timesteps to use as input
-future_sequence_length: 3
+future_sequence_length: 10
 action_dim: 3       # Dimension of action space 
 
 # Dataset split
