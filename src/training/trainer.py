@@ -54,6 +54,7 @@ def create_scheduler(scheduler_cfg, optimizer):
         )
     # TODO
     elif scheduler_type == 'cosine_warmup':
+        total_steps = scheduler_cfg.get('total_steps', None)
         if total_steps is None:
             raise ValueError("total_steps must be provided for cosine_warmup scheduler")
         warmup_ratio = scheduler_cfg.get('warmup_ratio', 0.05)

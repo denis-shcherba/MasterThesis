@@ -1,4 +1,5 @@
 use: true
 type: cosine_warmup
-T_max: 100     # or your total epochs
-eta_min: 1e-6
+total_steps: 25000       # required
+warmup_ratio: 0.05       # fraction of steps for warmup
+num_cycles: 0.5          # default, can adjust for more cycles
