@@ -170,6 +170,26 @@ class ShelfEnv(gym.Env):
         shelf_center_pos = self.shelf_bottom_frame.getPosition()[:3]
         self.shelf_corner_ref_point = shelf_center_pos + np.array([-self.shelf_width/2, -self.shelf_depth/2, 0])
 
+    def _spawn_book(self, book_params, i=0, prefix="target_book"):
+        b_size_x, b_size_y, b_size_z, b_pos_x, b_pos_y, b_pos_z, b_yaw = book_params
+        z_offset = (self.shelf_plate_thickness + b_size_z) / 2
+        
+        book_center_position = self.shelf_corner_ref_point + np.array([b_pos_x, b_pos_y, z_offset])
+        
+        q_orientation = ry.Quaternion().setRollPitchYaw([0, 0, b_yaw]) 
+        
+        frame_name = f"{prefix}_{i}"
+        self.books.append(frame_name)
+        self.C.addFrame(frame_name) \
+            .setPosition(book_center_position) \
+            .setQuaternion(q_orientation.asArr()) \
+            .setShape(ry.ST.ssBox, size=[b_size_x, b_size_y, b_size_z, 0.005]) \
+            .setColor([1, 0, 0]) \
+            .setContact(1) \
+            .setMass(.1) \
+            .setAttribute("friction", .01) 
+
+        
     def _spawn_books_scene(self):
         sample = generate_random_box_params(
             shelf_size=self.shelf_dims_for_spawning, # (shelf_width, shelf_depth, shelf_plate_thickness)
@@ -180,27 +200,7 @@ class ShelfEnv(gym.Env):
         )
 
         for i, book_params in enumerate(sample):
-            print(sample)
-            print(book_params)
-
-            # book_params: [size_x, size_y, size_z, pos_x_on_shelf, pos_y_on_shelf, yaw_angle]
-            b_size_x, b_size_y, b_size_z, b_pos_x, b_pos_y, b_pos_z, b_yaw = book_params[0]
-            z_offset = (self.shelf_plate_thickness + b_size_z) / 2
-            
-            book_center_position = self.shelf_corner_ref_point + np.array([b_pos_x, b_pos_y, z_offset])
-            
-            q_orientation = ry.Quaternion().setRollPitchYaw([0, 0, b_yaw]) 
-            
-            frame_name = f"target_book_{i}"
-            self.books.append(frame_name)
-            self.C.addFrame(frame_name) \
-                .setPosition(book_center_position) \
-                .setQuaternion(q_orientation.asArr()) \
-                .setShape(ry.ST.ssBox, size=[b_size_x, b_size_y, b_size_z, 0.005]) \
-                .setColor([1, 0, 0]) \
-                .setContact(1) \
-                .setMass(.1) \
-                .setAttribute("friction", .01) 
+            self._spawn_book(book_params[0], i)            
             
 
         # target at the middle of the shelf ending for goal evaluation
@@ -210,6 +210,11 @@ class ShelfEnv(gym.Env):
         target = np.append(target, self.C.getFrame("target_book_0").getPosition()[2])
 
         self.C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
+
+    def _delete_books(self):
+        for book in self.books:
+            self.C.delFrame(book)
+        self.books = []
 
     def _get_obs(self):
         agent_pos_raw = self.C.getJointState()[:3]

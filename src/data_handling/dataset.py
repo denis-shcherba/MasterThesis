@@ -210,6 +210,9 @@ class ManipulationDataset(Dataset):
         # Load future actions (target for the model to predict)
         future_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][future_start_t:future_end_t].astype(np.float32)
 
+        # Load book parameters
+        book_params = self.h5_file[f"{meta['demo_key']}/book_params"][...].astype(np.float32) if 'book_params' in self.h5_file[f"{meta['demo_key']}"] else np.array([0.0], dtype=np.float32)
+
         # Normalize if required
         if self.normalize_actions:
             past_actions_sequence = self._normalize_actions(past_actions_sequence)
@@ -223,7 +226,8 @@ class ManipulationDataset(Dataset):
             'observation_sequence': torch.from_numpy(obs_sequence).float(),
             'previous_actions_sequence': torch.from_numpy(past_actions_sequence).float(),
             'target_actions_sequence': torch.from_numpy(future_actions_sequence).float(),
-            'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long)
+            'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
+            'book_params': torch.from_numpy(book_params).float(),  # Placeholder, modify as needed
         }
     
     def _load_obs(self, demo_key, start=None, end=None):

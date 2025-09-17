@@ -16,39 +16,72 @@ from data_handling.dataset import create_dataloaders_from_config
 import yaml
 from utils.data_utils import  denormalize_actions
 import robotic as ry
+import time 
 
 log = logging.getLogger(__name__)
 
 SHOW_RAI = True
+REUSE_DATA = True
+PADD_DATA = False
 
-def show_data_against_prediction_rai(target_action_seq, predicted_action_seq):
-    env = gym.make("ShelfEnv-v0")
-    obs, info = env.reset()
+def simulate_data_against_prediction(cfg, env, target_action_seq, predicted_action_seq, book_params, state_input_seq=None):
+    env.unwrapped._spawn_book(book_params)
+
+    action_prediction_horizon = 5 # cfg.model.get("action_prediction_horizon", 10)
     
-
-    with open("/home/denis/git/MasterThesis/outputs/final_outputs/normalization_stats_5000.yaml", 'r') as file:
+    with open("/home/denis/git/MasterThesis/outputs/final_outputs/normalization_stats_1000.yaml", 'r') as file:
         # todo change to config
         normalization_stats = yaml.safe_load(file)
     target_action_seq = denormalize_actions(target_action_seq, normalization_stats["action_stats"])
     previous_action_seq = denormalize_actions(predicted_action_seq, normalization_stats["action_stats"])
 
-
+    if state_input_seq is not None:
+        # Denormalize just once outside the loop for efficiency
+        state_input_seq = denormalize_actions(state_input_seq, normalization_stats["action_stats"])
+            
+    for i in range(target_action_seq.shape[0]):
+        # Use the same reverse indexing logic as your first function
+        previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
+        env.unwrapped.C.addFrame(f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor([1, 0, 0])
+        print("Previous Position:", previous_pos)
+            
+    env.unwrapped.C.view(True)
     for i in range(target_action_seq.shape[0]):
         target_pos = target_action_seq.squeeze(0).cpu().numpy()[i]
         predicted_pos = previous_action_seq.squeeze(0).cpu().numpy()[i]
 
         env.unwrapped.C.addFrame(f"target_pos_{i}").setPosition(target_pos).setShape(ry.ST.sphere, [.012]).setColor([.1*i,1-.1*i,1])
-        env.unwrapped.C.addFrame(f"predicted_pos{i}").setPosition(predicted_pos).setShape(ry.ST.box, [.02, .02, .02]).setColor([1-.1*i,.1*i,.2])
+        env.unwrapped.C.addFrame(f"predicted_pos_{i}").setPosition(predicted_pos).setShape(ry.ST.box, [.02, .02, .02]).setColor([1-.1*i,.1*i,.2])
         print("Target Position:", target_pos)
         print("Predicted Position:", predicted_pos)
 
     env.unwrapped.C.view(True)
 
+def show_data_agains_prediction(cfg, env, target_action_seq, predicted_action_seq, book_params=None, state_input_seq=None):
 
-        # for j in range(target_action_seq.shape[0]):
-        #     env.unwrapped.C.delFrame(f"prev_gripper{j}")
-        # for j in range(target_action_seq.shape[0]):
-        #     env.unwrapped.C.delFrame(f"gripper{j}")
+    if book_params is not None:
+        env.unwrapped._spawn_book(book_params)
+
+
+    if state_input_seq is not None:
+        # Denormalize just once outside the loop for efficiency            
+        for i in range(target_action_seq.shape[0]):
+            # Use the same reverse indexing logic as your first function
+            previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
+            env.unwrapped.C.addFrame(f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor([1, 0, 0])
+            print("Previous Position:", previous_pos)
+            
+    env.unwrapped.C.view(True)
+    for i in range(target_action_seq.shape[0]):
+        target_pos = target_action_seq.squeeze(0).cpu().numpy()[i]
+        predicted_pos = predicted_action_seq.squeeze(0).cpu().numpy()[i]
+
+        env.unwrapped.C.addFrame(f"target_pos_{i}").setPosition(target_pos).setShape(ry.ST.sphere, [.012]).setColor([.1*i,1-.1*i,1])
+        env.unwrapped.C.addFrame(f"predicted_pos_{i}").setPosition(predicted_pos).setShape(ry.ST.box, [.02, .02, .02]).setColor([1-.1*i,.1*i,.2])
+        print("Target Position:", target_pos)
+        print("Predicted Position:", predicted_pos)
+
+    env.unwrapped.C.view(True)
 
 @hydra.main(config_path="../configs", config_name="test_validation", version_base=None)
 def calculate_validation_loss(cfg: DictConfig) -> None:
@@ -117,6 +150,19 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
     total_loss = 0.0
     
     log.info("Starting evaluation over the validation set...")
+    env = gym.make("ShelfEnv-v0")
+    obs, info = env.reset()
+    #env.unwrapped._delete_books()
+
+    normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)
+    if normalization_stats_path is None:
+        log.error("normalization_stats_path not found.")
+        return
+
+    with open(normalization_stats_path, 'r') as file:
+        normalization_stats = yaml.safe_load(file)
+
+
     with torch.no_grad():
         # Outer loop iterates through batches from the dataloader
         i = 0
@@ -126,25 +172,39 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
             context_depth_batch = batch['observation_sequence'].to(device)
             context_state_batch = batch['previous_actions_sequence'].to(device)
             target_actions_batch = batch['target_actions_sequence'].to(device)
-            
+            book_params = batch['book_params'].to(device)
+
             # Get the number of items in the current batch (usually cfg.train.batch_size, except for the last batch)
             current_batch_size = context_depth_batch.size(0)
 
             # Inner loop to process each sample in the batch individually
             for i in range(current_batch_size):
+                if PADD_DATA:
+                    pass
+
                 # --- Select the i-th sample from the batch ---
                 # .unsqueeze(0) adds a batch dimension of size 1, so the shape becomes [1, ...]
                 # This is required by the model.
                 depth_single = context_depth_batch[i].unsqueeze(0)
                 state_single = context_state_batch[i].unsqueeze(0)
+        
                 target_single = target_actions_batch[i].unsqueeze(0)
+                target_single = denormalize_actions(target_single, normalization_stats["action_stats"])
+                book_single = book_params[i]
 
                 # Forward pass: get model prediction for the single sample
                 prediction_single = model(depth_single, state_single)
-                
-                if SHOW_RAI:
+                state_single = denormalize_actions(state_single, normalization_stats["action_stats"])
+                prediction_single = denormalize_actions(prediction_single, normalization_stats["action_stats"])
+
+                if REUSE_DATA:
                     pass
-                    show_data_against_prediction_rai(target_single.squeeze(0).cpu(), prediction_single.squeeze(0).cpu())
+                    #env.step(prediction_single.squeeze(0).cpu().numpy()[0])
+
+                if SHOW_RAI:
+                    if i%1==0:
+                        show_data_agains_prediction(cfg, env, target_single.squeeze(0).cpu(), prediction_single.squeeze(0).cpu(), book_single.cpu(), state_single.squeeze(0).cpu())
+                    
                 # Calculate the loss for this single prediction vs. its single target
                 loss = loss_fn(prediction_single, target_single)
                 
@@ -153,8 +213,8 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
 
 
             i+= 1
-            if i >= 10:  # For quicker testing, limit to first 10 batches
-                break
+            # if i >= 10:  # For quicker testing, limit to first 10 batches
+            #     break
 
     # 7. Calculate and Report Average Loss
     # The average loss is the total accumulated loss divided by the number of batches

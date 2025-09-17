@@ -252,7 +252,7 @@ class RobotEnviroment:
             
             for q in path2:
                 C2.setJointState(q)
-                _, J = C2.eval(ry.FS.position, ['gripper'])
+                _, J = C2.eval(ry.FS.position, [self.gripper])
                 delta_q = np.linalg.pinv(J) @ delta_x
                 path2_after_offset.append(q + delta_q)
             

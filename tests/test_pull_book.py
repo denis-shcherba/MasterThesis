@@ -15,8 +15,9 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 5000
+NUM_SAMPLES = 1_000
 VISUALIZE = False  # If true, the simulation will be visualized
+SAVE_BOOK_PARAMS = True  # If true, the parameters of the generated books will be saved to a file
 
 noise_dict = {
     # "stateNoise": {
@@ -96,8 +97,6 @@ if COLLECT_DATA:
 
 for sample in samples:
     for book_params in sample:
-        q = ry.Quaternion().setRollPitchYaw(([0,0, book_params[-1]]))
-
         for i, box in enumerate(sample):
             q = ry.Quaternion().setRollPitchYaw(([0,0, box[-1]]))
             C.addFrame(f"target_book_{i}") \
@@ -129,6 +128,9 @@ for sample in samples:
             #np.save("pc.npy", roboenv.points[0])
 
             demo_group = h5file.create_group(f"demo_{demo_id}")
+
+            if SAVE_BOOK_PARAMS:
+                demo_group.create_dataset("book_params", data=book_params)
 
             if PATH_MODE == "JOINT7DSPLINE":
                 demo_group.create_dataset("path", data=roboenv.path)
