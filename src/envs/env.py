@@ -171,6 +171,8 @@ class ShelfEnv(gym.Env):
         self.shelf_corner_ref_point = shelf_center_pos + np.array([-self.shelf_width/2, -self.shelf_depth/2, 0])
 
     def _spawn_book(self, book_params, i=0, prefix="target_book"):
+
+
         b_size_x, b_size_y, b_size_z, b_pos_x, b_pos_y, b_pos_z, b_yaw = book_params
         z_offset = (self.shelf_plate_thickness + b_size_z) / 2
         
@@ -188,6 +190,13 @@ class ShelfEnv(gym.Env):
             .setContact(1) \
             .setMass(.1) \
             .setAttribute("friction", .01) 
+        
+        self.C.view(False)
+
+        del self.sim
+
+        if self.simulate:
+            self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0)
 
         
     def _spawn_books_scene(self):

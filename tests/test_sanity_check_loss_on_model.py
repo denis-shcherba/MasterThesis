@@ -14,14 +14,14 @@ import envs.env  # noqa: F401
 from models.policy_head.policy_network import create_model
 from data_handling.dataset import create_dataloaders_from_config 
 import yaml
-from utils.data_utils import  denormalize_actions
+from utils.data_utils import  denormalize_actions, normalize_state
 import robotic as ry
 import time 
 
 log = logging.getLogger(__name__)
 
 SHOW_RAI = True
-REUSE_DATA = False 
+REUSE_DATA = True 
 PADD_DATA = False
 
 def simulate_data_against_prediction(cfg, env, target_action_seq, predicted_action_seq, book_params, state_input_seq=None):
@@ -57,16 +57,14 @@ def simulate_data_against_prediction(cfg, env, target_action_seq, predicted_acti
 
     env.unwrapped.C.view(True)
 
-def show_state_input_seq(cfg, env, state_input_seq):
+def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
     for i in range(state_input_seq.shape[0]):
         # Use the same reverse indexing logic as your first function
         previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
-        env.unwrapped.C.addFrame(f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor([1, 0, 0, .9])
+        env.unwrapped.C.addFrame(prefix+f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor(color)
         print("Previous Position:", previous_pos)
 
 def show_data_agains_prediction(cfg, env, target_action_seq, predicted_action_seq):
-    # if book_params is not None:
-    #     env.unwrapped._spawn_book(book_params)
 
     env.unwrapped.C.view(True)
     for i in range(target_action_seq.shape[0]):
@@ -155,6 +153,8 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
     env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos")
     obs, info = env.reset()
     env.unwrapped._delete_books()
+    env.unwrapped.C.view(True)
+    env.unwrapped.C.delFrame("big_box_inside_0_2")
 
     normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)
     if normalization_stats_path is None:
@@ -174,19 +174,24 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
             context_state_batch = batch['previous_actions_sequence'].to(device)
             target_actions_batch = batch['target_actions_sequence'].to(device)
             book_params = batch['book_params'].to(device)
-
             # Get the number of items in the current batch
             current_batch_size = context_depth_batch.size(0)
-
-            # Inner loop to process each sample in the batch individually
-            for i in range(current_batch_size):
+            i = 0
+            prior_book_single = torch.zeros(7)
+            while i < current_batch_size:
                 
                 # --- Grab the full sequence and target for the i-th sample ---
                 full_context_depth = context_depth_batch[i] # Shape: [M, C, H, W]
                 full_context_state = context_state_batch[i] # Shape: [M, state_dim]
                 target_single = target_actions_batch[i].unsqueeze(0) # Shape: [1, N, action_dim]
                 book_single = book_params[i]
-                env.unwrapped._spawn_book(book_single.cpu())
+                diff = np.linalg.norm(book_single.cpu().numpy() - prior_book_single.cpu().numpy())
+                if diff > 1e-4:
+                    env.unwrapped.reset()
+                    env.unwrapped._delete_books()
+                    env.unwrapped._spawn_book(book_single.cpu())
+                
+                prior_book_single = book_single.clone()
 
                 # Denormalize the ground truth target once for loss calculation
                 denormalized_target = denormalize_actions(target_single, normalization_stats["action_stats"])
@@ -242,58 +247,87 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
                     state_single = full_context_state.unsqueeze(0)
 
                     denormalized_state = denormalize_actions(state_single, normalization_stats["action_stats"])
-                    show_state_input_seq(cfg, env, denormalized_state.squeeze(0).cpu())
+                    
+                    if SHOW_RAI:
+                        show_state_input_seq(cfg, env, denormalized_state.squeeze(0).cpu())
 
                     # =================================================================
                     # START: LOGIC FOR REUSING/ROLLING OUT PREDICTIONS
-                    # =================================================================
+                    # =================================================================\
                     if REUSE_DATA:
-                        # --- Autoregressive Rollout Simulation ---
+                        if i != 0 and SHOW_RAI:
+                            show_state_input_seq(cfg, env, old_seq.squeeze(0).cpu(), [0, 0, 1, .9], prefix="old_")
+                        # --- Autoregressive Rollout Simulation with a Step Size ---
+
+                        # A value > 1 will execute actions in chunks.
+                        execution_stepsize = 10
                         
                         # 1. Initialize the context. We'll update this in a loop.
                         current_state_context = state_single.clone()
                         current_depth_context = depth_single.clone()
                         
-                        # Determine the prediction horizon (N) from the target tensor
                         prediction_horizon_N = denormalized_target.size(1)
-                        
-                        # Store the sequence of predicted actions during the rollout
                         rollout_predictions_list = []
                         
-                        # 2. Loop for N steps, generating one action at a time
-                        for _ in range(prediction_horizon_N):
-                            # Get the model's prediction for the next N steps
-                            # Note: The model still predicts a full sequence, but we only use the first step
-                            predicted_action_sequence = model(current_depth_context, current_state_context)
+                        # CHANGED: Use a 'while' loop to keep track of generated actions.
+                        # This is more robust than a 'for' loop for handling chunks.
+                        num_actions_generated = 0
+                        while num_actions_generated < prediction_horizon_N:
+                            # Get the model's prediction for the next N steps based on the current context
+                            if i >= 0:
+                                predicted_action_sequence = model(current_depth_context, current_state_context)
+                            else:
+                                predicted_action_sequence = model(current_depth_context, normalize_state(old_seq, normalization_stats["action_stats"]))
+
+                            # --- NEW: Logic to handle chunks ---
+                            # Determine how many actions to take in this iteration.
+                            # This handles the final chunk if N isn't divisible by the stepsize.
+                            remaining_steps = prediction_horizon_N - num_actions_generated
+                            current_chunk_size = min(execution_stepsize, remaining_steps)
                             
-                            # Isolate the very first action from the predicted sequence
-                            next_action = predicted_action_sequence[:, 0:1, :] # Shape: [1, 1, action_dim]
+                            # Isolate the chunk of actions we are going to execute
+                            action_chunk = predicted_action_sequence[:, :current_chunk_size, :]
                             
-                            # Denormalize and store this single action
-                            denormalized_next_action = denormalize_actions(next_action, normalization_stats["action_stats"])
-                            rollout_predictions_list.append(denormalized_next_action)
+                            # Denormalize the entire chunk at once
+                            denormalized_action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])
                             
-                            # --- Update Context for the Next Step ---
-                            # Update state context: remove the oldest state and append the new predicted one
-                            current_state_context = torch.cat([current_state_context[:, 1:, :], next_action], dim=1)
-                            
-                            try:
-                                # Execute the predicted action in the environment
-                                env_action = denormalized_next_action.squeeze().cpu().numpy()
-                                obs, _, _, _ , _ = env.step(env_action) 
-                                new_depth = torch.from_numpy(obs['depth']).to(device).unsqueeze(0).unsqueeze(0) # Shape: [1, 1, C, H, W]
+                            # --- NEW: Inner loop to execute the chunk of actions ---
+                            for k in range(current_chunk_size):
+                                # Get the k-th action from the (normalized) chunk for context update
+                                next_action_normalized = action_chunk[:, k:k+1, :]
                                 
-                                # Update depth context: remove oldest, append newest from env
-                                current_depth_context = torch.cat([current_depth_context[:, 1:, :, :], new_depth], dim=1)
-                            except Exception as e:
-                                print(f"Warning: Could not step environment for data reuse. Using placeholder depth. Error: {e}")
-                                # If env fails or is not available, use a placeholder (e.g., repeat the last known depth)
-                                current_depth_context = torch.cat([current_depth_context[:, 1:, :, :], current_depth_context[:, -1:, :, :]], dim=1)
+                                # Get the k-th action from the (denormalized) chunk for the environment
+                                denormalized_next_action = denormalized_action_chunk[:, k:k+1, :]
+                                
+                                # Store this single action for the final loss calculation
+                                rollout_predictions_list.append(denormalized_next_action)
+                                
+                                # --- Update Context for the Next Step (inside the chunk loop) ---
+                                # Update state context: remove oldest, append the new predicted one
+                                current_state_context = torch.cat([current_state_context[:, 1:, :], next_action_normalized], dim=1)
+                                
+                                try:
+                                    # Execute the predicted action in the environment
+                                    env_action = denormalized_next_action.squeeze().cpu().numpy()
+                                    obs, _, _, _, _ = env.step(env_action) 
+                                    new_depth = torch.from_numpy(obs['depth']).to(device).unsqueeze(0).unsqueeze(0)
+                                    
+                                    # Update depth context: remove oldest, append newest from env
+                                    current_depth_context = torch.cat([current_depth_context[:, 1:, :, :], new_depth], dim=1)
+                                except Exception as e:
+                                    print(f"Warning: Could not step environment for data reuse. Using placeholder depth. Error: {e}")
+                                    # If env fails, use a placeholder (e.g., repeat the last known depth)
+                                    current_depth_context = torch.cat([current_depth_context[:, 1:, :, :], current_depth_context[:, -1:, :, :]], dim=1)
+
+                            # Update the counter for the outer while loop
+                            num_actions_generated += current_chunk_size
 
                         # 3. After the loop, combine the list of single actions into one trajectory tensor
                         denormalized_prediction = torch.cat(rollout_predictions_list, dim=1)
-
-                        i+=prediction_horizon_N-1
+                        
+                        old_seq = denormalized_prediction
+                        # Your i+= logic would now be handled by a while loop in the outer scope
+                        i += prediction_horizon_N # if using a while loop for 'i'
                     # =================================================================
                     # END: LOGIC FOR REUSING/ROLLING OUT PREDICTIONS
                     # =================================================================
@@ -302,6 +336,8 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
                         prediction_single = model(depth_single, state_single)
                         denormalized_prediction = denormalize_actions(prediction_single, normalization_stats["action_stats"])
 
+                        
+                        i+=1
                     # --- Common operations for both REUSE_DATA true/false ---
                     
                     # Denormalize the initial state context for visualization
@@ -309,7 +345,7 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
                     if SHOW_RAI:
                         # Note: Corrected a typo in the function name from your snippet
                         show_data_agains_prediction(cfg, env, denormalized_target.squeeze(0).cpu(), denormalized_prediction.squeeze(0).cpu())
-                        
+
                     # Calculate the loss between the final prediction (either one-shot or rollout) and the target
                     loss = loss_fn(denormalized_prediction, denormalized_target)
                     

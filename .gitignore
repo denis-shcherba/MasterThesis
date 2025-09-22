@@ -20,3 +20,4 @@ outputs/
 eval_outputs/
 checkpoints/
 .vscode/
+test_outputs/

@@ -2,7 +2,6 @@ defaults:
   - _self_  
   - model: transformer_depth
   - loss: default_3d_mse
-  - optimizer: adam
   - data: depth
   - trainer: epochs
   - inference: transformer_depth
@@ -11,13 +10,11 @@ train:
   batch_size: 128
   num_workers: 8
   device: cuda
-  grad_clip: 1.0
 
 # Global settings
 observation_mode: 'depth'  
 seed: 42
 experiment_name: "SimpleSingleStepBC"
-output_dir: ${hydra:runtime.output_dir}
 
 is_regression: false
 # whether to use a separate network for waypoint and timing prediction naming
@@ -25,3 +22,7 @@ is_waypointPlusTimings: false
 
 wandb:
   enabled: true
+
+hydra:
+  run:
+    dir: ./test_outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
