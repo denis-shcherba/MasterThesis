@@ -14,7 +14,7 @@ class ShelfEnv(gym.Env):
     #metadata = {"render_modes": ["rgb_array"], "render_fps": 30}
 
     def __init__(self, 
-                 obs_type="pixels_agent_pos",
+                 obs_type="depth_agent_pos",
                  robot_mode="floating",
                  path_mode="SE39D",
                  simulate=True,

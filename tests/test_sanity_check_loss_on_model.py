@@ -21,7 +21,7 @@ import time
 log = logging.getLogger(__name__)
 
 SHOW_RAI = True
-REUSE_DATA = True
+REUSE_DATA = False 
 PADD_DATA = False
 
 def simulate_data_against_prediction(cfg, env, target_action_seq, predicted_action_seq, book_params, state_input_seq=None):
@@ -57,31 +57,33 @@ def simulate_data_against_prediction(cfg, env, target_action_seq, predicted_acti
 
     env.unwrapped.C.view(True)
 
-def show_data_agains_prediction(cfg, env, target_action_seq, predicted_action_seq, book_params=None, state_input_seq=None):
+def show_state_input_seq(cfg, env, state_input_seq):
+    for i in range(state_input_seq.shape[0]):
+        # Use the same reverse indexing logic as your first function
+        previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
+        env.unwrapped.C.addFrame(f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor([1, 0, 0, .9])
+        print("Previous Position:", previous_pos)
 
-    if book_params is not None:
-        env.unwrapped._spawn_book(book_params)
+def show_data_agains_prediction(cfg, env, target_action_seq, predicted_action_seq):
+    # if book_params is not None:
+    #     env.unwrapped._spawn_book(book_params)
 
-
-    if state_input_seq is not None:
-        # Denormalize just once outside the loop for efficiency            
-        for i in range(target_action_seq.shape[0]):
-            # Use the same reverse indexing logic as your first function
-            previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
-            env.unwrapped.C.addFrame(f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor([1, 0, 0])
-            print("Previous Position:", previous_pos)
-            
     env.unwrapped.C.view(True)
     for i in range(target_action_seq.shape[0]):
         target_pos = target_action_seq.squeeze(0).cpu().numpy()[i]
         predicted_pos = predicted_action_seq.squeeze(0).cpu().numpy()[i]
 
-        env.unwrapped.C.addFrame(f"target_pos_{i}").setPosition(target_pos).setShape(ry.ST.sphere, [.012]).setColor([.1*i,1-.1*i,1])
-        env.unwrapped.C.addFrame(f"predicted_pos_{i}").setPosition(predicted_pos).setShape(ry.ST.box, [.02, .02, .02]).setColor([1-.1*i,.1*i,.2])
+        env.unwrapped.C.addFrame(f"target_pos_{i}").setPosition(target_pos).setShape(ry.ST.sphere, [.012]).setColor([.1*i,1-.1*i,1, .9])
+        env.unwrapped.C.addFrame(f"predicted_pos_{i}").setPosition(predicted_pos).setShape(ry.ST.box, [.02, .02, .02]).setColor([1-.1*i,.1*i,.2, .9])
         print("Target Position:", target_pos)
         print("Predicted Position:", predicted_pos)
 
     env.unwrapped.C.view(True)
+
+def delete_all_extra_frame(C):
+    for name in C.getFrameNames():
+        if "target_pos_" in name or "predicted_pos_" in name or "previous_pos_" in name:
+            C.delFrame(name)
 
 @hydra.main(config_path="../configs", config_name="test_validation", version_base=None)
 def calculate_validation_loss(cfg: DictConfig) -> None:
@@ -150,9 +152,9 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
     total_loss = 0.0
     
     log.info("Starting evaluation over the validation set...")
-    env = gym.make("ShelfEnv-v0")
+    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos")
     obs, info = env.reset()
-    #env.unwrapped._delete_books()
+    env.unwrapped._delete_books()
 
     normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)
     if normalization_stats_path is None:
@@ -165,7 +167,6 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
 
     with torch.no_grad():
         # Outer loop iterates through batches from the dataloader
-        i = 0
         for batch in tqdm(val_loader, desc="Validating"):
             # Get the full batch tensors from the dataloader
             # We append '_batch' to clarify these are multi-item tensors
@@ -174,48 +175,147 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
             target_actions_batch = batch['target_actions_sequence'].to(device)
             book_params = batch['book_params'].to(device)
 
-            # Get the number of items in the current batch (usually cfg.train.batch_size, except for the last batch)
+            # Get the number of items in the current batch
             current_batch_size = context_depth_batch.size(0)
 
             # Inner loop to process each sample in the batch individually
             for i in range(current_batch_size):
-                if PADD_DATA:
-                    pass
-
-                # --- Select the i-th sample from the batch ---
-                # .unsqueeze(0) adds a batch dimension of size 1, so the shape becomes [1, ...]
-                # This is required by the model.
-                depth_single = context_depth_batch[i].unsqueeze(0)
-                state_single = context_state_batch[i].unsqueeze(0)
-        
-                target_single = target_actions_batch[i].unsqueeze(0)
-                target_single = denormalize_actions(target_single, normalization_stats["action_stats"])
-                book_single = book_params[i]
-
-                # Forward pass: get model prediction for the single sample
-                prediction_single = model(depth_single, state_single)
-                state_single = denormalize_actions(state_single, normalization_stats["action_stats"])
-                prediction_single = denormalize_actions(prediction_single, normalization_stats["action_stats"])
-
-                if REUSE_DATA:
-                    pass
-                    #env.step(prediction_single.squeeze(0).cpu().numpy()[0])
-
-                if SHOW_RAI:
-                    if i%1==0:
-                        show_data_agains_prediction(cfg, env, target_single.squeeze(0).cpu(), prediction_single.squeeze(0).cpu(), book_single.cpu(), state_single.squeeze(0).cpu())
-                    
-                # Calculate the loss for this single prediction vs. its single target
-                loss = loss_fn(prediction_single, target_single)
                 
-                # Accumulate the loss for each individual sample
-                total_loss += loss.item()
+                # --- Grab the full sequence and target for the i-th sample ---
+                full_context_depth = context_depth_batch[i] # Shape: [M, C, H, W]
+                full_context_state = context_state_batch[i] # Shape: [M, state_dim]
+                target_single = target_actions_batch[i].unsqueeze(0) # Shape: [1, N, action_dim]
+                book_single = book_params[i]
+                env.unwrapped._spawn_book(book_single.cpu())
 
+                # Denormalize the ground truth target once for loss calculation
+                denormalized_target = denormalize_actions(target_single, normalization_stats["action_stats"])
 
-            i+= 1
-            # if i >= 10:  # For quicker testing, limit to first 10 batches
-            #     break
+                # =================================================================
+                # START: LOGIC FOR PADDED DATA VALIDATION
+                # =================================================================
+                if PADD_DATA:
+                    context_len = full_context_state.size(0) # This is M
 
+                    # Loop from 1 to M to simulate a growing context window
+                    for j in range(1, context_len + 1):
+                        # --- 1. Create zero-padding for the current step ---
+                        # Number of steps to pad is M - j
+                        num_pads = context_len - j
+                        
+                        # Create padding tensors with the correct dimensions and device
+                        state_pads = torch.zeros(num_pads, full_context_state.size(1), device=device)
+                        depth_pads = torch.zeros(num_pads, *full_context_depth.size()[1:], device=device)
+
+                        # --- 2. Get the real data seen so far (from step 0 to j-1) ---
+                        real_states = full_context_state[:j]
+                        real_depths = full_context_depth[:j]
+
+                        # --- 3. Concatenate padding and real data to form model input ---
+                        # The input will be [zeros, ..., zeros, real_data_0, ..., real_data_j-1]
+                        current_input_state = torch.cat([state_pads, real_states], dim=0).unsqueeze(0)
+                        current_input_depth = torch.cat([depth_pads, real_depths], dim=0).unsqueeze(0)
+
+                        # --- 4. Run forward pass and calculate loss for this step ---
+                        prediction_single = model(current_input_depth, current_input_state)
+                        
+                        # Denormalize prediction for loss and visualization
+                        denormalized_prediction = denormalize_actions(prediction_single, normalization_stats["action_stats"])
+                        
+                        # Denormalize the input states for visualization
+                        denormalized_input_state = denormalize_actions(current_input_state, normalization_stats["action_stats"])
+
+                        if SHOW_RAI:
+                            show_data_agains_prediction(cfg, env, denormalized_target.squeeze(0).cpu(), denormalized_prediction.squeeze(0).cpu(), book_single.cpu(), denormalized_input_state.squeeze(0).cpu())
+                        
+                        loss = loss_fn(denormalized_prediction, denormalized_target)
+                        total_loss += loss.item()
+                # =================================================================
+                # END: LOGIC FOR PADDED DATA VALIDATION
+                # =================================================================
+                else:
+                    # --- Logic for full, unpadded sequences ---
+                    
+                    # Grab the initial ground-truth context from the dataloader.
+                    # This serves as the starting point for both one-shot and rollout predictions.
+                    depth_single = full_context_depth.unsqueeze(0)
+                    state_single = full_context_state.unsqueeze(0)
+
+                    denormalized_state = denormalize_actions(state_single, normalization_stats["action_stats"])
+                    show_state_input_seq(cfg, env, denormalized_state.squeeze(0).cpu())
+
+                    # =================================================================
+                    # START: LOGIC FOR REUSING/ROLLING OUT PREDICTIONS
+                    # =================================================================
+                    if REUSE_DATA:
+                        # --- Autoregressive Rollout Simulation ---
+                        
+                        # 1. Initialize the context. We'll update this in a loop.
+                        current_state_context = state_single.clone()
+                        current_depth_context = depth_single.clone()
+                        
+                        # Determine the prediction horizon (N) from the target tensor
+                        prediction_horizon_N = denormalized_target.size(1)
+                        
+                        # Store the sequence of predicted actions during the rollout
+                        rollout_predictions_list = []
+                        
+                        # 2. Loop for N steps, generating one action at a time
+                        for _ in range(prediction_horizon_N):
+                            # Get the model's prediction for the next N steps
+                            # Note: The model still predicts a full sequence, but we only use the first step
+                            predicted_action_sequence = model(current_depth_context, current_state_context)
+                            
+                            # Isolate the very first action from the predicted sequence
+                            next_action = predicted_action_sequence[:, 0:1, :] # Shape: [1, 1, action_dim]
+                            
+                            # Denormalize and store this single action
+                            denormalized_next_action = denormalize_actions(next_action, normalization_stats["action_stats"])
+                            rollout_predictions_list.append(denormalized_next_action)
+                            
+                            # --- Update Context for the Next Step ---
+                            # Update state context: remove the oldest state and append the new predicted one
+                            current_state_context = torch.cat([current_state_context[:, 1:, :], next_action], dim=1)
+                            
+                            try:
+                                # Execute the predicted action in the environment
+                                env_action = denormalized_next_action.squeeze().cpu().numpy()
+                                obs, _, _, _ , _ = env.step(env_action) 
+                                new_depth = torch.from_numpy(obs['depth']).to(device).unsqueeze(0).unsqueeze(0) # Shape: [1, 1, C, H, W]
+                                
+                                # Update depth context: remove oldest, append newest from env
+                                current_depth_context = torch.cat([current_depth_context[:, 1:, :, :], new_depth], dim=1)
+                            except Exception as e:
+                                print(f"Warning: Could not step environment for data reuse. Using placeholder depth. Error: {e}")
+                                # If env fails or is not available, use a placeholder (e.g., repeat the last known depth)
+                                current_depth_context = torch.cat([current_depth_context[:, 1:, :, :], current_depth_context[:, -1:, :, :]], dim=1)
+
+                        # 3. After the loop, combine the list of single actions into one trajectory tensor
+                        denormalized_prediction = torch.cat(rollout_predictions_list, dim=1)
+
+                        i+=prediction_horizon_N-1
+                    # =================================================================
+                    # END: LOGIC FOR REUSING/ROLLING OUT PREDICTIONS
+                    # =================================================================
+                    else:
+                        # --- Original One-Shot Prediction Logic ---
+                        prediction_single = model(depth_single, state_single)
+                        denormalized_prediction = denormalize_actions(prediction_single, normalization_stats["action_stats"])
+
+                    # --- Common operations for both REUSE_DATA true/false ---
+                    
+                    # Denormalize the initial state context for visualization
+
+                    if SHOW_RAI:
+                        # Note: Corrected a typo in the function name from your snippet
+                        show_data_agains_prediction(cfg, env, denormalized_target.squeeze(0).cpu(), denormalized_prediction.squeeze(0).cpu())
+                        
+                    # Calculate the loss between the final prediction (either one-shot or rollout) and the target
+                    loss = loss_fn(denormalized_prediction, denormalized_target)
+                    
+                    # Accumulate the loss
+                    total_loss += loss.item()
+                    delete_all_extra_frame(env.unwrapped.C)
     # 7. Calculate and Report Average Loss
     # The average loss is the total accumulated loss divided by the number of batches
     avg_loss = total_loss / len(val_loader)
