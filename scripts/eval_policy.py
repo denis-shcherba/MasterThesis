@@ -13,8 +13,33 @@ from hydra.core.hydra_config import HydraConfig
 import robotic as ry
 import gymnasium as gym
 import envs.env  # noqa: F401 
+import matplotlib.pyplot as plt
 
 log = logging.getLogger(__name__)
+
+def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
+    for i in range(state_input_seq.shape[0]):
+        # Use the same reverse indexing logic as your first function
+        previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
+        env.unwrapped.C.addFrame(prefix+f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor(color)
+        print("Previous Position:", previous_pos)
+    env.unwrapped.C.view(True)
+
+def test_depth_sequence(depth_batch):
+    # take the first entry in the batch -> shape [10, 96, 96]
+    for i in range(depth_batch.shape[0]):
+
+        depth_seq = depth_batch[i]
+        # create a figure with 2 rows x 5 cols for the 10 images
+        fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+
+        for j, ax in enumerate(axes.flat):
+            ax.imshow(depth_seq[j], cmap='viridis')  # use 'gray' if you prefer
+            ax.set_title(f"Depth {j}")
+            ax.axis('off')
+
+        plt.tight_layout()
+        plt.show()
 
 def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: torch.device) -> dict:
     """
@@ -124,6 +149,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
         for i in range(max_episode_length):
             if i % action_execution_horizon == 0:
+
                 log.info(f"--- Step {i}: Generating new action chunk ---")
                 
                 # Get current observation and normalize it
@@ -182,10 +208,13 @@ def eval_policy(cfg: DictConfig) -> None:
                 # Stack history into a batch for the model
                 depth_seq = torch.stack(padded_depth_list, dim=1)
                 state_seq = torch.stack(padded_state_list, dim=1)
+                test_depth_sequence(depth_seq.cpu().numpy())
 
+                show_state_input_seq(cfg, env, denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze(), color=[0, 1, 0, .9])
                 with torch.no_grad():
                     action_chunk = model(depth_seq, state_seq)
                 action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])
+                show_state_input_seq(cfg, env, action_chunk.squeeze(0))
 
             action_index_in_chunk = i % action_execution_horizon
             pos = action_chunk[:, action_index_in_chunk, :].squeeze().cpu().numpy()

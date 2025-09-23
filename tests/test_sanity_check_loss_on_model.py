@@ -27,7 +27,6 @@ PADD_DATA = False
 def simulate_data_against_prediction(cfg, env, target_action_seq, predicted_action_seq, book_params, state_input_seq=None):
     env.unwrapped._spawn_book(book_params)
 
-    action_prediction_horizon = 5 # cfg.model.get("action_prediction_horizon", 10)
     
     with open("/home/denis/git/MasterThesis/outputs/final_outputs/normalization_stats_1000.yaml", 'r') as file:
         # todo change to config
@@ -62,6 +61,7 @@ def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=
         # Use the same reverse indexing logic as your first function
         previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
         env.unwrapped.C.addFrame(prefix+f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor(color)
+        env.unwrapped.C.view(False)
         print("Previous Position:", previous_pos)
 
 def show_data_agains_prediction(cfg, env, target_action_seq, predicted_action_seq):
@@ -200,41 +200,93 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
                 # START: LOGIC FOR PADDED DATA VALIDATION
                 # =================================================================
                 if PADD_DATA:
+                    # This mode simulates starting a trajectory from scratch.
+                    # It uses only the very first state/observation from the context window,
+                    # padding the rest with zeros, and then autoregressively rolls out
+                    # the full prediction sequence.
+
                     context_len = full_context_state.size(0) # This is M
 
-                    # Loop from 1 to M to simulate a growing context window
-                    for j in range(1, context_len + 1):
-                        # --- 1. Create zero-padding for the current step ---
-                        # Number of steps to pad is M - j
-                        num_pads = context_len - j
-                        
-                        # Create padding tensors with the correct dimensions and device
-                        state_pads = torch.zeros(num_pads, full_context_state.size(1), device=device)
-                        depth_pads = torch.zeros(num_pads, *full_context_depth.size()[1:], device=device)
+                    # --- 1. Create the initial, zero-padded context ---
+                    # We need M-1 pads to fill the context window initially.
+                    num_pads = context_len - 1
+                    
+                    # Create padding tensors.
+                    state_pads = torch.zeros(num_pads, full_context_state.size(1), device=device)
+                    depth_pads = torch.zeros(num_pads, *full_context_depth.size()[1:], device=device)
 
-                        # --- 2. Get the real data seen so far (from step 0 to j-1) ---
-                        real_states = full_context_state[:j]
-                        real_depths = full_context_depth[:j]
+                    # Get the single, real starting state and depth image.
+                    # We use slicing [0:1] to maintain the sequence dimension.
+                    first_real_state = full_context_state[0:1]
+                    first_real_depth = full_context_depth[0:1]
 
-                        # --- 3. Concatenate padding and real data to form model input ---
-                        # The input will be [zeros, ..., zeros, real_data_0, ..., real_data_j-1]
-                        current_input_state = torch.cat([state_pads, real_states], dim=0).unsqueeze(0)
-                        current_input_depth = torch.cat([depth_pads, real_depths], dim=0).unsqueeze(0)
+                    # Concatenate pads and the first real data point to form the initial model input.
+                    # The shape will be [1, M, ...], ready for the model.
+                    current_state_context = torch.cat([state_pads, first_real_state], dim=0).unsqueeze(0)
+                    current_depth_context = torch.cat([depth_pads, first_real_depth], dim=0).unsqueeze(0)
 
-                        # --- 4. Run forward pass and calculate loss for this step ---
-                        prediction_single = model(current_input_depth, current_input_state)
-                        
-                        # Denormalize prediction for loss and visualization
-                        denormalized_prediction = denormalize_actions(prediction_single, normalization_stats["action_stats"])
-                        
-                        # Denormalize the input states for visualization
-                        denormalized_input_state = denormalize_actions(current_input_state, normalization_stats["action_stats"])
+                    # --- 2. Autoregressively roll out the trajectory ---
+                    # This logic is similar to the REUSE_DATA block.
+                    execution_stepsize = 10 # Predict N steps, execute a chunk, update context, repeat.
+                    prediction_horizon_N = denormalized_target.size(1)
+                    rollout_predictions_list = []
+                    num_actions_generated = 0
 
-                        if SHOW_RAI:
-                            show_data_agains_prediction(cfg, env, denormalized_target.squeeze(0).cpu(), denormalized_prediction.squeeze(0).cpu(), book_single.cpu(), denormalized_input_state.squeeze(0).cpu())
+                    while num_actions_generated < prediction_horizon_N:
+                        # Get the model's prediction for the next N steps.
+                        predicted_action_sequence = model(current_depth_context, current_state_context)
                         
-                        loss = loss_fn(denormalized_prediction, denormalized_target)
-                        total_loss += loss.item()
+                        # Determine the size of the action chunk to execute in this iteration.
+                        remaining_steps = prediction_horizon_N - num_actions_generated
+                        current_chunk_size = min(execution_stepsize, remaining_steps)
+                        
+                        # Isolate and denormalize the action chunk.
+                        action_chunk = predicted_action_sequence[:, :current_chunk_size, :]
+                        denormalized_action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])
+                        
+                        # Execute each action in the chunk one by one to update the context.
+                        for k in range(current_chunk_size):
+                            # Get the k-th action (normalized for context, denormalized for env).
+                            next_action_normalized = action_chunk[:, k:k+1, :]
+                            denormalized_next_action = denormalized_action_chunk[:, k:k+1, :]
+                            
+                            # Store this single denormalized action for the final loss calculation.
+                            rollout_predictions_list.append(denormalized_next_action)
+                            
+                            # Update state context: remove the oldest, append the new predicted one.
+                            current_state_context = torch.cat([current_state_context[:, 1:, :], next_action_normalized], dim=1)
+                            
+                            try:
+                                # Execute the action in the environment to get the next depth image.
+                                env_action = denormalized_next_action.squeeze().cpu().numpy()
+                                obs, _, _, _, _ = env.step(env_action) 
+                                new_depth = torch.from_numpy(obs['depth']).to(device).unsqueeze(0).unsqueeze(0)
+                                
+                                # Update depth context: remove oldest, append newest from env.
+                                current_depth_context = torch.cat([current_depth_context[:, 1:, :, :], new_depth], dim=1)
+                            except Exception as e:
+                                print(f"Warning: Env step failed during padded rollout. Using placeholder depth. Error: {e}")
+                                # If env fails, repeat the last known depth image as a fallback.
+                                current_depth_context = torch.cat([current_depth_context[:, 1:, :, :], current_depth_context[:, -1:, :, :]], dim=1)
+
+                        # Update the counter for the while loop.
+                        num_actions_generated += current_chunk_size
+                    
+                    # --- 3. Finalize prediction and calculate loss ---
+                    # Combine the list of single predicted actions into one final trajectory tensor.
+                    denormalized_prediction = torch.cat(rollout_predictions_list, dim=1)
+                    
+                    # For visualization, we can show the initial (padded) input state.
+                    denormalized_input_state = denormalize_actions(current_state_context, normalization_stats["action_stats"])
+
+                    if SHOW_RAI:
+                        show_data_agains_prediction(cfg, env, denormalized_target.squeeze(0).cpu(), denormalized_prediction.squeeze(0).cpu())
+                    
+                    loss = loss_fn(denormalized_prediction, denormalized_target)
+                    total_loss += loss.item()
+
+                    # CRITICAL: Increment the sample counter to avoid an infinite loop.
+                    i += prediction_horizon_N
                 # =================================================================
                 # END: LOGIC FOR PADDED DATA VALIDATION
                 # =================================================================
@@ -255,7 +307,7 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
                     # START: LOGIC FOR REUSING/ROLLING OUT PREDICTIONS
                     # =================================================================\
                     if REUSE_DATA:
-                        if i != 0 and SHOW_RAI:
+                        if i != 0 and SHOW_RAI and diff < 1e-4:
                             show_state_input_seq(cfg, env, old_seq.squeeze(0).cpu(), [0, 0, 1, .9], prefix="old_")
                         # --- Autoregressive Rollout Simulation with a Step Size ---
 
@@ -274,10 +326,12 @@ def calculate_validation_loss(cfg: DictConfig) -> None:
                         num_actions_generated = 0
                         while num_actions_generated < prediction_horizon_N:
                             # Get the model's prediction for the next N steps based on the current context
-                            if i >= 0:
+                            if i == 0:
                                 predicted_action_sequence = model(current_depth_context, current_state_context)
-                            else:
+                            elif i>0 and diff < 1e-4:
                                 predicted_action_sequence = model(current_depth_context, normalize_state(old_seq, normalization_stats["action_stats"]))
+                            else:
+                                predicted_action_sequence = model(current_depth_context, current_state_context)
 
                             # --- NEW: Logic to handle chunks ---
                             # Determine how many actions to take in this iteration.
