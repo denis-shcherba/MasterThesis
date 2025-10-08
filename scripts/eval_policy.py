@@ -208,7 +208,7 @@ def eval_policy(cfg: DictConfig) -> None:
                 # Stack history into a batch for the model
                 depth_seq = torch.stack(padded_depth_list, dim=1)
                 state_seq = torch.stack(padded_state_list, dim=1)
-                test_depth_sequence(depth_seq.cpu().numpy())
+                #test_depth_sequence(depth_seq.cpu().numpy())
 
                 show_state_input_seq(cfg, env, denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze(), color=[0, 1, 0, .9])
                 with torch.no_grad():

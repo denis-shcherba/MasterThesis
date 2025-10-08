@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple
-
+from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from models.common.Conditional1DUnet import ConditionalUnet1D 
 
 class MLPHead(nn.Module):
     """
@@ -336,3 +337,75 @@ class TransformerHead(nn.Module):
         ) # Shape: (B, m, action_dim)
         
         return self.output_activation(predicted_chunk)
+
+
+class DiffusionHead(nn.Module):
+    def __init__(self, input_dim, action_dim, pred_horizon, num_diffusion_iters, down_dims: list):
+        super().__init__()
+        self.action_dim = action_dim
+        self.pred_horizon = pred_horizon
+        self.num_diffusion_iters = num_diffusion_iters
+
+        # The core noise prediction network
+        self.noise_pred_net = ConditionalUnet1D(
+            input_dim=action_dim,
+            global_cond_dim=input_dim,
+            down_dims=down_dims,
+        )
+
+        # The noise scheduler
+        self.noise_scheduler = DDPMScheduler(
+            num_train_timesteps=self.num_diffusion_iters,
+            beta_schedule='squaredcos_cap_v2',
+            clip_sample=True,
+            prediction_type='epsilon'
+        )
+
+    def forward(self, global_cond, true_actions=None):
+        """
+        A single forward method that handles both training and inference.
+        Its behavior is determined by the presence of `true_actions`.
+        """
+        # --- LOSS COMPUTATION LOGIC (for Training and Validation) ---
+        # If ground-truth actions are provided, we compute the loss.
+        if true_actions is not None:
+            B = true_actions.shape[0]
+            device = true_actions.device
+            
+            # 1. The target is the noise we are about to add
+            noise_target = torch.randn(true_actions.shape, device=device)
+            
+            timesteps = torch.randint(
+                0, self.noise_scheduler.config.num_train_timesteps,
+                (B,), device=device
+            ).long()
+
+            noisy_actions = self.noise_scheduler.add_noise(true_actions, noise_target, timesteps)
+            
+            # 2. The prediction is the output of the network
+            noise_pred = self.noise_pred_net(noisy_actions, timesteps, global_cond=global_cond)
+            
+            # Return a dictionary for your external loss function
+            return {'noise_pred': noise_pred, 'noise_target': noise_target}
+
+        # If no ground-truth actions are given, we generate an action sequence from noise.
+        else:
+            with torch.inference_mode():
+                B = global_cond.shape[0]
+                device = global_cond.device
+                
+                # Start with pure noise
+                action_from_noise = torch.randn((B, self.pred_horizon, self.action_dim), device=device)
+                self.noise_scheduler.set_timesteps(self.num_diffusion_iters)
+
+                # Iteratively denoise
+                for k in self.noise_scheduler.timesteps:
+                    noise_pred = self.noise_pred_net(action_from_noise, k, global_cond=global_cond)
+                    
+                    action_from_noise = self.noise_scheduler.step(
+                        model_output=noise_pred,
+                        timestep=k,
+                        sample=action_from_noise
+                    ).prev_sample
+                
+                return action_from_noise

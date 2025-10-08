@@ -1,11 +1,11 @@
 defaults:
   - _self_  
-  - model: transformer_depth
+  - model: diffusion_depth
   - loss: default_3d_mse
   - optimizer: adam
   - data: depth
   - trainer: steps
-  - scheduler: cosine_warmup
+  - scheduler: cosine
 train:
   batch_size: 128
   num_workers: 8

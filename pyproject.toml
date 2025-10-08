@@ -33,7 +33,8 @@ dependencies = [
     "wandb",
     "tqdm",
     "gymnasium",
-    "transformers"
+    "transformers",
+    "diffusers"
 ]
 
 [project.urls]

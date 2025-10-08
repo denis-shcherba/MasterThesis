@@ -97,12 +97,6 @@ def train_policy(cfg: DictConfig) -> None:
         log.info(f"Total trainable parameters: {total_params:,}")
 
         pointnet_params = 0
-        if hasattr(model, 'pointnet') and model.pointnet is not None:
-            pointnet_params = sum(p.numel() for p in model.pointnet.parameters() if p.requires_grad)
-            log.info(f"  - PointNet parameters: {pointnet_params:,} ({pointnet_params/total_params*100:.2f}%)")
-        else:
-            log.warning("Model does not have a 'pointnet' component, skipping PointNet parameter count.")
-
 
         policy_specific_params = 0
         component_params_sum = pointnet_params

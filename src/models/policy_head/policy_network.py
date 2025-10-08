@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from models.perception.pointnet import PointNet
 from models.perception.depthimageencoder import DepthImageEncoder
-from models.policy_head.policy_head import MLPHead, ResidualMLPHead, TransformerHead
+from models.policy_head.policy_head import MLPHead, ResidualMLPHead, TransformerHead, DiffusionHead
 import math
 import inspect
 from typing import Optional, Tuple
@@ -162,7 +162,7 @@ class MultiModalPolicy(nn.Module):
     stateless (MLP) and stateful (GRU/Transformer) policy heads.
     """
 
-    def __init__(self, num_points=1024, feature_dim=256,
+    def __init__(self, feature_dim=256,
                  state_dim=0, action_dim=6,
                  dropout_rate=0.3, fusion_method='concat',
                  time_encoding='none', time_embedding_dim=256, max_timesteps=64,
@@ -176,12 +176,15 @@ class MultiModalPolicy(nn.Module):
                  num_layers: int = 4,
                  num_heads: int = 4,
                  output_activation: str = "tanh",
-                 prediction_length: int = None
+                 prediction_length: int = None,
+                 # for Diffusion
+                 num_diffusion_iters: int = 10,
+                 down_dims: list = [64, 128, 256],
                  ):
         super(MultiModalPolicy, self).__init__()
         
         # Store configuration
-        self.num_points = num_points
+
         self.feature_dim = feature_dim
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -193,9 +196,7 @@ class MultiModalPolicy(nn.Module):
         self.prediction_length = prediction_length if prediction_length is not None else context_length
 
         # Observation encoder
-        if self.observation_mode == 'points':
-            self.obs_encoder = PointNet(num_points=num_points, feature_dim=feature_dim, dropout_rate=dropout_rate)
-        elif self.observation_mode == 'depth':
+        if self.observation_mode == 'depth':
             self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
         else:
             raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
@@ -216,11 +217,9 @@ class MultiModalPolicy(nn.Module):
                     nn.ReLU(),
                     nn.Linear(512, feature_dim), # output matches obs_feature_dim
                 )
-            # For 'add' fusion, policy_input_dim also doesn't change
 
-        # IMPORTANT: Only add time encoding for non-transformer heads
-        # Transformer handles positional encoding internally
-        if policy_head_type != 'transformer' and time_encoding != 'none':
+        # IMPORTANT: Only add time encoding for non-transformer and non diffusion heads, i.e. mlp
+        if policy_head_type not in ['transformer', 'diffusion'] and time_encoding != 'none':
             self.time_encoder = self._create_time_encoder(time_encoding, time_embedding_dim, max_timesteps)
             policy_input_dim += time_embedding_dim
         else:
@@ -258,6 +257,22 @@ class MultiModalPolicy(nn.Module):
                 dropout=dropout_rate,
                 output_activation=output_activation, # Pass the activation here
             )
+        elif policy_head_type == 'diffusion':
+
+            print(f"DiffusionHead: input_dim={policy_input_dim}, action_dim={action_dim}")
+            print(f"Expected cond_dim in ConditionalResidualBlock1D: {256 + policy_input_dim}")
+            # If using state features with concat fusion, policy_input_dim = 512
+            # But we need to account for the diffusion timestep embedding (256)
+            # that ConditionalUnet1D adds internally
+
+            # Option 1: Pass the full policy_input_dim (includes state if concat)
+            self.policy_head = DiffusionHead(
+                input_dim=policy_input_dim,  # 512 for concat, 256 otherwise
+                action_dim=self.action_dim,
+                pred_horizon=self.prediction_length, 
+                num_diffusion_iters=num_diffusion_iters,
+                down_dims=down_dims,
+        )
         else:
             raise ValueError(f"Unknown policy_head_type: {policy_head_type}")
 
@@ -273,7 +288,7 @@ class MultiModalPolicy(nn.Module):
         raise ValueError(f"Unknown time_encoding method: {encoding_type}")
 
     def forward(self, observations, states=None, timestep=None, 
-            prev_actions=None, return_full_sequence=False) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
+            prev_actions=None, return_full_sequence=False, true_actions=None) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass through the policy. Handles both single-step and sequence data.
         
@@ -377,7 +392,15 @@ class MultiModalPolicy(nn.Module):
             else:
                 return action_seq[:, -1, :]  # Last action only
 
-
+        elif self.policy_head_type == 'diffusion':
+            # Prepare the conditioning vector. We'll use the feature from the
+            # last observation step in the sequence as the condition.
+            cond_features = fused_features.view(batch_size, seq_len, -1)[:, -1, :]
+            
+            print(f"DEBUG: cond_features.shape = {cond_features.shape}")  # Should be [128, 512]
+            # Now, make a single, clean call to the diffusion head's forward method.
+            # It will handle the training/inference logic internally.
+            return self.policy_head(global_cond=cond_features, true_actions=true_actions)
         else:
             raise ValueError(f"Unknown policy_head_type: {self.policy_head_type}")
         
@@ -467,7 +490,6 @@ def create_model(model_cfg):
     """
     model = create_policy(
         policy_type=model_cfg.get('type'),
-        num_points=model_cfg.get('num_points', 1024),
         feature_dim=model_cfg.get('feature_dim', 256),
         action_dim=model_cfg.get('action_dim', 7),
         mlp_hidden_dims=model_cfg.get('mlp_hidden_dims', [256, 128]),
@@ -490,6 +512,10 @@ def create_model(model_cfg):
         embed_dim=model_cfg.get('embed_dim', 256),
         num_layers=model_cfg.get('num_layers', 4),
         num_heads=model_cfg.get('num_heads', 4),
+        # for diffusion
+        num_diffusion_iters=model_cfg.get('num_diffusion_iters', 10),
+        down_dims=model_cfg.get('down_dims', [64, 128, 256]),
+        
     )
     return model
 

@@ -52,7 +52,6 @@ def create_scheduler(scheduler_cfg, optimizer):
             T_max=scheduler_cfg.get('T_max', 100),
             eta_min=scheduler_cfg.get('eta_min', 1e-6)
         )
-    # TODO
     elif scheduler_type == 'cosine_warmup':
         total_steps = scheduler_cfg.get('total_steps', None)
         if total_steps is None:
@@ -379,8 +378,41 @@ class ActionPolicyTrainer(BaseTrainer):
         loss = self.criterion(pred_actions, target_action)
         return loss
 
+class DiffusionPolicyTrainer(BaseTrainer):
+    """
+    Trainer for a diffusion policy.
+    The model is expected to return a dictionary with 'noise_pred' and 'noise_target'
+    during training, and the criterion should be a simple MSE loss.
+    """
+    def _compute_loss(self, batch):
+        # 1. Move batch to the correct device
+        # Note: Your dataloader should provide observation and target action sequences
+        batch = self.move_to_device(batch)
+        obs_seq = batch["observation_sequence"]
+        state_seq = batch.get("previous_actions_sequence") # Assuming you might have this
+        target_actions_seq = batch["target_actions_sequence"]
+        
+        # 2. Forward pass through the model
+        # During training, the model's forward pass requires the `true_actions`
+        # and will return the dictionary we need.
+        outputs = self.model(
+            observations=obs_seq, 
+            states=state_seq, 
+            true_actions=target_actions_seq
+        )
+        
+        # 3. Compute loss using the prediction and target from the model's output
+        # Your self.criterion should be nn.MSELoss for this trainer.
+        loss = self.criterion(outputs['noise_pred'], outputs['noise_target'])
+        
+        return loss
 
-from tqdm import tqdm
+    def move_to_device(self, batch):
+        # You can reuse or inherit this helper method
+        if isinstance(batch, dict):
+            return {key: value.to(self.device) for key, value in batch.items() if isinstance(value, torch.Tensor)}
+        return batch # Or handle other types if necessary
+    
 
 class WaypointTimingTrainer(BaseTrainer):
     """
@@ -437,6 +469,9 @@ def create_trainer(model, optimizer, criterion, device, cfg):
     """
     if cfg.get("is_waypointPlusTimings", False):
         return WaypointTimingTrainer(model, optimizer, criterion, device, cfg)
+
+    elif cfg.model.policy_head_type == 'diffusion':
+        return DiffusionPolicyTrainer(model, optimizer, criterion, device, cfg)
 
     else:
         return SequencePolicyTrainer(model, optimizer, criterion, device, cfg)
