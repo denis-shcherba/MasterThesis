@@ -150,25 +150,37 @@ class BaseTrainer(ABC):
                 pbar.set_postfix({'Loss': f'{loss.item():.6f}'})
         return total_loss / num_batches if num_batches > 0 else float('inf')
 
-    def save_checkpoint(self, counter_value, is_best=False):
-        """Saves a checkpoint using either epoch or step as the counter."""
-        checkpoint = {
-            'counter': counter_value,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses,
-            'best_val_loss': self.best_val_loss,
-            'config': dict(self.cfg)
-        }
-        if self.scheduler is not None:
-            checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
-        checkpoint_path = self.output_dir / 'latest_checkpoint.pth'
-        torch.save(checkpoint, checkpoint_path)
-        if is_best:
-            best_path = self.output_dir / 'best_checkpoint.pth'
-            torch.save(checkpoint, best_path)
-            log.info(f"New best model saved with validation loss: {self.best_val_loss:.6f}")
+    def save_checkpoint(self, counter_value, is_best=False, save_path=None):
+            """
+            Saves a checkpoint. Always saves a 'latest_checkpoint.pth'.
+            If is_best, also saves 'best_checkpoint.pth'.
+            If save_path is provided, also saves to that specific path.
+            """
+            checkpoint = {
+                'counter': counter_value,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'train_losses': self.train_losses,
+                'val_losses': self.val_losses,
+                'best_val_loss': self.best_val_loss,
+                'config': dict(self.cfg)
+            }
+            if self.scheduler is not None:
+                checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
+
+            # Always save the latest checkpoint
+            latest_path = self.output_dir / 'latest_checkpoint.pth'
+            torch.save(checkpoint, latest_path)
+
+            # Save the best checkpoint if applicable
+            if is_best:
+                best_path = self.output_dir / 'best_checkpoint.pth'
+                torch.save(checkpoint, best_path)
+                log.info(f"New best model saved with validation loss: {self.best_val_loss:.6f}")
+
+            # Save to a custom path if one was provided (for periodic checkpoints)
+            if save_path:
+                torch.save(checkpoint, save_path)
     
     def _run_training_loop(self, train_loader, val_loader):
         is_step_based = 'total_steps' in self.cfg.trainer

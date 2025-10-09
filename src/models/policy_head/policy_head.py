@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple
-from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from diffusers import DDPMScheduler, DDIMScheduler
 from models.common.Conditional1DUnet import ConditionalUnet1D 
 
 class MLPHead(nn.Module):
