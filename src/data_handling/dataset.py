@@ -17,7 +17,7 @@ class ManipulationDataset(Dataset):
         is_regression: bool = False,
         is_waypointPlusTimings: bool = False,
         sequence_length: int = 1,
-        future_sequence_length: int = None,  # New parameter for future prediction length
+        future_sequence_length: int = None,
         action_dim: int = 9,
         num_points: int = 1000,
         normalize_depth: bool = True,
@@ -35,7 +35,6 @@ class ManipulationDataset(Dataset):
         self.is_regression = is_regression
         self.is_waypointPlusTimings = is_waypointPlusTimings
         self.sequence_length = sequence_length
-        # If future_sequence_length is not specified, use the same as sequence_length
         self.future_sequence_length = future_sequence_length if future_sequence_length is not None else sequence_length
         self.action_dim = action_dim
         self.num_points = num_points
@@ -75,19 +74,18 @@ class ManipulationDataset(Dataset):
                 else:
                     obs_shape = f[f'{demo_key}/points'].shape
                 
-                # Basic validation
                 if len(path_shape) != 2 or path_shape[1] != self.action_dim or obs_shape[0] != path_shape[0]:
                     continue
                 
-                meta = {'demo_id': demo_idx, 'demo_key': demo_key, 'num_timesteps': path_shape[0]}
+                num_timesteps = path_shape[0]
+                meta = {'demo_id': demo_idx, 'demo_key': demo_key, 'num_timesteps': num_timesteps}
                 self.demo_meta.append(meta)
                 
-                num_timesteps = path_shape[0]
-                
-                # For seq2seq imitation: we need enough timesteps for both past and future sequences
-                total_needed = self.sequence_length + self.future_sequence_length
-                if num_timesteps >= total_needed:
-                    for t in range(num_timesteps - total_needed + 1):
+                # A sample is valid as long as we can fetch a full future sequence.
+                # The history can be partial (we will pad it).
+                if num_timesteps >= self.future_sequence_length:
+                    # 't' here represents the start index of the FUTURE sequence.
+                    for t in range(num_timesteps - self.future_sequence_length + 1):
                         self.valid_indices.append((demo_idx, t))
                 
         if not self.demo_meta:
@@ -190,44 +188,71 @@ class ManipulationDataset(Dataset):
         return len(self.valid_indices)
 
     def __getitem__(self, idx):
+        """
+        MODIFIED: Fetches data and applies left-padding to history sequences
+        if they fall before the start of a demonstration.
+        """
         if not hasattr(self, 'h5_file'):
             self.h5_file = h5py.File(self.h5_file_path, 'r', libver='latest', swmr=True)
 
-        demo_idx, start_t = self.valid_indices[idx]
+        # A valid index now points to the start of the FUTURE sequence
+        demo_idx, future_start_t = self.valid_indices[idx]
         meta = self.demo_meta[demo_idx]
         
-        # Define time ranges for past and future sequences
-        past_end_t = start_t + self.sequence_length
-        future_start_t = past_end_t  # Future starts right after past ends
+        # 1. --- Handle the FUTURE (target) sequence ---
         future_end_t = future_start_t + self.future_sequence_length
-        
-        # Load observations for the past sequence
-        obs_sequence = self._load_obs(meta['demo_key'], start_t, past_end_t)
-        
-        # Load past actions (input to the model)
-        past_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][start_t:past_end_t].astype(np.float32)
-        
-        # Load future actions (target for the model to predict)
         future_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][future_start_t:future_end_t].astype(np.float32)
 
-        # Load book parameters
-        book_params = self.h5_file[f"{meta['demo_key']}/book_params"][...].astype(np.float32) if 'book_params' in self.h5_file[f"{meta['demo_key']}"] else np.array([0.0], dtype=np.float32)
+        # 2. --- Handle the PAST (history) sequence with PADDING ---
+        # Define the desired time range for the past sequence
+        past_start_t = future_start_t - self.sequence_length
+        past_end_t = future_start_t # Exclusive index
 
-        # Normalize if required
+        # Determine how much to pad and how much to fetch
+        num_to_pad = max(0, -past_start_t)
+        num_to_fetch = self.sequence_length - num_to_pad
+
+        # Create zero-filled tensors for padding
+        # Get the shape of a single observation to create the padded tensor
+        obs_sample_shape = self._load_obs(meta['demo_key'], 0, 1).shape[1:]
+        obs_sequence = np.zeros((self.sequence_length, *obs_sample_shape), dtype=np.float32)
+        past_actions_sequence = np.zeros((self.sequence_length, self.action_dim), dtype=np.float32)
+        
+        if num_to_fetch > 0:
+            # Fetch the portion of the history that exists in the data
+            real_data_start_t = past_end_t - num_to_fetch
+            
+            real_obs = self._load_obs(meta['demo_key'], real_data_start_t, past_end_t)
+            real_actions = self.h5_file[f"{meta['demo_key']}/path"][real_data_start_t:past_end_t].astype(np.float32)
+            
+            # Place the real data at the end of the padded tensors
+            obs_sequence[num_to_pad:] = real_obs
+            past_actions_sequence[num_to_pad:] = real_actions
+
+        # 3. --- Handle Normalization ---
+        # IMPORTANT: Normalize AFTER creating the padded sequences.
+        # This ensures the padding remains zeros and is not affected by normalization stats.
         if self.normalize_actions:
-            past_actions_sequence = self._normalize_actions(past_actions_sequence)
+            # Only normalize the parts that contain real data
+            if num_to_fetch > 0:
+                past_actions_sequence[num_to_pad:] = self._normalize_actions(past_actions_sequence[num_to_pad:])
             future_actions_sequence = self._normalize_actions(future_actions_sequence)
-            
+        
         if self.observation_mode == 'depth' and self.normalize_depth:
-            obs_sequence = np.stack([self._normalize_depth(o) for o in obs_sequence])
-            
-        # Return sequences for seq2seq imitation learning
+            if num_to_fetch > 0:
+                # Normalize each image in the sequence individually
+                normalized_obs = np.array([self._normalize_depth(img) for img in obs_sequence[num_to_pad:]])
+                obs_sequence[num_to_pad:] = normalized_obs
+
+        # 4. --- Load metadata and convert to tensors ---
+        book_params = self.h5_file[f"{meta['demo_key']}/book_params"][...].astype(np.float32) if 'book_params' in self.h5_file[f"{meta['demo_key']}"] else np.array([0.0], dtype=np.float32)
+        
         return {
             'observation_sequence': torch.from_numpy(obs_sequence).float(),
             'previous_actions_sequence': torch.from_numpy(past_actions_sequence).float(),
             'target_actions_sequence': torch.from_numpy(future_actions_sequence).float(),
             'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
-            'book_params': torch.from_numpy(book_params).float(),  # Placeholder, modify as needed
+            'book_params': torch.from_numpy(book_params).float(),
         }
     
     def _load_obs(self, demo_key, start=None, end=None):
