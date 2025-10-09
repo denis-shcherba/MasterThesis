@@ -349,7 +349,9 @@ def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
         random_seed=data_cfg.random_seed,
         is_regression=data_cfg.get('is_regression', False),
         is_waypointPlusTimings=data_cfg.get('is_waypointPlusTimings', False),
-        observation_mode=cfg.get('observation_mode', 'points')
+        observation_mode=cfg.get('observation_mode', 'points'), 
+        depth_normalization_method=data_cfg.get('depth_normalization_method', 'minmax'),
+        action_normalization_method=data_cfg.get('action_normalization_method', 'zscore')
     )
 
 

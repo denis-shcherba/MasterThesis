@@ -1,0 +1,3 @@
+checkpoint_path: outputs/final_outputs/diffusion.pth
+normalization_stats_path: outputs/final_outputs/normalization_stats_1000.yaml
+padding_strategy: zero

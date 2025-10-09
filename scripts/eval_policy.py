@@ -135,8 +135,12 @@ def eval_policy(cfg: DictConfig) -> None:
     log.info("Model set to evaluation mode.")
 
     info_dicts = []
-    sequence_length = cfg.model.context_length
-    
+    if cfg.model.policy_head_type == "diffusion":
+        sequence_length = cfg.model.prediction_length
+    else:
+        sequence_length = cfg.model.context_length
+        
+
     for evaluation in range(cfg.get("num_eval_episodes")):
         obs, info = env.reset()
 
@@ -210,11 +214,11 @@ def eval_policy(cfg: DictConfig) -> None:
                 state_seq = torch.stack(padded_state_list, dim=1)
                 #test_depth_sequence(depth_seq.cpu().numpy())
 
-                show_state_input_seq(cfg, env, denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze(), color=[0, 1, 0, .9])
+                #show_state_input_seq(cfg, env, denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze(), color=[0, 1, 0, .9])
                 with torch.no_grad():
                     action_chunk = model(depth_seq, state_seq)
                 action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])
-                show_state_input_seq(cfg, env, action_chunk.squeeze(0))
+                #show_state_input_seq(cfg, env, action_chunk.squeeze(0))
 
             action_index_in_chunk = i % action_execution_horizon
             pos = action_chunk[:, action_index_in_chunk, :].squeeze().cpu().numpy()
