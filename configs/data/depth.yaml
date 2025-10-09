@@ -24,4 +24,4 @@ random_seed: 42         # Random seed for reproducibility
 normalize_depth: true   # Normalize depth images
 normalize_actions: true # Normalize actions
 depth_normalization_method: 'minmax'  # Method for depth normalization
-action_normalization_method: 'minmax'  # Method for action normalization
+action_normalization_method: 'zscore'  # Method for action normalization

@@ -397,9 +397,6 @@ class MultiModalPolicy(nn.Module):
             # last observation step in the sequence as the condition.
             cond_features = fused_features.view(batch_size, seq_len, -1)[:, -1, :]
             
-            print(f"DEBUG: cond_features.shape = {cond_features.shape}")  # Should be [128, 512]
-            # Now, make a single, clean call to the diffusion head's forward method.
-            # It will handle the training/inference logic internally.
             return self.policy_head(global_cond=cond_features, true_actions=true_actions)
         else:
             raise ValueError(f"Unknown policy_head_type: {self.policy_head_type}")

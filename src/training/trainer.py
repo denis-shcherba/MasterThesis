@@ -116,6 +116,11 @@ class BaseTrainer(ABC):
         if self.cfg.get('train', {}).get('grad_clip', 0) > 0:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg['train']['grad_clip'])
         self.optimizer.step()
+
+        # --- THIS BLOCK IS REMOVED ---
+        # The scheduler should be stepped in the main training loop, not here.
+        # ---------------------------
+        
         return loss.item()
 
     def train_epoch(self, train_loader):
@@ -170,6 +175,8 @@ class BaseTrainer(ABC):
         total_steps = float('inf')
         max_epochs = float('inf')
         
+        checkpoint_interval = self.cfg.trainer.get('checkpoint_interval_steps', 
+                                                   self.cfg.trainer.get('eval_interval_steps', float('inf')))
         if is_step_based:
             total_steps = self.cfg.trainer.total_steps
             if self.cfg.trainer.get('max_epochs') is not None:
@@ -188,24 +195,16 @@ class BaseTrainer(ABC):
         log.info(f"Starting training...")
         if is_step_based:
             log.info(f"Targeting {total_steps} steps (~{total_steps / steps_per_epoch:.2f} epochs).")
-            # Create a single progress bar for all steps
             pbar = tqdm(total=total_steps, desc="Training Steps")
         else:
             log.info(f"Targeting {max_epochs} epochs (~{max_epochs * steps_per_epoch} steps).")
 
         try:
             while steps_done < total_steps and epoch < max_epochs:
-                # For epoch-based training, create a new progress bar each epoch
                 if not is_step_based:
                     pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{max_epochs}")
                     
-                # Create an iterator for the current epoch
-                if is_step_based:
-                    # Don't wrap in tqdm for step-based since we have the main progress bar
-                    batch_iterator = train_loader
-                else:
-                    # Use the epoch progress bar we created above
-                    batch_iterator = pbar
+                batch_iterator = train_loader if is_step_based else pbar
                 
                 epoch_losses = []
                 
@@ -220,33 +219,40 @@ class BaseTrainer(ABC):
                         epoch_losses.append(loss_value)
                         steps_done += 1
 
-                        # Update progress bars
+                        # --- ADD THIS BLOCK ---
+                        # Step the scheduler here if it's step-based.
+                        # Exclude ReduceLROnPlateau, which is handled after validation.
+                        if is_step_based and self.scheduler is not None and not isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                            self.scheduler.step()
+                        # ----------------------
+
                         if is_step_based:
-                            avg_loss = sum(epoch_losses[-100:]) / len(epoch_losses[-100:])  # Last 100 steps
+                            avg_loss = sum(epoch_losses[-100:]) / len(epoch_losses[-100:])
                             pbar.set_postfix({
                                 'Loss': f'{loss_value:.6f}', 
                                 'Avg': f'{avg_loss:.6f}',
+                                'LR': f"{self.optimizer.param_groups[0]['lr']:.2e}",
                                 'Epoch': f'{epoch + 1}',
-                                'Step': steps_done
                             })
                             pbar.update(1)
-                        else:
-                            # For epoch-based, the postfix is handled by the epoch pbar
-                            pass
 
-                        # Logging and evaluation for step-based training
+                            if steps_done % checkpoint_interval == 0:
+                                periodic_path = self.output_dir / f'step_{steps_done}_checkpoint.pth'
+                                self.save_checkpoint(steps_done, is_best=False, save_path=periodic_path)
+                                log.info(f"Saved periodic checkpoint at step {steps_done}")
+                        else:
+                            avg_epoch_loss = sum(epoch_losses) / len(epoch_losses)
+                            pbar.set_postfix({'Loss': f'{loss_value:.6f}', 'Avg': f'{avg_epoch_loss:.6f}'})
+
                         if is_step_based:
                             log_data = {}
-                            # Check if it's time to log training loss
                             if steps_done % log_interval == 0:
                                 log_data['train_loss'] = loss_value
 
-                            # Check if it's time to evaluate
                             if steps_done % eval_interval == 0:
-                                # Temporarily hide the main progress bar during validation
                                 pbar.clear()
                                 val_loss = self.validate_epoch(val_loader)
-                                pbar.refresh()  # Restore the main progress bar
+                                pbar.refresh()
                                 
                                 self.val_losses.append(val_loss)
                                 is_best = val_loss < self.best_val_loss
@@ -256,30 +262,28 @@ class BaseTrainer(ABC):
                                 self.save_checkpoint(steps_done, is_best)
                                 log.info(f"Step {steps_done}: Train Loss: {loss_value:.6f}, Val Loss: {val_loss:.6f}")
                                 
-                                if self.scheduler is not None and isinstance(self.scheduler, ReduceLROnPlateau):
-                                    self.scheduler.step(val_loss)
-                                
                                 log_data['val_loss'] = val_loss
                                 log_data['learning_rate'] = self.optimizer.param_groups[0]['lr']
 
-                            # If there is anything to log, send it to wandb with the correct step.
                             if log_data and self.cfg.get('wandb', {}).get('enabled', False):
                                 wandb.log(log_data, step=steps_done)
-
 
                 # End of epoch processing
                 epoch += 1
                 
                 if not is_step_based:
-                    # Close the epoch progress bar
                     if hasattr(pbar, 'close'):
                         pbar.close()
                         
-                    # Handle epoch-based validation and logging
-                    if self.scheduler is not None and not isinstance(self.scheduler, ReduceLROnPlateau):
+                    # The epoch-based scheduler step is correctly placed here.
+                    if self.scheduler is not None and not isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                         self.scheduler.step()
                     
                     val_loss = self.validate_epoch(val_loader)
+                    # For ReduceLROnPlateau, step with the validation loss
+                    if self.scheduler is not None and isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        self.scheduler.step(val_loss)
+
                     self.val_losses.append(val_loss)
                     is_best = val_loss < self.best_val_loss
                     if is_best:
@@ -298,13 +302,11 @@ class BaseTrainer(ABC):
                         })
 
         finally:
-            # Make sure to close the progress bar
             if is_step_based and 'pbar' in locals():
                 pbar.close()
 
         log.info(f"Training completed! Best validation loss: {self.best_val_loss:.6f}")
         
-        # Save training curves
         curves = {"train_losses": self.train_losses, "val_losses": self.val_losses}
         curves_path = self.output_dir / "training_curves.json"
         with open(curves_path, "w") as f:

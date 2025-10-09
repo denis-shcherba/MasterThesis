@@ -5,7 +5,7 @@ defaults:
   - optimizer: adam
   - data: depth
   - trainer: steps
-  - scheduler: cosine
+  - scheduler: cosine_warmup
 train:
   batch_size: 128
   num_workers: 8

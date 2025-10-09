@@ -1,4 +1,4 @@
-total_steps: 25000
+total_steps: 50000
 log_interval_steps: 250
 eval_interval_steps: 250
 checkpoint_interval_steps: 10000
