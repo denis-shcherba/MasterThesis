@@ -5,19 +5,19 @@ from envs.shelf import generate_shelf
 from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
-ROBOT_MODE = "floating" # "normal" or "floating"
+ROBOT_MODE = "normal" # "normal" or "floating"
 COLLECT_DATA = True
 PATH_MODE = "POS3D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
-CAMERA = "cameraStatic"  # or "cameraWrist"
+CAMERA = "cameraWrist"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
 DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 1_000
-VISUALIZE = False  # If true, the simulation will be visualized
-SAVE_BOOK_PARAMS = True  # If true, the parameters of the generated books will be saved to a file
+NUM_SAMPLES = 10_000
+VISUALIZE = True  # If true, the simulation will be visualized
+SAVE_BOOK_PARAMS = False  # If true, the parameters of the generated books will be saved to a file
 
 noise_dict = {
     # "stateNoise": {

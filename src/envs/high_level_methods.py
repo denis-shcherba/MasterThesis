@@ -170,24 +170,24 @@ class RobotEnviroment:
     def pull(self, object_, placePosition, accumulated_collisions=True, get_observation=False) -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         
-        #  --- Noise addition for demos ---
-        path1Offset = np.zeros((32, 3))
-        path2Offset = np.zeros((32, 3))
+        # #  --- Noise addition for demos ---
+        # path1Offset = np.zeros((32, 3))
+        # path2Offset = np.zeros((32, 3))
 
-        if self.noise_dict:
-            if self.state_noise.get("type") == "singleGaussian":  
-                for i in range(len(path1Offset)):
-                    if np.random.rand() < self.state_noise.get("prob", 0):
-                        path1Offset[i] += np.random.normal(self.state_noise.get("mean"), self.state_noise.get("std"), size=3)
-                for i in range(len(path1Offset)):
-                    if np.random.rand() < self.state_noise.get("prob", 0):
-                        path2Offset += np.random.normal(self.state_noise.get("mean"), self.state_noise.get("std"), size=3)
+        # if self.noise_dict:
+        #     if self.state_noise.get("type") == "singleGaussian":  
+        #         for i in range(len(path1Offset)):
+        #             if np.random.rand() < self.state_noise.get("prob", 0):
+        #                 path1Offset[i] += np.random.normal(self.state_noise.get("mean"), self.state_noise.get("std"), size=3)
+        #         for i in range(len(path1Offset)):
+        #             if np.random.rand() < self.state_noise.get("prob", 0):
+        #                 path2Offset += np.random.normal(self.state_noise.get("mean"), self.state_noise.get("std"), size=3)
 
-            elif self.state_noise.get("type") == "TS":
-                # TODO add transition simulation
-                pass
+        #     elif self.state_noise.get("type") == "TS":
+        #         # TODO add transition simulation
+        #         pass
 
-            # -----------------------------------
+        #     # -----------------------------------
 
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         M = manip.ManipulationModelling()
@@ -231,8 +231,8 @@ class RobotEnviroment:
 
         path2 = M2.solve()
 
-        path1 += path1Offset
-        path2 += path2Offset
+        # path1 += path1Offset
+        # path2 += path2Offset
 
         if not M2.feasible:
             print("INFEASIBLE AT M2")
