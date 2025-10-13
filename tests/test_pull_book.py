@@ -7,7 +7,7 @@ from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "normal" # "normal" or "floating"
 COLLECT_DATA = True
-PATH_MODE = "POS3D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
+PATH_MODE = "SE39D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
 CAMERA = "cameraWrist"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
@@ -15,8 +15,8 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 10_000
-VISUALIZE = True  # If true, the simulation will be visualized
+NUM_SAMPLES = 2_000
+VISUALIZE = False  # If true, the simulation will be visualized
 SAVE_BOOK_PARAMS = False  # If true, the parameters of the generated books will be saved to a file
 
 noise_dict = {
@@ -104,7 +104,7 @@ for sample in samples:
                 .setQuaternion(q.asArr()) \
                 .setShape(ry.ST.ssBox, size=[box[0], box[1], box[2], 0.005]) \
                 .setColor(np.random.rand(3) if RANDOM_COLOR else [1, 0, 0]) \
-                .setContact(1) \
+                .setContact(0) \
                 .setMass(.1) \
                 .setAttribute("friction", .01) 
         C.view(False)
@@ -121,7 +121,7 @@ for sample in samples:
 
         roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE, noise_dict=noise_dict)
 
-        success = roboenv.pull("target_book_0", target, accumulated_collisions=False, get_observation=COLLECT_DATA)
+        success = roboenv.pull_real("target_book_0", target, accumulated_collisions=True, get_observation=COLLECT_DATA)
         
 
         if success and COLLECT_DATA:
@@ -132,9 +132,9 @@ for sample in samples:
             if SAVE_BOOK_PARAMS:
                 demo_group.create_dataset("book_params", data=book_params)
 
-            if PATH_MODE == "JOINT7DSPLINE":
+            if PATH_MODE == "JOINT7DSPLINE" or PATH_MODE == "JOINT7D":
                 demo_group.create_dataset("path", data=roboenv.path)
-            if PATH_MODE == "SE39DSPLINE":
+            if PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D":
                 se3_path = np.zeros((roboenv.path.shape[0], 9))
                 
                 for i in range(roboenv.path.shape[0]):
@@ -147,11 +147,7 @@ for sample in samples:
                 # Now use se3_path instead of the original path
                 demo_group.create_dataset("path", data=se3_path)
 
-            elif PATH_MODE == "POS3DSPLINE":
-                # save the spline path 3D control points
-                demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
-
-            elif PATH_MODE == "POS3D":
+            elif PATH_MODE == "POS3DSPLINE" or PATH_MODE == "POS3D":
                 # save the spline path 3D control points
                 demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
 
