@@ -15,4 +15,4 @@ observation_mode: depth
 # Diffusion Head settings
 prediction_length: 8       # CRUCIAL: Renamed from pred_horizon. Defines the length of the generated action trajectory.
 num_diffusion_iters: 100    # NEW & ESSENTIAL: Number of denoising steps. Controls the trade-off between sample quality and inference speed.
-down_dims: [64, 128, 256] #[256, 512, 1024]
+down_dims: [128, 256, 512] #[256, 512, 1024]

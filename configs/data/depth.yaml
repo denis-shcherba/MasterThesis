@@ -1,5 +1,5 @@
 # Path to the HDF5 file containing demonstrations
-h5_file_path: demos/depth1000tries_withbook.h5
+h5_file_path: demos/se9d2000tries.h5
 
 # Data loading parameters
 batch_size: ${train.batch_size}  # Batch size for training
@@ -8,7 +8,7 @@ num_workers: ${train.num_workers}
 # Sequence settings
 sequence_length: 8  # Number of consecutive timesteps to use as input
 future_sequence_length: 8
-action_dim: 3       # Dimension of action space 
+action_dim: 9       # Dimension of action space 
 
 # Dataset split
 train_split: 0.8    # Fraction of data to use for training
@@ -24,4 +24,4 @@ random_seed: 42         # Random seed for reproducibility
 normalize_depth: true   # Normalize depth images
 normalize_actions: true # Normalize actions
 depth_normalization_method: 'minmax'  # Method for depth normalization
-action_normalization_method: 'zscore'  # Method for action normalization
+action_normalization_method: 'minmax'  # Method for action normalization

@@ -1,7 +1,7 @@
 defaults:
   - _self_  
-  - model: diffusion_depth
-  - loss: default_3d_mse
+  - model: transformer_depth
+  - loss: default_9d
   - optimizer: adam
   - data: depth
   - trainer: steps
@@ -23,4 +23,4 @@ is_regression: false
 is_waypointPlusTimings: false
 
 wandb:
-  enabled: true
+  enabled: false
