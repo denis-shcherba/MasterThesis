@@ -25,3 +25,8 @@ normalize_depth: true   # Normalize depth images
 normalize_actions: true # Normalize actions
 depth_normalization_method: 'minmax'  # Method for depth normalization
 action_normalization_method: 'minmax'  # Method for action normalization
+
+#augmentation
+augment_data: true      # Whether to apply data augmentation
+depth_dropout_prob: 0.001 # Probability of dropping out depth values during augmentation
+depth_noise_scale: 0.01 # Scale of noise to add to depth values during augmentation

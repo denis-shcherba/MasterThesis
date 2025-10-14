@@ -1,7 +1,7 @@
 # Base policy configuration
 type: multimodal         # Options: pointcloud, multimodal
 
-action_dim: 3            # Dimension of action space (SE3 9D representation)
+action_dim: 9            # Dimension of action space (SE3 9D representation)
 dropout_rate: 0.2        # Dropout rate for regularization
 output_activation: null  
 policy_head_type: transformer

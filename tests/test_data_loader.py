@@ -26,8 +26,8 @@ def test_depth_sequence(depth_batch):
     for i in range(depth_batch.shape[0]):
 
         depth_seq = depth_batch[i]
-        # create a figure with 2 rows x 5 cols for the 10 images
-        fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+        # create a figure with 2 rows x 4 cols for the 8 images
+        fig, axes = plt.subplots(2, 4, figsize=(15, 6))
 
         for j, ax in enumerate(axes.flat):
             ax.imshow(depth_seq[j], cmap='viridis')  # use 'gray' if you prefer
@@ -115,7 +115,7 @@ def train_policy(cfg: DictConfig) -> None:
         log.info(f"Batch shapes:")
         for key, value in batch.items():
             log.info(f"  {key}: {value.shape}")
-        test_pos_sequence(batch['previous_actions_sequence'], batch['target_actions_sequence'])  # Visualize pos sequence from the first batch
+        #test_pos_sequence(batch['previous_actions_sequence'], batch['target_actions_sequence'])  # Visualize pos sequence from the first batch
         test_depth_sequence(batch['observation_sequence'])  # Visualize depth sequence from the first batch
         break
 

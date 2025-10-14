@@ -117,10 +117,6 @@ class BaseTrainer(ABC):
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg['train']['grad_clip'])
         self.optimizer.step()
 
-        # --- THIS BLOCK IS REMOVED ---
-        # The scheduler should be stepped in the main training loop, not here.
-        # ---------------------------
-        
         return loss.item()
 
     def train_epoch(self, train_loader):
