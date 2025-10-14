@@ -149,7 +149,7 @@ def eval_policy(cfg: DictConfig) -> None:
         state_sequence = []
         
         action_chunk = None
-        max_episode_length = 70
+        max_episode_length = 100
 
         for i in range(max_episode_length):
             if i % action_execution_horizon == 0:

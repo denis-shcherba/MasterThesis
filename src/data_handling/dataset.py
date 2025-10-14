@@ -23,6 +23,8 @@ class ManipulationDataset(Dataset):
         normalize_depth: bool = True,
         normalize_actions: bool = True,
         augment_data: bool = False,
+        depth_dropout_prob: float = 0.05, # Percentage of pixels to drop
+        depth_noise_scale: float = 0.0001, # Scaling factor 'k' for quadratic noise
         subsample_demos: Optional[int] = None,
         train_split: float = 0.8,
         split: str = 'train',
@@ -46,6 +48,11 @@ class ManipulationDataset(Dataset):
         self.depth_normalization_method = depth_normalization_method
         self.action_normalization_method = action_normalization_method
 
+        if self.augment_data and self.split == 'train':
+            self.logger.info(f"Applying depth augmentation with dropout={depth_dropout_prob} and noise_scale={depth_noise_scale}")
+        self.depth_dropout_prob = depth_dropout_prob
+        self.depth_noise_scale = depth_noise_scale
+
         self.logger = logging.getLogger(__name__)
         self.rng = np.random.default_rng(random_seed)
         self.demo_meta: List[Dict] = []
@@ -63,6 +70,27 @@ class ManipulationDataset(Dataset):
                 self.depth_stats = self._compute_depth_normalization_stats(f)
             else:
                 self.depth_stats = None
+
+    def _augment_depth_image(self, depth_image: np.ndarray) -> np.ndarray:
+        """Applies domain randomization noise to a single depth image."""
+        augmented_image = depth_image.copy()
+
+        # 1. Add distance-dependent Gaussian noise (proportional to depth squared)
+        if self.depth_noise_scale > 0:
+            # We only add noise to valid depth pixels (non-zero)
+            valid_mask = augmented_image > 0
+            # The standard deviation of the noise is k * z^2
+            std_dev = self.depth_noise_scale * (augmented_image[valid_mask] ** 2)
+            noise = self.rng.normal(loc=0.0, scale=std_dev)
+            augmented_image[valid_mask] += noise
+
+        # 2. Apply percent-wise dropout (simulate sensor dropouts)
+        if self.depth_dropout_prob > 0:
+            dropout_mask = self.rng.random(augmented_image.shape) < self.depth_dropout_prob
+            augmented_image[dropout_mask] = 0.0 # Set dropped pixels to 0 (invalid)
+
+        # Ensure depth values remain non-negative after adding noise
+        return np.maximum(augmented_image, 0)
 
     def _index_demonstrations(self):
         with h5py.File(self.h5_file_path, 'r') as f:
@@ -225,6 +253,11 @@ class ManipulationDataset(Dataset):
             real_obs = self._load_obs(meta['demo_key'], real_data_start_t, past_end_t)
             real_actions = self.h5_file[f"{meta['demo_key']}/path"][real_data_start_t:past_end_t].astype(np.float32)
             
+            if self.augment_data and self.split == 'train' and self.observation_mode == 'depth':
+                # Apply the augmentation function to each depth image in the sequence
+                augmented_obs = np.array([self._augment_depth_image(img) for img in real_obs])
+                real_obs = augmented_obs
+
             # Place the real data at the end of the padded tensors
             obs_sequence[num_to_pad:] = real_obs
             past_actions_sequence[num_to_pad:] = real_actions
