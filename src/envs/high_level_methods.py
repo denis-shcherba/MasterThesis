@@ -16,7 +16,7 @@ class RobotEnviroment:
                  base_removal: bool=False,
                  observation_mode: str="POINTCLOUD",
                  visualize: bool=False,
-                 path_mode: str=None,
+                 path_mode: str="",
                  noise_dict: dict={}) -> None:
         self.C = C
         self.visuals = visuals
