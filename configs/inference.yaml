@@ -1,8 +1,8 @@
 defaults:
   - _self_  
-  - model: diffusion_depth
+  - model: transformer_depth
   - data: depth
-  - inference: diffusion_depth
+  - inference: transformer_depth
   - env: default_3d
 
 experiment_name: "Transformer 10 step input Inference"
@@ -10,6 +10,7 @@ observation_mode: 'depth'
 output_subdir: null
 num_eval_episodes: 500
 simulate: True
+robot_mode: "normal"
 is_waypointPlusTimings: False
 action_execution_horizon: 5
 seed: 42

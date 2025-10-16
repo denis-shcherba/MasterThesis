@@ -16,7 +16,7 @@ import envs.env  # noqa: F401
 import matplotlib.pyplot as plt
 
 log = logging.getLogger(__name__)
-
+DEBUG = False
 def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
     for i in range(state_input_seq.shape[0]):
         # Use the same reverse indexing logic as your first function
@@ -30,8 +30,8 @@ def test_depth_sequence(depth_batch):
     for i in range(depth_batch.shape[0]):
 
         depth_seq = depth_batch[i]
-        # create a figure with 2 rows x 5 cols for the 10 images
-        fig, axes = plt.subplots(2, 5, figsize=(15, 6))
+        # create a figure with 2 rows x 4 cols for the 8 images
+        fig, axes = plt.subplots(2, 4, figsize=(15, 6))
 
         for j, ax in enumerate(axes.flat):
             ax.imshow(depth_seq[j], cmap='viridis')  # use 'gray' if you prefer
@@ -94,7 +94,7 @@ def eval_policy(cfg: DictConfig) -> None:
     log.info(f"Using padding strategy: {padding_strategy}")
 
     torch.manual_seed(cfg.seed)
-    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", simulate=cfg.simulate, seed=cfg.seed)
+    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.get("robot_mode", "floating"), simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.action_execution_horizon
 
     # Model
@@ -212,13 +212,14 @@ def eval_policy(cfg: DictConfig) -> None:
                 # Stack history into a batch for the model
                 depth_seq = torch.stack(padded_depth_list, dim=1)
                 state_seq = torch.stack(padded_state_list, dim=1)
-                #test_depth_sequence(depth_seq.cpu().numpy())
-
-                #show_state_input_seq(cfg, env, denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze(), color=[0, 1, 0, .9])
+                if DEBUG:
+                    test_depth_sequence(depth_seq.cpu().numpy())
+                    show_state_input_seq(cfg, env, denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze(), color=[0, 1, 0, .9])
                 with torch.no_grad():
                     action_chunk = model(depth_seq, state_seq)
                 action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])
-                #show_state_input_seq(cfg, env, action_chunk.squeeze(0))
+                if DEBUG:
+                    show_state_input_seq(cfg, env, action_chunk.squeeze(0))
 
             action_index_in_chunk = i % action_execution_horizon
             pos = action_chunk[:, action_index_in_chunk, :].squeeze().cpu().numpy()

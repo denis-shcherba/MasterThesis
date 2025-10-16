@@ -281,9 +281,17 @@ class ShelfEnv(gym.Env):
         #print(f"Executing action: {action}")
         
         if self.simulate:
-            for _ in range(100):  # Simulate for 100 steps
-                self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
-                self.C.view()
+            if self.robot_mode == "floating":
+                for _ in range(100):  # Simulate for 100 steps
+                    self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
+                    self.C.view()
+            elif self.robot_mode == "normal":
+                print("actions", action[0], action[1], action[2])
+                #for _ in range(100):
+                self.C.addFrame(f"{np.random.randint(1, 1000000)}").setShape(ry.ST.marker, [1e-1]).setPosition([action[0], action[1], action[2]])  # Simulate for 100 steps
+                
+                #self.sim._sim.step([action[0], action[1], action[2], action[2], action[2], action[2], action[2]], 0.01, ry.ControlMode.position)
+                self.C.view(True)
 
         else:
             self.C.setJointState([action[0], action[1], action[2]])  # Assuming the first 7 values are joint angles
