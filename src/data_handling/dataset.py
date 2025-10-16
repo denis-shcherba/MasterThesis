@@ -93,6 +93,41 @@ class ManipulationDataset(Dataset):
         # Ensure depth values remain non-negative after adding noise
         return np.maximum(augmented_image, 0)
 
+    def _augment_depth_image_realistic(
+        self,
+        depth_image: np.ndarray,
+        dropout_patch_size: float = 5.0
+    ) -> np.ndarray:
+        # Maybe better alternative? TODO however, as its still not realistic
+        """Applies more realistic, spatially correlated noise to a single depth image."""
+        augmented_image = depth_image.copy()
+
+        # 1. Add distance-dependent Gaussian noise (Your implementation is already correct!)
+        if self.depth_noise_scale > 0:
+            valid_mask = augmented_image > 0
+            std_dev = self.depth_noise_scale * (augmented_image[valid_mask] ** 2)
+            noise = self.rng.normal(loc=0.0, scale=std_dev)
+            augmented_image[valid_mask] += noise
+
+        # 2. Apply realistic dropout in patches
+        if self.depth_dropout_prob > 0:
+            # Step A: Generate a random noise field
+            random_noise = self.rng.random(augmented_image.shape)
+
+            # Step B: Blur the noise to make it spatially correlated (blobby)
+            # The 'sigma' parameter controls the average size of the dropout patches.
+            correlated_noise = gaussian_filter(random_noise, sigma=dropout_patch_size)
+
+            # Step C: Create the dropout mask by thresholding the correlated noise.
+            # This selects the lowest-value regions of the blurred noise map,
+            # ensuring the total dropout percentage is what you specified.
+            dropout_mask = correlated_noise < np.percentile(correlated_noise, self.depth_dropout_prob * 100)
+
+            augmented_image[dropout_mask] = 0.0 # Set dropped pixels to 0
+
+        # Ensure depth values remain non-negative
+        return np.maximum(augmented_image, 0)
+
     def _index_demonstrations(self):
         with h5py.File(self.h5_file_path, 'r') as f:
             demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))

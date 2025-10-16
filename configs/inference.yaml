@@ -12,8 +12,10 @@ num_eval_episodes: 500
 simulate: True
 robot_mode: "normal"
 is_waypointPlusTimings: False
-action_execution_horizon: 5
+action_execution_horizon: 12
 seed: 42
+context_length: 8
+prediction_length: 16
 
 hydra:
   run:

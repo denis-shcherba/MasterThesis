@@ -16,8 +16,8 @@ max_timesteps: 64
 observation_mode: ${observation_mode}  # inherit from global config
 
 # Transformer settings
-context_length: 8 
-prediction_length: 8
+context_length: ${context_length} 
+prediction_length: ${prediction_length}
 embed_dim: 256
 num_layers: 4
 num_heads: 4

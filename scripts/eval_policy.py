@@ -12,17 +12,31 @@ import json
 from hydra.core.hydra_config import HydraConfig
 import robotic as ry
 import gymnasium as gym
-import envs.env  # noqa: F401 
+import envs.env  # noqa: F401  
 import matplotlib.pyplot as plt
 
 log = logging.getLogger(__name__)
-DEBUG = False
+DEBUG_DEPTH = False
+DEBUG_STATE = False
+
 def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
-    for i in range(state_input_seq.shape[0]):
-        # Use the same reverse indexing logic as your first function
-        previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
-        env.unwrapped.C.addFrame(prefix+f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor(color)
-        print("Previous Position:", previous_pos)
+    for name in env.unwrapped.C.getFrameNames():
+        if name.startswith(prefix+"previous_pos_"):
+            env.unwrapped.C.delFrame(name)
+    if state_input_seq.shape[1] == 3:
+        for i in range(state_input_seq.shape[0]):
+            # Use the same reverse indexing logic as your first function
+            previous_pos = state_input_seq[-(i + 1)].cpu().numpy()
+            env.unwrapped.C.addFrame(prefix+f"previous_pos_{i}").setPosition(previous_pos).setShape(ry.ST.sphere, [.015]).setColor(color)
+            print("Previous Position:", previous_pos)
+    elif state_input_seq.shape[1] == 7:
+        C2 = ry.Config()
+        C2.addConfigurationCopy(env.unwrapped.C)
+        for i in range(state_input_seq.shape[0]):
+            C2.setJointState(state_input_seq[-(i + 1)].cpu().numpy())
+
+            env.unwrapped.C.addFrame(prefix+f"previous_pos_{i}").setPosition(C2.eval(ry.FS.position, ["l_gripper"])[0]).setShape(ry.ST.sphere, [.015]).setColor(color)
+
     env.unwrapped.C.view(True)
 
 def test_depth_sequence(depth_batch):
@@ -31,6 +45,7 @@ def test_depth_sequence(depth_batch):
 
         depth_seq = depth_batch[i]
         # create a figure with 2 rows x 4 cols for the 8 images
+        # TODO handle different sequence lengths
         fig, axes = plt.subplots(2, 4, figsize=(15, 6))
 
         for j, ax in enumerate(axes.flat):
@@ -212,13 +227,14 @@ def eval_policy(cfg: DictConfig) -> None:
                 # Stack history into a batch for the model
                 depth_seq = torch.stack(padded_depth_list, dim=1)
                 state_seq = torch.stack(padded_state_list, dim=1)
-                if DEBUG:
+                if DEBUG_DEPTH:
                     test_depth_sequence(depth_seq.cpu().numpy())
+                if DEBUG_STATE:
                     show_state_input_seq(cfg, env, denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze(), color=[0, 1, 0, .9])
                 with torch.no_grad():
                     action_chunk = model(depth_seq, state_seq)
                 action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])
-                if DEBUG:
+                if DEBUG_STATE:
                     show_state_input_seq(cfg, env, action_chunk.squeeze(0))
 
             action_index_in_chunk = i % action_execution_horizon

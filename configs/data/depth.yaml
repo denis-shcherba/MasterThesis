@@ -6,8 +6,8 @@ batch_size: ${train.batch_size}
 num_workers: ${train.num_workers}  
 
 # Sequence settings
-sequence_length: 8  # Number of consecutive timesteps to use as input
-future_sequence_length: 8
+sequence_length: ${context_length} 
+future_sequence_length: ${prediction_length}  
 action_dim: 7       # Dimension of action space 
 
 # Dataset split
@@ -27,6 +27,6 @@ depth_normalization_method: 'minmax'
 action_normalization_method: 'minmax' 
 
 #augmentation
-augment_data: false      
-depth_dropout_prob: 0.001 # Probability of dropping out depth values during augmentation
+augment_data: true      
+depth_dropout_prob: 0.01 # Probability of dropping out depth values during augmentation
 depth_noise_scale: 0.01 # Scale of noise to add to depth values during augmentation
