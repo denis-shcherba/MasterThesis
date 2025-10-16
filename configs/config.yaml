@@ -1,7 +1,7 @@
 defaults:
   - _self_  
-  - model: transformer_depth
-  - loss: default_9d
+  - model: diffusion_depth
+  - loss: default_mse
   - optimizer: adam
   - data: depth
   - trainer: steps
@@ -19,8 +19,8 @@ experiment_name: "SimpleSingleStepBC"
 output_dir: ${hydra:runtime.output_dir}
 
 is_regression: false
-# whether to use a separate network for waypoint and timing prediction naming
-is_waypointPlusTimings: false
+is_waypointPlusTimings: false # whether to use a separate network for waypoint and timing prediction naming
+
 
 wandb:
-  enabled: true
+  enabled: false

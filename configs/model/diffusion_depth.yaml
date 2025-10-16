@@ -5,7 +5,7 @@ dropout_rate: 0.2        # Still used by obs_encoder (PointNet), which is good!
 policy_head_type: diffusion
 
 # Multimodal policy specific settings
-state_dim: 3
+state_dim: 7
 fusion_method: concat
 
 time_encoding: none
@@ -13,6 +13,6 @@ max_timesteps: 64 # This might still be needed if your dataset processing uses i
 observation_mode: depth
 
 # Diffusion Head settings
-prediction_length: 8       # CRUCIAL: Renamed from pred_horizon. Defines the length of the generated action trajectory.
-num_diffusion_iters: 100    # NEW & ESSENTIAL: Number of denoising steps. Controls the trade-off between sample quality and inference speed.
+prediction_length: 8       # length of the generated action trajectory.
+num_diffusion_iters: 100    #  Number of denoising steps. Controls the trade-off between sample quality and inference speed.
 down_dims: [128, 256, 512] #[256, 512, 1024]
