@@ -8,7 +8,7 @@ num_workers: ${train.num_workers}
 # Sequence settings
 sequence_length: ${context_length} 
 future_sequence_length: ${prediction_length}  
-action_dim: 3       # Dimension of action space 
+action_dim: 7       # Dimension of action space 
 
 # Dataset split
 train_split: 0.8    # Fraction of data to use for training
@@ -27,6 +27,6 @@ depth_normalization_method: 'minmax'
 action_normalization_method: 'minmax' 
 
 #augmentation
-augment_data: false      
+augment_data: true      
 depth_dropout_prob: 0.01 # Probability of dropping out depth values during augmentation
 depth_noise_scale: 0.01 # Scale of noise to add to depth values during augmentation

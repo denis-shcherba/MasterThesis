@@ -1,8 +1,8 @@
 defaults:
   - _self_  
-  - model: transformer_depth
-  - data: depth
-  - inference: transformer_depth
+  - model: transformer_depth7dof
+  - data: depth7dof
+  - inference: transformer_depth7dof
   - env: default_3d
 
 experiment_name: "Transformer 10 step input Inference"
@@ -10,12 +10,12 @@ observation_mode: 'depth'
 output_subdir: null
 num_eval_episodes: 500
 simulate: True
-robot_mode: "floating"
+robot_mode: "normal"
 is_waypointPlusTimings: False
-action_execution_horizon: 4
+action_execution_horizon: 12
 seed: 42
 context_length: 8
-prediction_length: 8
+prediction_length: 16
 
 hydra:
   run:
