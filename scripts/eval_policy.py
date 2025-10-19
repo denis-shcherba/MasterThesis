@@ -94,7 +94,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference7dof", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
@@ -234,14 +234,18 @@ def eval_policy(cfg: DictConfig) -> None:
                 with torch.no_grad():
                     action_chunk = model(depth_seq, state_seq)
                 action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])
+                print("Generated action chunk:", action_chunk.shape)
+                # for i in range(8):
+                #     env.unwrapped.C.addFrame(f"aaaa{i}").setShape(ry.ST.sphere, [.01]).setColor([0, 1, 1, .9]).setPosition(action_chunk[0, i, :3].cpu().numpy())
+                # env.unwrapped.C.view(True)
                 if DEBUG_STATE:
                     show_state_input_seq(cfg, env, action_chunk.squeeze(0))
 
             action_index_in_chunk = i % action_execution_horizon
-            pos = action_chunk[:, action_index_in_chunk, :].squeeze().cpu().numpy()
+            action = action_chunk[:, action_index_in_chunk, :].squeeze().cpu().numpy()
             
             log.info(f"Step {i}: Executing action {action_index_in_chunk} from chunk.")
-            obs, reward, terminated, truncated, info = env.step(pos)
+            obs, reward, terminated, truncated, info = env.step(action)
             denormalized_seq = denormalize_actions(state_seq, normalization_stats["action_stats"])
             
             # Store the normalized observation in history (after action execution)

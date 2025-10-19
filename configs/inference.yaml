@@ -10,7 +10,7 @@ observation_mode: 'depth'
 output_subdir: null
 num_eval_episodes: 500
 simulate: True
-robot_mode: "floating"
+robot_mode: "taskspace"
 is_waypointPlusTimings: False
 action_execution_horizon: 4
 seed: 42

@@ -223,3 +223,94 @@ def find_nearest_cuboid_edge_center(C, box_frame, yaw):
     delta = complex(*directions[index]) * cmath.exp(1j * yaw)
 
     return book_com+np.array([delta.real, delta.imag, 0])
+
+def gram_schmidt_orthonormalize(vec: np.ndarray) -> np.ndarray:
+    """
+    Takes a 1D 6-element NumPy array representing the first two columns of a
+    rotation matrix and returns a valid SO(3) rotation matrix.
+
+    The process involves:
+    1. Normalizing the first vector (first column).
+    2. Making the second vector orthogonal to the first and normalizing it.
+    3. Calculating the third vector as the cross product of the first two.
+
+    Args:
+        vec: A 1D NumPy array of shape (6,) representing the first two columns
+             [r11, r21, r31, r12, r22, r32].
+
+    Returns:
+        A 3x3 NumPy array representing a valid SO(3) rotation matrix.
+    """
+    # Input validation
+    if vec.shape != (6,):
+        raise ValueError("Input vector must have a shape of (6,)")
+
+    # 1. Extract the first two columns from the input vector
+    v1 = vec[:3]
+    v2 = vec[3:]
+
+    # --- Start of the Gram-Schmidt Process ---
+
+    # 2. First column (u1): Normalize the first vector.
+    # We must handle the edge case where the vector is all zeros.
+    norm_v1 = np.linalg.norm(v1)
+    if norm_v1 < 1e-9:  # Use a small tolerance for floating point
+        # If v1 is a zero vector, it cannot be normalized.
+        # We can fall back to a default, like the x-axis.
+        u1 = np.array([1.0, 0.0, 0.0])
+    else:
+        u1 = v1 / norm_v1
+
+    # 3. Second column (u2): Make the second vector orthogonal to u1 and normalize.
+    # Project v2 onto u1
+    projection_v2_on_u1 = np.dot(u1, v2) * u1
+    
+    # Subtract the projection from v2 to get the orthogonal component
+    v2_orthogonal = v2 - projection_v2_on_u1
+
+    # Normalize the orthogonal component to get u2
+    norm_v2_ortho = np.linalg.norm(v2_orthogonal)
+    if norm_v2_ortho < 1e-9:
+        # If v2 was collinear with v1, the orthogonal part is a zero vector.
+        # We need to generate an arbitrary vector orthogonal to u1.
+        # A robust way is to find the smallest component of u1 and swap it
+        # with another component, negating one, to create a perpendicular vector.
+        if abs(u1[0]) < abs(u1[1]):
+            u2 = np.array([-u1[1], u1[0], 0])
+        else:
+            u2 = np.array([0, -u1[2], u1[1]])
+        u2 /= np.linalg.norm(u2) # Normalize this new vector
+    else:
+        u2 = v2_orthogonal / norm_v2_ortho
+
+    # 4. Third column (u3): Calculate using the cross product.
+    # The cross product of two orthonormal vectors is guaranteed to be
+    # orthogonal to both and have a length of 1.
+    # This ensures a right-handed coordinate system for the matrix.
+    u3 = np.cross(u1, u2)
+
+    # 5. Assemble the final SO(3) rotation matrix by stacking the columns.
+    rotation_matrix = np.column_stack((u1, u2, u3))
+
+    return rotation_matrix
+
+def convert_6d_rot_matrix_to_quaternion(rot_matrix):
+    """
+    Converts a 6D rotation representation to a quaternion.
+    
+    Parameters:
+    rot_matrix (np.ndarray): A 6D rotation representation (first 3 columns of a rotation matrix).
+    
+    Returns:
+    np.ndarray: A quaternion representing the rotation.
+    """
+    # Reconstruct the full rotation matrix
+    r1 = rot_matrix[:, 0]
+    r2 = rot_matrix[:, 1]
+    r3 = np.cross(r1, r2)
+    rot_full = np.column_stack((r1, r2, r3))
+    
+    # Convert rotation matrix to quaternion
+    quat = ry.Quaternion().setMatrix(rot_full).asArr()
+    
+    return quat

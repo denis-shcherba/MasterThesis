@@ -7,6 +7,7 @@ from envs.shelf import generate_shelf
 from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 from envs.simulator import Simulator
+from envs.utils import gram_schmidt_orthonormalize
 import time
 
 class ShelfEnv(gym.Env):
@@ -97,6 +98,7 @@ class ShelfEnv(gym.Env):
                     "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
                 }
             )
+        # TODO joints and so on
         else:
             raise ValueError(f"Unknown observation type: {obs_type}")
 
@@ -106,7 +108,7 @@ class ShelfEnv(gym.Env):
         print("Connecting to custom simulator...")
 
         # Configure robot based on mode
-        if self.robot_mode == "normal":
+        if self.robot_mode == "jointspace" or self.robot_mode == "taskspace":
             self.C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
             self.prefix = "l_"
             self.gripper_name = "l_gripper"
@@ -130,6 +132,7 @@ class ShelfEnv(gym.Env):
             offset = np.array([.0, 0, .2]) 
             current_q[:len(offset)] += offset 
             self.C.setJointState(current_q)
+        
 
         else:
             raise ValueError(f"Unknown ROBOT_MODE: {self.robot_mode}")
@@ -226,10 +229,19 @@ class ShelfEnv(gym.Env):
         self.books = []
 
     def _get_obs(self):
-        if self.robot_mode == "normal":
+        if self.robot_mode == "jointspace":
             agent_pos_raw = self.C.getJointState()
         elif self.robot_mode == "floating":
             agent_pos_raw = self.C.getJointState()[:3]
+        elif self.robot_mode == "taskspace":
+            agent_pos_raw = np.zeros(9)
+
+            pose = self.C.getFrame(self.gripper_name).getPose()
+            
+            q = ry.Quaternion().set(pose[3:])
+            R = q.getMatrix()
+            agent_pos_raw[:3] = pose[:3]  # Position
+            agent_pos_raw[3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
 
         agent_pos = np.array(agent_pos_raw, dtype=np.float32)
 
@@ -289,10 +301,29 @@ class ShelfEnv(gym.Env):
                 for _ in range(100):  # Simulate for 100 steps
                     self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
                     self.C.view()
-            elif self.robot_mode == "normal":
+            elif self.robot_mode == "jointspace":
                 for _ in range(100):
                     self.sim._sim.step(action, 0.01, ry.ControlMode.position)
+            elif self.robot_mode == "taskspace":
+                komo = ry.KOMO()
+                komo.setConfig(self.C, False)
+                komo.setTiming(1, 1, 1., 0)
                 
+                komo.clearObjectives()
+                komo.addControlObjective([], 0, 1e-1)
+                komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3])
+                rot_matrix = gram_schmidt_orthonormalize(action[3:])
+                quat = ry.Quaternion().setMatrix(rot_matrix).asArr()
+
+                komo.addObjective([], ry.FS.quaternion, [self.gripper_name], ry.OT.sos, [1e2], quat)
+                sol = ry.NLP_Solver(komo.nlp())
+                sol.setOptions(stopInners=1, damping=1e-4, verbose=0)
+                ret = sol.solve()
+                # komo.view(True, f'sol{s}')
+
+                for _ in range(20):
+                    self.sim._sim.step(komo.getPath()[0], .01, ry.ControlMode.position)
+                    self.C.view()
 
         else:
             self.C.setJointState([action[0], action[1], action[2]])  # Assuming the first 7 values are joint angles
@@ -312,9 +343,6 @@ class ShelfEnv(gym.Env):
         #TODO, if even necessary
         pass
 
-    def getJointState(self):
-        return self.C.getJointState()
-    
     def close(self):
         # Clean up any resources (e.g., close simulator connection)
         print("Closing the environment.")
