@@ -1,9 +1,6 @@
 import numpy as np
 import robotic as ry
-import time
-import manipulation as manip
 from envs.shelf import generate_shelf
-from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 C = ry.Config()

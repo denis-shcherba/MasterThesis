@@ -7,16 +7,16 @@ from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "normal" # "normal" or "floating"
 COLLECT_DATA = True
-PATH_MODE = "JOINT7D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
+PATH_MODE = "SE93D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
 CAMERA = "cameraWrist"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
 DEBUG = False # pull debugging
-OBSERVATION_MODE = "RGB" # "POINTCLOUD", "RGB", "DEPTH"
+OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 2_0
-VISUALIZE = True  # If true, the simulation will be visualized
+NUM_SAMPLES = 2_000
+VISUALIZE = False  # If true, the simulation will be visualized
 SAVE_BOOK_PARAMS = False  # If true, the parameters of the generated books will be saved to a file
 
 noise_dict = {
@@ -38,7 +38,7 @@ gripper = "l_gripper"
 palm = "l_palm"
 
 if ROBOT_MODE == "normal":
-    C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
+    C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingleThesis.g'))
     C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)   # Real size [1.1, 1.2, .02, .005]
     C.delFrame("panda_collCameraWrist")
 
@@ -134,7 +134,7 @@ for sample in samples:
 
             if PATH_MODE == "JOINT7DSPLINE" or PATH_MODE == "JOINT7D":
                 demo_group.create_dataset("path", data=roboenv.path)
-            if PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D":
+            if ROBOT_MODE == "floating" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
                 se3_path = np.zeros((roboenv.path.shape[0], 9))
                 
                 for i in range(roboenv.path.shape[0]):
@@ -146,6 +146,23 @@ for sample in samples:
                 
                 # Now use se3_path instead of the original path
                 demo_group.create_dataset("path", data=se3_path)
+
+            elif ROBOT_MODE == "normal" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
+                se3_path = np.zeros((roboenv.path.shape[0], 9))
+
+                C2 = ry.Config()
+                C2.addConfigurationCopy(C)
+                for i in range(roboenv.path.shape[0]):
+                    C2.setJointState(roboenv.path[i])
+                    ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
+
+                    q = ry.Quaternion().set(ee_pose[3:])
+                    R = q.getMatrix()
+                    se3_path[i, :3] = ee_pose[:3]  # Position
+                    se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+
+                demo_group.create_dataset("path", data=se3_path)
+
 
             elif PATH_MODE == "POS3DSPLINE" or PATH_MODE == "POS3D":
                 # save the spline path 3D control points

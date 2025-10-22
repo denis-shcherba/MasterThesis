@@ -193,7 +193,6 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 #TODO
                 pass
             
-    # TODO, rotate quat maybe pi/2 around z 
     C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
         .setPosition(C.getFrame("big_xy_bottom_0_1").getPosition()+np.array([-.22*w, 0, 0]) + np.array([-.25, 0, floor_offsets[2]])) \
         .setQuaternion([np.cos(np.deg2rad(125/2)), 0, np.sin(np.deg2rad(125/2)), 0]) \
@@ -201,12 +200,12 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
         .setAttribute("width", 640) \
         .setAttribute("height", 360) 
     
-    if "l_gripper" in C.getFrameNames():
-        C.delFrame("camerwaWrist")
-        C.addFrame("cameraWrist", "l_panda_joint7").setShape(ry.ST.camera, size=[.1]) \
-            .setRelativePose([-0.0239713, 0.0481723, 0.16886, 0.39354, 0.00971287, -0.00283292, -0.919252]) \
-            # .setAttribute("width", 640) \
-            # .setAttribute("height", 360) 
+    # if "l_gripper" in C.getFrameNames():
+    #     C.delFrame("camerwaWrist")
+    #     C.addFrame("cameraWrist", "l_panda_joint7").setShape(ry.ST.camera, size=[.1]) \
+    #         .setRelativePose([-0.0239713, 0.0481723, 0.16886, 0.39354, 0.00971287, -0.00283292, -0.919252]) \
+    #         # .setAttribute("width", 640) \
+    #         # .setAttribute("height", 360) 
 
 if __name__ == "__main__":
     C = ry.Config()

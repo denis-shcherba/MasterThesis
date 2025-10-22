@@ -133,13 +133,9 @@ class Simulator:
                 if self.observation_mode == "DEPTH":
                     depth = self.getDepth()
                     self.depth.append(depth)
-                    plt.imshow(depth)
-                    plt.show()
                 elif self.observation_mode == "RGB":
                     rgb = self.getRGB()
                     self.rgb.append(rgb)
-                    plt.imshow(rgb)
-                    plt.show()
 
             for _ in range(10):
                 self._sim.step(control_point, tau, ry.ControlMode.position)
