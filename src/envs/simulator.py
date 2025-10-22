@@ -6,6 +6,7 @@ import robotic as ry
 from robotic import SimulationEngine
 from envs.utils import point_in_box_filtering
 import cv2
+import matplotlib.pyplot as plt 
 
 class Simulator:
     """Wrapper class for ry Simulator, with functionality to run a simulation."""
@@ -17,7 +18,8 @@ class Simulator:
         verbose: int = 0,
         camera: str = "cameraStatic",
         base_removal: bool = False,  # if true, shelf will be removed from observation
-        visualize: bool = False,
+        visualize: bool = False,    # TODO?
+        observation_mode: str = "DEPTH"
     ):
         self._sim = ry.Simulation(config, engine, verbose=verbose)
         self.config = config
@@ -28,6 +30,7 @@ class Simulator:
         self.depth = []
         self._sim.selectSensor(camera)
         self.base_removal = base_removal
+        self.observation_mode = observation_mode
 
     def getDepth(self, crop: bool = False, rescale: bool = True, crop_size: int = 96, rescale_size: int = 96) -> np.ndarray:
         _, depth = self._sim.getImageAndDepth()
@@ -105,7 +108,7 @@ class Simulator:
         path: np.ndarray,
         n_steps: float,
         tau: float = 5e-4,
-        capture_depth: bool = False,
+        capture_obs: bool = False,
         visualize: bool = False,
     ) -> [np.ndarray, np.ndarray, np.ndarray, np.ndarray]: # type: ignore
         """Run a trajectory in simulation using the specified KOMO instance.
@@ -124,13 +127,20 @@ class Simulator:
                 If True, the simulation will be visualized.
 
         """
-
         sim_steps = int(n_steps // tau)
-
         for control_point in path:
-            if capture_depth:
-                depth = self.getDepth()
-                self.depth.append(depth)
+            if capture_obs:
+                if self.observation_mode == "DEPTH":
+                    depth = self.getDepth()
+                    self.depth.append(depth)
+                    plt.imshow(depth)
+                    plt.show()
+                elif self.observation_mode == "RGB":
+                    rgb = self.getRGB()
+                    self.rgb.append(rgb)
+                    plt.imshow(rgb)
+                    plt.show()
+
             for _ in range(10):
                 self._sim.step(control_point, tau, ry.ControlMode.position)
                 

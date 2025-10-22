@@ -12,11 +12,11 @@ SIMULATE = True
 CAMERA = "cameraWrist"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
 DEBUG = False # pull debugging
-OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
+OBSERVATION_MODE = "RGB" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 2_000
-VISUALIZE = False  # If true, the simulation will be visualized
+NUM_SAMPLES = 2_0
+VISUALIZE = True  # If true, the simulation will be visualized
 SAVE_BOOK_PARAMS = False  # If true, the parameters of the generated books will be saved to a file
 
 noise_dict = {
@@ -119,7 +119,7 @@ for sample in samples:
         C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
 
-        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE, noise_dict=noise_dict)
+        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE, noise_dict=noise_dict, camera=CAMERA)
 
         success = roboenv.pull_real("target_book_0", target, accumulated_collisions=True, get_observation=COLLECT_DATA)
         

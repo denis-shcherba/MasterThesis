@@ -200,6 +200,13 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
         .setAttribute("focalLength", 1.5) \
         .setAttribute("width", 640) \
         .setAttribute("height", 360) 
+    
+    if "l_gripper" in C.getFrameNames():
+        C.delFrame("camerwaWrist")
+        C.addFrame("cameraWrist", "l_panda_joint7").setShape(ry.ST.camera, size=[.1]) \
+            .setRelativePose([-0.0239713, 0.0481723, 0.16886, 0.39354, 0.00971287, -0.00283292, -0.919252]) \
+            # .setAttribute("width", 640) \
+            # .setAttribute("height", 360) 
 
 if __name__ == "__main__":
     C = ry.Config()

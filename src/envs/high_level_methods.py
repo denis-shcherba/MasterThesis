@@ -14,10 +14,11 @@ class RobotEnviroment:
                  sim: bool=False,
                  gripper: str="l_gripper",
                  base_removal: bool=False,
-                 observation_mode: str="POINTCLOUD",
+                 observation_mode: str="DEPTH",
                  visualize: bool=False,
                  path_mode: str="",
-                 noise_dict: dict={}) -> None:
+                 noise_dict: dict={},
+                 camera: str="cameraStatic") -> None:
         self.C = C
         self.visuals = visuals
         self.verbose = verbose
@@ -31,6 +32,7 @@ class RobotEnviroment:
         self.visualize = visualize
         self.path_mode = path_mode
         self.noise_dict = noise_dict
+        self.camera = camera
         if self.noise_dict:
             self.state_noise = self.noise_dict.get("stateNoise")
             self.depth_noise = self.noise_dict.get("depthNoise")
@@ -259,13 +261,13 @@ class RobotEnviroment:
             path2 = path2_after_offset
             del C2
     
-            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
+            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, obs=self.observation_mode)
             if "SPLINE" in self.path_mode:
                 sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)
                 sim.run_trajectory_spline(np.asarray(path2), 2, capture_depth=get_observation)
             else:
-                sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_depth=get_observation, visualize=self.visualize)
-                sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_depth=get_observation, visualize=self.visualize)
+                sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=self.visualize)
+                sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=self.visualize)
 
 
             if self.observation_mode == "POINTCLOUD":
@@ -389,13 +391,13 @@ class RobotEnviroment:
                 path2 = path2_after_offset
                 del C2
         
-                sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
+                sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode)
                 if "SPLINE" in self.path_mode:
                     sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)
                     sim.run_trajectory_spline(np.asarray(path2), 2, capture_depth=get_observation)
                 else:
-                    sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_depth=get_observation, visualize=self.visualize)
-                    sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_depth=get_observation, visualize=self.visualize)
+                    sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=self.visualize)
+                    sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=self.visualize)
 
 
                 if self.observation_mode == "POINTCLOUD":
