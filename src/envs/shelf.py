@@ -167,7 +167,7 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                         .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5, inner_wall_width, 0.001]) \
                         .setColor([1., 1., 0.]) \
                         .setContact(1) \
-                        .setAttribute("friction", 1e-4) \
+                        #.setAttributes({"friction": 1e-4}) \
                     
                     if i==2:
                         C.addFrame(f"big_box_inside_{s}_{i}", f"big_xy_bottom_{s}_{i}") \
@@ -194,20 +194,20 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 pass
             
     # TODO, rotate quat maybe pi/2 around z 
-    C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
-        .setPosition(C.getFrame("big_xy_bottom_0_1").getPosition()+np.array([-.22*w, 0, 0]) + np.array([-.25, 0, floor_offsets[2]])) \
-        .setQuaternion([np.cos(np.deg2rad(125/2)), 0, np.sin(np.deg2rad(125/2)), 0]) \
-        .setAttribute("focalLength", 1.5) \
-        .setAttribute("width", 640) \
-        .setAttribute("height", 360) 
-    
-    if "l_gripper" in C.getFrameNames():
-        C.delFrame("camerwaWrist")
-        C.addFrame("cameraWrist", "l_panda_joint7").setShape(ry.ST.camera, size=[.1]) \
-            .setRelativePose([-0.0239713, 0.0481723, 0.16886, 0.39354, 0.00971287, -0.00283292, -0.919252]) \
-            # .setAttribute("width", 640) \
-            # .setAttribute("height", 360) 
+    # C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
+    #     .setPosition(C.getFrame("big_xy_bottom_0_1").getPosition()+np.array([-.22*w, 0, 0]) + np.array([-.25, 0, floor_offsets[2]])) \
+    #     .setQuaternion([np.cos(np.deg2rad(125/2)), 0, np.sin(np.deg2rad(125/2)), 0]) \
+    #     .setAttributes({"focalLength": 1.5, "width": 640, "height": 360})
 
+    
+    # if "l_gripper" in C.getFrameNames():
+    #     C.delFrame("cameraWrist")
+    #     C.view(False)
+    #     C.addFrame("cameraWrist", "l_panda_joint7").setShape(ry.ST.camera, size=[.1]) \
+    #         .setRelativePose([-0.0239713, 0.0481723, 0.16886, 0.39354, 0.00971287, -0.00283292, -0.919252]) \
+    #         .setAttributes({"width": 640, "height": 360, "zRange": [.01, 10]}) \
+        
+        
 if __name__ == "__main__":
     C = ry.Config()
     pos = np.array([0., 0., 0.])

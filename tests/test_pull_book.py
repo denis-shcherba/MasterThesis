@@ -7,12 +7,12 @@ from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "normal" # "normal" or "floating"
 COLLECT_DATA = True
-PATH_MODE = "JOINT7D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
+PATH_MODE = "SE39D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
 CAMERA = "cameraWrist"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
 DEBUG = False # pull debugging
-OBSERVATION_MODE = "RGB" # "POINTCLOUD", "RGB", "DEPTH"
+OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
 NUM_SAMPLES = 2_0
@@ -57,8 +57,8 @@ q0 = C.getJointState()
 
 # World Camera pose
 camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
-C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
-C.view_setCamera(C.getFrame("worldCamera"))
+C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setAttributes({"focalLength": .895}).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
+#C.view_setCamera(C.getFrame("worldCamera")) #TODO ask Marc
 
 # Shelf
 pos = np.array([.8, 0., .3])
@@ -106,8 +106,8 @@ for sample in samples:
                 .setColor(np.random.rand(3) if RANDOM_COLOR else [1, 0, 0]) \
                 .setContact(0) \
                 .setMass(.1) \
-                .setAttribute("friction", .01) 
-        C.view(False)
+                .setAttributes({"friction": .01}) 
+        C.view(True)
 
         
         # target at the middle of the shelf ending
@@ -134,7 +134,7 @@ for sample in samples:
 
             if PATH_MODE == "JOINT7DSPLINE" or PATH_MODE == "JOINT7D":
                 demo_group.create_dataset("path", data=roboenv.path)
-            if PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D":
+            if ROBOT_MODE == "floating" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
                 se3_path = np.zeros((roboenv.path.shape[0], 9))
                 
                 for i in range(roboenv.path.shape[0]):
@@ -146,6 +146,23 @@ for sample in samples:
                 
                 # Now use se3_path instead of the original path
                 demo_group.create_dataset("path", data=se3_path)
+
+            elif ROBOT_MODE == "normal" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
+                se3_path = np.zeros((roboenv.path.shape[0], 9))
+
+                C2 = ry.Config()
+                C2.addConfigurationCopy(C)
+                for i in range(roboenv.path.shape[0]):
+                    C2.setJointState(roboenv.path[i])
+                    ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
+
+                    q = ry.Quaternion().set(ee_pose[3:])
+                    R = q.getMatrix()
+                    se3_path[i, :3] = ee_pose[:3]  # Position
+                    se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+
+                demo_group.create_dataset("path", data=se3_path)
+
 
             elif PATH_MODE == "POS3DSPLINE" or PATH_MODE == "POS3D":
                 # save the spline path 3D control points

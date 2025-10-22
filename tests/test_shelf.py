@@ -1,7 +1,6 @@
 import numpy as np
 import robotic as ry
 import time
-import manipulation as manip
 from envs.shelf import generate_shelf
 from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
@@ -65,5 +64,5 @@ for sample in samples:
     for i, box in enumerate(sample):
         C.delFrame(f"target_book_{i}")
         C.view(False)
-
-
+        
+    C.view(True)
