@@ -3,7 +3,6 @@ import envs.manipulation as manip
 import numpy as np
 import robotic as ry
 import time
-from envs.noise_handling import random_waypoint_3d
 
 class RobotEnviroment:
     def __init__(self,
@@ -318,7 +317,7 @@ class RobotEnviroment:
         self.path = np.concatenate((path1, path2_after_offset), axis=0)
         return True
 
-    def pull_real(self, object_, placePosition, accumulated_collisions=True, get_observation=False) -> bool:
+    def pull_real(self, object_, placePosition, accumulated_collisions=True, get_observation=False, base="big_xy_bottom_0_1") -> bool:
             self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
 
             # self.C.addFrame("to_push_point").setPosition([self.C.getFrame(object_).getPosition()[0], self.C.getFrame(object_).getPosition()[1], self.C.getFrame(object_).getSize()[2]/2+self.C.getFrame(object_).getPosition()[2]]).setShape(ry.ST.marker, [.1]).setColor([1,0,0])
@@ -327,7 +326,7 @@ class RobotEnviroment:
             M = manip.ManipulationModelling()
             M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
             
-            M.add_stable_frame(ry.JT.transXYPhi, "big_xy_bottom_0_1", '_pull_end', object_)
+            M.add_stable_frame(ry.JT.transXYPhi, base, '_pull_end', object_)
             M.komo.addObjective([1], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
             M.komo.addObjective([2], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
 
@@ -416,7 +415,7 @@ class RobotEnviroment:
 
                     M2.play(self.C, 1.)
 
-                    self.C.attach("big_xy_bottom_0_1", object_)
+                    self.C.attach(base, object_)
                 else:
                     if get_observation:
                         sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)

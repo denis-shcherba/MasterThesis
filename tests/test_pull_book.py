@@ -84,7 +84,6 @@ box_size_ranges = {  # Variable box dimensions
 }
 
 
-
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
 ])
@@ -216,9 +215,7 @@ while demo_id < NUM_SAMPLES:
                     else:
                         demo_group.create_dataset("depth", data=roboenv.depth_image)
 
-                
                 demo_id += 1
-
 
             elif success and DEBUG:
                 err.append(np.linalg.norm(C.getFrame("target_book_0").getPosition() - target))

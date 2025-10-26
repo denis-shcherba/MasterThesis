@@ -5,11 +5,13 @@ import numpy as np
 import robotic as ry
 from envs.shelf import generate_shelf
 from envs.high_level_methods import RobotEnviroment
-from envs.book_spawning import generate_random_box_params
+from envs.book_spawning import generate_random_box_params, generate_random_box_sizes
 from envs.simulator import Simulator
 from envs.utils import gram_schmidt_orthonormalize
-import time
+from envs.base_robot_env import BaseRobotEnv
+import h5py
 
+#TODO inherit from BaseRobotEnv and implement the specifics for the ShelfEnv
 class ShelfEnv(gym.Env):
     # This metadata is used by the render function. 'rgb_array' is needed for video recording.
     #metadata = {"render_modes": ["rgb_array"], "render_fps": 30}
@@ -143,7 +145,6 @@ class ShelfEnv(gym.Env):
         # if finger1: finger1.setAttribute("friction", 1e5)
         # if finger2: finger2.setAttribute("friction", 1e5)
         
-
         # Shelf setup
         self.shelf_pos = np.array(shelf_pos_xyz) if shelf_pos_xyz is not None else np.array([.8, 0., .3])
         _shelf_quaternion = shelf_quaternion if shelf_quaternion is not None else [1, 0, 0, 1]
@@ -343,12 +344,223 @@ class ShelfEnv(gym.Env):
         print("Closing the environment.")
 
 
-# TODO maybe overload the BaseRobotEnv class to implement a environments for different robot actions.
-# class Pos3DRobotEnv(BaseRobotEnv):
-#     def __init__(self):
-#         super().__init__(action_dim=3)
+class TableEnv(BaseRobotEnv):
+    """
+    A new environment for a different task (e.g., reaching a target).
+    """
+    def __init__(self,
+                path_type="SE39D",
+                img_type="DEPTH",
+                box_size_ranges= {'x': (.1, .15), 'y': (.14, .23), 'z': (.009, .045)},
+                box_offset_ranges= {'x': (-.05, .05), 'y': (-.05, .05)},
+                camera_name="wristCamera",
+                collect_data=False,
+                q0=[.0, .0, .0, -2., 0. ,2., -0.5],
+                 **kwargs):
+        super().__init__(**kwargs)
+        
+        self.box_size_ranges = box_size_ranges
+        self.box_offset_ranges = box_offset_ranges
+        self.books = []
 
-#     def _apply_action(self, action):
-#         # Here, interpret action as x, y, z
-#         print(f"Moving to position: {action}")
-#         self.state[:3] = action  # dummy logic
+        self.path_type = path_type
+        self.img_type = img_type
+        self.q0 = np.array(q0)
+
+        self.camera_name = camera_name
+
+        print(self.C.getJointState())
+
+        self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
+        self.C.addFrame("target").setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9]).setPosition([.2, .4, .7])
+    
+        self.gripper = "l_gripper"  # TODO into abstract class
+
+        if collect_data:    # TODO parameters
+            self.h5file = h5py.File("table_demo.h5", "w")
+            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name)
+            self.demo_id = 0
+
+        self._setup_scene()
+
+
+    def _spawn_book(self, book_params, i=0, prefix="target_book"):
+        b_size_x, b_size_y, b_size_z = book_params
+        
+        book_center_position = self.C.getFrame("table").getPosition() + np.array([0, .4,  b_size_z/2 + self.C.getFrame("table").getSize()[2]/2]) + np.array([ 
+            np.random.uniform(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1]),
+            np.random.uniform(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1]), 
+            0])
+            
+
+        q_orientation = ry.Quaternion().setRollPitchYaw([0, 0, 0])   # TODO?
+        
+        frame_name = f"{prefix}_{i}"
+        self.books.append(frame_name)
+        self.C.addFrame(frame_name) \
+            .setPosition(book_center_position) \
+            .setQuaternion(q_orientation.asArr()) \
+            .setShape(ry.ST.ssBox, size=[b_size_x, b_size_y, b_size_z, 0.005]) \
+            .setColor([1, 0, 0]) \
+            .setContact(1) \
+            .setMass(.1) \
+            .setAttribute("friction", .01) 
+        
+        self.C.view(False)
+        
+    def _spawn_books_scene(self):
+        sample = generate_random_box_sizes(
+            box_size_ranges=self.box_size_ranges,
+            num_samples=1,
+            # num_boxes=self.num_boxes_per_sample,
+            # allow_yaw=self.allow_book_yaw     # TODO? prolly not
+        )
+
+        for i, book_params in enumerate(sample):
+            self._spawn_book(book_params, i)            
+
+
+    def _delete_books(self):
+        for book in self.books:
+            self.C.delFrame(book)
+        self.C.view(False)
+        self.books = []
+
+    def _define_action_space(self):
+        if self.robot_mode == "jointspace":
+            return spaces.Box(low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32)
+        elif self.robot_mode == "floating":
+            return spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
+        elif self.robot_mode == "taskspace":
+            return spaces.Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
+        else:
+            return spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
+
+    def _setup_scene(self):
+        # target_pos = np.array([.5, 0.1, .7]) 
+        self._delete_books()
+        self._spawn_books_scene()
+        # self.C.getFrame("reach_target").setPosition(target_pos)
+
+
+    def _get_info(self):
+        gripper_pos = self.C.getFrame(self.gripper_name).getPosition()
+        target_pos = self.C.getFrame("target").getPosition()
+        
+        distance = np.linalg.norm(gripper_pos - target_pos)
+        success = distance < 0.05 # Tighter tolerance for reaching
+        
+        return {"distance_to_target": distance, "success": success}
+
+    def collect_data(self):
+        success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=True, base="table")
+        if success:
+            demo_group = self.h5file.create_group(f"demo_{self.demo_id}")
+
+            # if PATH_MODE == "JOINT7DSPLINE" or PATH_MODE == "JOINT7D":
+            #     demo_group.create_dataset("path", data=roboenv.path)
+            # if ROBOT_MODE == "floating" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
+            #     se3_path = np.zeros((roboenv.path.shape[0], 9))
+                
+            #     for i in range(roboenv.path.shape[0]):
+            #         q = ry.Quaternion().set(roboenv.path[i][3:])
+            #         R = q.getMatrix()
+            #         # Combine position (3D) with first two rotation matrix columns (6D)
+            #         se3_path[i, :3] = roboenv.path[i][:3]  # Position
+            #         se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+                
+            #     # Now use se3_path instead of the original path
+            #     demo_group.create_dataset("path", data=se3_path)
+
+            # elif ROBOT_MODE == "normal" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
+            se3_path = np.zeros((self.roboenv.path.shape[0], 9))
+
+            C2 = ry.Config()
+            C2.addConfigurationCopy(self.C)
+            for i in range(self.roboenv.path.shape[0]):
+                C2.setJointState(self.roboenv.path[i])
+                ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
+
+                q = ry.Quaternion().set(ee_pose[3:])
+                R = q.getMatrix()
+                se3_path[i, :3] = ee_pose[:3]  # Position
+                se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+
+            demo_group.create_dataset("path", data=se3_path)
+
+
+            # elif PATH_MODE == "POS3DSPLINE" or PATH_MODE == "POS3D":
+            #     # save the spline path 3D control points
+            #     demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
+
+            # elif OBSERVATION_MODE == "RGB":
+            #     if COMPRESS:
+            #             demo_group.create_dataset(
+            #             "rgb", 
+            #             data=roboenv.rgb_image,
+            #             compression="gzip",
+            #             compression_opts=4
+            #             )
+            #     else:
+            #         demo_group.create_dataset("rgb", data=roboenv.rgb_image)
+            
+            if self.img_type.upper() == "DEPTH":
+                demo_group.create_dataset(
+                "depth", 
+                data=self.roboenv.depth_image,
+                compression="gzip",
+                compression_opts=4
+                )
+
+            elif self.img_type.upper() == "RGB":
+                demo_group.create_dataset(
+                "rgb", 
+                data=self.roboenv.rgb_image,
+                compression="gzip",
+                compression_opts=4
+                )
+            
+
+            self.demo_id += 1
+
+    def save_data(self):
+        pass
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.C.setJointState(self.q0)
+
+        self._setup_scene()
+
+        if self.sim != None:
+            del self.sim
+        
+        if self.simulate:
+            self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0, camera=self.camera_name)
+        
+        observation = self._get_obs()
+        info = self._get_info()
+        
+        return observation, info
+
+    def step(self, action):        
+        if self.simulate:
+            if self.robot_mode == "floating":
+                for _ in range(100):
+                    self.sim._sim.step(action, 0.01, ry.ControlMode.position)
+                    self.C.view()
+            elif self.robot_mode == "jointspace":
+                 for _ in range(100):
+                    self.sim._sim.step(action, 0.01, ry.ControlMode.position)
+            elif self.robot_mode == "taskspace":
+                pass
+        observation = self._get_obs()
+        info = self._get_info()
+        
+        reward = -info["distance_to_target"]
+        terminated = info["success"]
+        truncated = False 
+
+        self.C.view(False)
+        return observation, reward, terminated, truncated, info
+

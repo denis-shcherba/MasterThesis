@@ -67,6 +67,18 @@ def boxes_collide(box1, box2):
     # Otherwise, use OBB check in x-y
     return obb_2d_overlap(box1, box2) and overlap_z
 
+def generate_random_box_sizes(box_size_ranges, num_samples=1):
+    all_sizes = []
+
+    for _ in range(num_samples):
+        X_b = np.random.uniform(*box_size_ranges['x'])
+        Y_b = np.random.uniform(*box_size_ranges['y'])
+        Z_b = np.random.uniform(*box_size_ranges['z'])
+
+        all_sizes.append((X_b, Y_b, Z_b))
+
+    return all_sizes
+
 def generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, num_boxes=1, allow_yaw=False, max_attempts=100):
     """
     Generates random sizes and positions x on a fixed-size shelf, allowing generation of an arbitrary yaw rotation as well.
@@ -79,9 +91,10 @@ def generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, nu
         for box_idx in range(num_boxes):
             for attempt in range(max_attempts):
                 # Randomly select box dimensions within the given range
-                X_b = np.random.uniform(*box_size_ranges['x'])
-                Y_b = np.random.uniform(*box_size_ranges['y'])
-                Z_b = np.random.uniform(*box_size_ranges['z'])
+                # X_b = np.random.uniform(*box_size_ranges['x'])
+                # Y_b = np.random.uniform(*box_size_ranges['y'])
+                # Z_b = np.random.uniform(*box_size_ranges['z'])
+                X_b, Y_b, Z_b = generate_random_box_sizes(box_size_ranges)[0]
 
                 yaw = 0  # Default yaw angle
                 if allow_yaw:

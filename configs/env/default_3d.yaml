@@ -1,8 +1,9 @@
 
-robot_mode: "floating"         # "normal" or "floating"
+robot_mode: "floating"
 path_mode: "POS3D"            
 simulate: true
-camera_name: "cameraStatic"    # or "cameraWrist"
+camera_name: "cameraStatic"  
+seed: 42
 
 shelf_pos_xyz: [.8, 0., .3]
 shelf_quaternion: [1, 0, 0, 1]

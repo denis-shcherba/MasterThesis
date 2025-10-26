@@ -1,5 +1,6 @@
 defaults:
-  - env: default_9d
+  - env: wrist_9d
 
+num_samples: 1_000
 output_subdir: null
 seed: 42
