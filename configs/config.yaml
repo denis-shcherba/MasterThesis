@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: transformer_depth
+  - model: diffusion_depth
   - loss: default_9d
   - optimizer: adam
   - data: depth

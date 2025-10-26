@@ -109,7 +109,7 @@ def eval_policy(cfg: DictConfig) -> None:
     log.info(f"Using padding strategy: {padding_strategy}")
 
     torch.manual_seed(cfg.seed)
-    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.get("robot_mode", "floating"), simulate=cfg.simulate, seed=cfg.seed)
+    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.action_execution_horizon
 
     # Model

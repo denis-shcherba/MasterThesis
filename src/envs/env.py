@@ -58,7 +58,7 @@ class ShelfEnv(gym.Env):
         self.q0 = self.C.getJointState()
 
         if self.simulate:
-            self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0)
+            self.sim = None
 
         # --- Define Action and Observation Spaces ---
         # These must match the policy's expectations.
@@ -109,7 +109,7 @@ class ShelfEnv(gym.Env):
 
         # Configure robot based on mode
         if self.robot_mode == "jointspace" or self.robot_mode == "taskspace":
-            self.C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingle.g'))
+            self.C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingleThesis.g'))
             self.prefix = "l_"
             self.gripper_name = "l_gripper"
             self.palm_name = "l_palm"
@@ -195,12 +195,6 @@ class ShelfEnv(gym.Env):
             .setAttribute("friction", .01) 
         
         self.C.view(False)
-
-        del self.sim
-
-        if self.simulate:
-            self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0)
-
         
     def _spawn_books_scene(self):
         sample = generate_random_box_params(
@@ -277,10 +271,11 @@ class ShelfEnv(gym.Env):
 
         self._spawn_books_scene()
 
-        del self.sim
+        if self.sim != None:
+            del self.sim
 
         if self.simulate:
-            self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0)
+            self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0, camera=self.camera_name)
         observation = self._get_obs()
         info = self._get_info()
         

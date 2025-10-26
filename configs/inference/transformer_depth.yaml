@@ -1,5 +1,3 @@
-checkpoint_path: outputs/final_outputs/se3.pth
-normalization_stats_path: outputs/final_outputs/se3.yaml
-# checkpoint_path: outputs/final_outputs/transformer.pth
-# normalization_stats_path: outputs/final_outputs/transformer.yaml
+checkpoint_path: outputs/final_outputs/se3_wrist.pth
+normalization_stats_path: outputs/final_outputs/se3_wrist.yaml
 padding_strategy: zero

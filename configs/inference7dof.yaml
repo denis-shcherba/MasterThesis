@@ -10,7 +10,6 @@ observation_mode: 'depth'
 output_subdir: null
 num_eval_episodes: 500
 simulate: True
-robot_mode: "jointspace"
 is_waypointPlusTimings: False
 action_execution_horizon: 12
 seed: 42

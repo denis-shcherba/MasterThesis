@@ -1,6 +1,5 @@
 
 robot_mode: "floating"         # "normal" or "floating"
-collect_data: false
 path_mode: "POS3D"            
 simulate: true
 camera_name: "cameraStatic"    # or "cameraWrist"
