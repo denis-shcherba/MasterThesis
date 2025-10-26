@@ -1,5 +1,5 @@
 # Path to the HDF5 file containing demonstrations
-h5_file_path: demos/normal2000_jointspace.h5
+h5_file_path: demos/se3_1000tries_wristcam.h5
 
 # Data loading parameters
 batch_size: ${train.batch_size}  
@@ -25,6 +25,7 @@ normalize_depth: true
 normalize_actions: true
 depth_normalization_method: 'minmax'  
 action_normalization_method: 'minmax' 
+normalize_action_indices: [0, 1, 2]
 
 #augmentation
 augment_data: false      

@@ -5,11 +5,9 @@ from torch.utils.data import Dataset, DataLoader
 from typing import Dict, List, Optional, Tuple
 import logging
 
-
 class ManipulationDataset(Dataset):
     """
     Streaming HDF5 dataset for imitation learning.
-    MODIFIED to support sequence-to-sequence imitation learning.
     """
     def __init__(
         self,
@@ -23,15 +21,16 @@ class ManipulationDataset(Dataset):
         normalize_depth: bool = True,
         normalize_actions: bool = True,
         augment_data: bool = False,
-        depth_dropout_prob: float = 0.05, # Percentage of pixels to drop
-        depth_noise_scale: float = 0.0001, # Scaling factor 'k' for quadratic noise
+        depth_dropout_prob: float = 0.05,
+        depth_noise_scale: float = 0.0001,
         subsample_demos: Optional[int] = None,
         train_split: float = 0.8,
         split: str = 'train',
         random_seed: int = 42,
         observation_mode: str = 'depth',
-        depth_normalization_method: str = 'minmax',     # 'minmax', 'zscore', or 'unit'
-        action_normalization_method: str = 'minmax',    # 'minmax', 'zscore', or 'unit'
+        depth_normalization_method: str = 'minmax',
+        action_normalization_method: str = 'minmax',
+        normalize_action_indices: Optional[List[int]] = None,  
     ):
         self.h5_file_path = h5_file_path
         self.is_regression = is_regression
@@ -47,6 +46,7 @@ class ManipulationDataset(Dataset):
         self.observation_mode = observation_mode
         self.depth_normalization_method = depth_normalization_method
         self.action_normalization_method = action_normalization_method
+        self.normalize_action_indices = normalize_action_indices  # NEW
 
         self.logger = logging.getLogger(__name__)
         self.rng = np.random.default_rng(random_seed)
@@ -76,21 +76,16 @@ class ManipulationDataset(Dataset):
         """Applies domain randomization noise to a single depth image."""
         augmented_image = depth_image.copy()
 
-        # 1. Add distance-dependent Gaussian noise (proportional to depth squared)
         if self.depth_noise_scale > 0:
-            # We only add noise to valid depth pixels (non-zero)
             valid_mask = augmented_image > 0
-            # The standard deviation of the noise is k * z^2
             std_dev = self.depth_noise_scale * (augmented_image[valid_mask] ** 2)
             noise = self.rng.normal(loc=0.0, scale=std_dev)
             augmented_image[valid_mask] += noise
 
-        # 2. Apply percent-wise dropout (simulate sensor dropouts)
         if self.depth_dropout_prob > 0:
             dropout_mask = self.rng.random(augmented_image.shape) < self.depth_dropout_prob
-            augmented_image[dropout_mask] = 0.0 # Set dropped pixels to 0 (invalid)
+            augmented_image[dropout_mask] = 0.0
 
-        # Ensure depth values remain non-negative after adding noise
         return np.maximum(augmented_image, 0)
 
     def _augment_depth_image_realistic(
@@ -98,34 +93,20 @@ class ManipulationDataset(Dataset):
         depth_image: np.ndarray,
         dropout_patch_size: float = 5.0
     ) -> np.ndarray:
-        # Maybe better alternative? TODO however, as its still not realistic
-        """Applies more realistic, spatially correlated noise to a single depth image."""
         augmented_image = depth_image.copy()
 
-        # 1. Add distance-dependent Gaussian noise (Your implementation is already correct!)
         if self.depth_noise_scale > 0:
             valid_mask = augmented_image > 0
             std_dev = self.depth_noise_scale * (augmented_image[valid_mask] ** 2)
             noise = self.rng.normal(loc=0.0, scale=std_dev)
             augmented_image[valid_mask] += noise
 
-        # 2. Apply realistic dropout in patches
         if self.depth_dropout_prob > 0:
-            # Step A: Generate a random noise field
             random_noise = self.rng.random(augmented_image.shape)
-
-            # Step B: Blur the noise to make it spatially correlated (blobby)
-            # The 'sigma' parameter controls the average size of the dropout patches.
             correlated_noise = gaussian_filter(random_noise, sigma=dropout_patch_size)
-
-            # Step C: Create the dropout mask by thresholding the correlated noise.
-            # This selects the lowest-value regions of the blurred noise map,
-            # ensuring the total dropout percentage is what you specified.
             dropout_mask = correlated_noise < np.percentile(correlated_noise, self.depth_dropout_prob * 100)
+            augmented_image[dropout_mask] = 0.0
 
-            augmented_image[dropout_mask] = 0.0 # Set dropped pixels to 0
-
-        # Ensure depth values remain non-negative
         return np.maximum(augmented_image, 0)
 
     def _index_demonstrations(self):
@@ -145,10 +126,7 @@ class ManipulationDataset(Dataset):
                 meta = {'demo_id': demo_idx, 'demo_key': demo_key, 'num_timesteps': num_timesteps}
                 self.demo_meta.append(meta)
                 
-                # A sample is valid as long as we can fetch a full future sequence.
-                # The history can be partial (we will pad it).
                 if num_timesteps >= self.future_sequence_length:
-                    # 't' here represents the start index of the FUTURE sequence.
                     for t in range(num_timesteps - self.future_sequence_length + 1):
                         self.valid_indices.append((demo_idx, t))
                 
@@ -157,7 +135,6 @@ class ManipulationDataset(Dataset):
 
     def _create_split(self, train_split: float):
         """Filter demos for train/val split."""
-        # Get the set of demo_ids belonging to this split
         num_demos = len(self.demo_meta)
         indices = np.arange(num_demos)
         self.rng.shuffle(indices)
@@ -165,16 +142,12 @@ class ManipulationDataset(Dataset):
         
         if self.split == 'train':
             selected_demo_indices = set(indices[:split_idx])
-        else: # 'val'
+        else:
             selected_demo_indices = set(indices[split_idx:])
         
-        # Filter demo_meta
         self.demo_meta = [meta for i, meta in enumerate(self.demo_meta) if i in selected_demo_indices]
-        
-        # Filter valid_indices based on the selected demos
         self.valid_indices = [(demo_idx, t) for demo_idx, t in self.valid_indices if demo_idx in selected_demo_indices]
 
-        # Remap demo_id to be contiguous (0, 1, 2...) for the new subset of demos
         old_to_new_id_map = {old_meta['demo_id']: new_id for new_id, old_meta in enumerate(self.demo_meta)}
         
         for meta in self.demo_meta:
@@ -185,14 +158,18 @@ class ManipulationDataset(Dataset):
     def _subsample_if_needed(self, subsample_demos: Optional[int]):
         if subsample_demos is not None and subsample_demos > 0:
             if len(self.demo_meta) > subsample_demos:
-                # First, select a subset of demos
                 self.demo_meta = self.demo_meta[:subsample_demos]
-                # Get the demo_ids of the kept demos
                 kept_demo_ids = {meta['demo_id'] for meta in self.demo_meta}
-                # Filter valid_indices to only include those from the kept demos
                 self.valid_indices = [(demo_idx, t) for demo_idx, t in self.valid_indices if demo_idx in kept_demo_ids]
 
     def _compute_action_normalization_stats(self, f):
+        # Determine which indices to compute stats for
+        if self.normalize_action_indices is not None:
+            indices_to_normalize = self.normalize_action_indices
+        else:
+            indices_to_normalize = list(range(self.action_dim))
+        
+        # Initialize arrays for computing stats only on normalized indices
         min_vals = np.full(self.action_dim, np.inf, dtype=np.float64)
         max_vals = np.full(self.action_dim, -np.inf, dtype=np.float64)
         sum_vals = np.zeros(self.action_dim, dtype=np.float64)
@@ -204,22 +181,54 @@ class ManipulationDataset(Dataset):
         with h5py.File(self.h5_file_path, 'r') as temp_f:
             all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
             original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
+        
         for meta in original_demo_meta:
             arr = f[f"{meta['demo_key']}/path"][...]
             count += arr.shape[0]
-            min_vals = np.minimum(min_vals, arr.min(axis=0))
-            max_vals = np.maximum(max_vals, arr.max(axis=0))
-            sum_vals += arr.sum(axis=0)
-            sum_sq_vals += (arr ** 2).sum(axis=0)
+            
+            # Only compute stats for specified indices
+            for idx in indices_to_normalize:
+                min_vals[idx] = min(min_vals[idx], arr[:, idx].min())
+                max_vals[idx] = max(max_vals[idx], arr[:, idx].max())
+                sum_vals[idx] += arr[:, idx].sum()
+                sum_sq_vals[idx] += (arr[:, idx] ** 2).sum()
 
         if self.action_normalization_method == 'minmax':
-            range_vals = np.where(max_vals - min_vals == 0, 1, max_vals - min_vals)
-            return {'method': 'minmax', 'min': min_vals, 'range': range_vals}
+            range_vals = np.ones(self.action_dim, dtype=np.float64)
+            # Compute range only for normalized indices
+            for idx in indices_to_normalize:
+                range_vals[idx] = max_vals[idx] - min_vals[idx] if max_vals[idx] - min_vals[idx] != 0 else 1.0
+            
+            # For unnormalized indices, set neutral values: min=0, range=1
+            for idx in range(self.action_dim):
+                if idx not in indices_to_normalize:
+                    min_vals[idx] = 0.0
+                    range_vals[idx] = 1.0
+            
+            return {
+                'method': 'minmax',
+                'min': min_vals.tolist(),
+                'range': range_vals.tolist(),
+                'normalize_indices': list(indices_to_normalize)
+            }
         else:
-            mean = sum_vals / count
-            var = (sum_sq_vals / count) - mean ** 2
-            std = np.where(var <= 1e-8, 1, np.sqrt(var))
-            return {'method': self.action_normalization_method, 'mean': mean, 'std': std}
+            mean = np.zeros(self.action_dim, dtype=np.float64)
+            std = np.ones(self.action_dim, dtype=np.float64)
+            
+            # Compute mean and std only for normalized indices
+            for idx in indices_to_normalize:
+                mean[idx] = sum_vals[idx] / count
+                var = (sum_sq_vals[idx] / count) - mean[idx] ** 2
+                std[idx] = np.sqrt(var) if var > 1e-8 else 1.0
+            
+            # Unnormalized indices already have mean=0, std=1
+            
+            return {
+                'method': self.action_normalization_method,
+                'mean': mean.tolist(),
+                'std': std.tolist(),
+                'normalize_indices': list(indices_to_normalize)
+            }
 
     def _compute_depth_normalization_stats(self, f):
         min_val, max_val = np.inf, -np.inf
@@ -241,12 +250,12 @@ class ManipulationDataset(Dataset):
 
         if self.depth_normalization_method == 'minmax':
             range_val = max(max_val - min_val, 1e-8)
-            return {'method': 'minmax', 'min': min_val, 'range': range_val}
+            return {'method': 'minmax', 'min': float(min_val), 'range': float(range_val)}
         else:
             mean = sum_val / count
             var = (sum_sq_val / count) - mean ** 2
             std = np.sqrt(var) if var > 1e-8 else 1
-            return {'method': self.depth_normalization_method, 'mean': mean, 'std': std}
+            return {'method': self.depth_normalization_method, 'mean': float(mean), 'std': float(std)}
             
     def __len__(self):
         return len(self.valid_indices)
@@ -259,7 +268,6 @@ class ManipulationDataset(Dataset):
         if not hasattr(self, 'h5_file'):
             self.h5_file = h5py.File(self.h5_file_path, 'r', libver='latest', swmr=True)
 
-        # A valid index now points to the start of the FUTURE sequence
         demo_idx, future_start_t = self.valid_indices[idx]
         meta = self.demo_meta[demo_idx]
         
@@ -268,48 +276,37 @@ class ManipulationDataset(Dataset):
         future_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][future_start_t:future_end_t].astype(np.float32)
 
         # 2. --- Handle the PAST (history) sequence with PADDING ---
-        # Define the desired time range for the past sequence
         past_start_t = future_start_t - self.sequence_length
-        past_end_t = future_start_t # Exclusive index
+        past_end_t = future_start_t
 
-        # Determine how much to pad and how much to fetch
         num_to_pad = max(0, -past_start_t)
         num_to_fetch = self.sequence_length - num_to_pad
 
-        # Create zero-filled tensors for padding
-        # Get the shape of a single observation to create the padded tensor
         obs_sample_shape = self._load_obs(meta['demo_key'], 0, 1).shape[1:]
         obs_sequence = np.zeros((self.sequence_length, *obs_sample_shape), dtype=np.float32)
         past_actions_sequence = np.zeros((self.sequence_length, self.action_dim), dtype=np.float32)
         
         if num_to_fetch > 0:
-            # Fetch the portion of the history that exists in the data
             real_data_start_t = past_end_t - num_to_fetch
             
             real_obs = self._load_obs(meta['demo_key'], real_data_start_t, past_end_t)
             real_actions = self.h5_file[f"{meta['demo_key']}/path"][real_data_start_t:past_end_t].astype(np.float32)
             
             if self.augment_data and self.split == 'train' and self.observation_mode == 'depth':
-                # Apply the augmentation function to each depth image in the sequence
                 augmented_obs = np.array([self._augment_depth_image(img) for img in real_obs])
                 real_obs = augmented_obs
 
-            # Place the real data at the end of the padded tensors
             obs_sequence[num_to_pad:] = real_obs
             past_actions_sequence[num_to_pad:] = real_actions
 
         # 3. --- Handle Normalization ---
-        # IMPORTANT: Normalize AFTER creating the padded sequences.
-        # This ensures the padding remains zeros and is not affected by normalization stats.
         if self.normalize_actions:
-            # Only normalize the parts that contain real data
             if num_to_fetch > 0:
                 past_actions_sequence[num_to_pad:] = self._normalize_actions(past_actions_sequence[num_to_pad:])
             future_actions_sequence = self._normalize_actions(future_actions_sequence)
         
         if self.observation_mode == 'depth' and self.normalize_depth:
             if num_to_fetch > 0:
-                # Normalize each image in the sequence individually
                 normalized_obs = np.array([self._normalize_depth(img) for img in obs_sequence[num_to_pad:]])
                 obs_sequence[num_to_pad:] = normalized_obs
 
@@ -332,18 +329,27 @@ class ManipulationDataset(Dataset):
 
     def _normalize_actions(self, actions):
         stats = self.action_stats
+        normalized_actions = actions.copy()
+        
+        # Get indices to normalize
+        indices_to_normalize = stats.get('normalize_indices', list(range(self.action_dim)))
+        
         if stats['method'] == 'minmax':
-            return 2 * (actions - stats['min']) / stats['range'] - 1 # to [-1, 1]
-        else: # zscore
-            return (actions - stats['mean']) / stats['std']
+            for idx in indices_to_normalize:
+                normalized_actions[..., idx] = 2 * (actions[..., idx] - stats['min'][idx]) / stats['range'][idx] - 1
+        else:  # zscore
+            for idx in indices_to_normalize:
+                normalized_actions[..., idx] = (actions[..., idx] - stats['mean'][idx]) / stats['std'][idx]
+        
+        return normalized_actions
 
     def _normalize_depth(self, depth):
         stats = self.depth_stats
         if stats['method'] == 'minmax':
             return (depth - stats['min']) / stats['range']
-        else: # zscore
+        else:
             return (depth - stats['mean']) / stats['std']
-        
+
 def create_dataloaders(
     h5_file_path: str,
     batch_size: int = 32,
@@ -364,7 +370,8 @@ def create_dataloaders(
     normalize_depth: bool = True,
     normalize_actions: bool = True,
     depth_normalization_method = 'minmax',
-    action_normalization_method = 'zscore'
+    action_normalization_method = 'zscore',
+    normalize_action_indices: Optional[List[int]] = None
 
 ) -> Tuple[DataLoader, DataLoader]:
     train_dataset = ManipulationDataset(
@@ -386,7 +393,8 @@ def create_dataloaders(
         normalize_depth=normalize_depth,
         normalize_actions=normalize_actions,
         depth_normalization_method=depth_normalization_method,
-        action_normalization_method=action_normalization_method
+        action_normalization_method=action_normalization_method,
+        normalize_action_indices=normalize_action_indices
     )
 
     val_dataset = ManipulationDataset(
@@ -406,7 +414,8 @@ def create_dataloaders(
         normalize_depth=normalize_depth,
         normalize_actions=normalize_actions,
         depth_normalization_method=depth_normalization_method,
-        action_normalization_method=action_normalization_method
+        action_normalization_method=action_normalization_method,
+        normalize_action_indices=normalize_action_indices
     )
 
     train_loader = DataLoader(
@@ -451,7 +460,8 @@ def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
         is_waypointPlusTimings=data_cfg.get('is_waypointPlusTimings', False),
         observation_mode=cfg.get('observation_mode', 'points'), 
         depth_normalization_method=data_cfg.get('depth_normalization_method', 'minmax'),
-        action_normalization_method=data_cfg.get('action_normalization_method', 'zscore')
+        action_normalization_method=data_cfg.get('action_normalization_method', 'zscore'),
+        normalize_action_indices=data_cfg.get('normalize_action_indices', None),
     )
 
 

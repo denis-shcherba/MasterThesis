@@ -173,6 +173,7 @@ class PoseLoss9D(nn.Module):
         super().__init__()
         self.lambda_pos = loss_cfg.get('lambda_pos', 1.0)
         self.lambda_rot = loss_cfg.get('lambda_rot', 1.0)
+        self.debug = loss_cfg.get('debug', True) # Added a flag for debugging
 
         # Position Loss
         self.pos_loss_config = loss_cfg.get('position_loss', {'type': 'mse'})
@@ -226,8 +227,16 @@ class PoseLoss9D(nn.Module):
         # Combine losses
         total_loss = self.lambda_pos * loss_pos + self.lambda_rot * loss_rot
         
-        # Optionally, return individual components for logging
-        # return total_loss, {"pos_loss": loss_pos.item(), "rot_loss": loss_rot.item()}
+        # --- Debug Printing ---
+        if self.debug:
+            print("-" * 30)
+            print(f"Position Loss (unweighted): {loss_pos.item():.6f}")
+            print(f"Rotation Loss (unweighted): {loss_rot.item():.6f}")
+            print(f"Total Loss (weighted):      {total_loss.item():.6f}")
+            print(f"  -> λ_pos * pos_loss:       {self.lambda_pos * loss_pos.item():.6f}")
+            print(f"  -> λ_rot * rot_loss:       {self.lambda_rot * loss_rot.item():.6f}")
+            print("-" * 30)
+        
         return total_loss
 
 class MSELoss(nn.Module):

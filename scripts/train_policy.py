@@ -74,8 +74,8 @@ def train_policy(cfg: DictConfig) -> None:
 
         # Convert to clean dicts
         normalization_stats = {
-            "action_stats": numpy_to_python(action_stats) if action_stats else None,
-            "depth_stats": numpy_to_python(depth_stats) if depth_stats else None,
+            "action_stats": action_stats if action_stats else None,
+            "depth_stats": depth_stats if depth_stats else None,
         }
 
         output_dir = Path(cfg.get('output_dir', 'outputs'))
