@@ -7,7 +7,7 @@ from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "normal" # "normal" or "floating"
 COLLECT_DATA = True
-PATH_MODE = "SE93D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
+PATH_MODE = "SE39D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
 CAMERA = "cameraWrist"  # or "cameraWrist"
 BASE_REMOVAl = False # if true, shelf will be removed from observation
@@ -15,7 +15,7 @@ DEBUG = False # pull debugging
 OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 2_000
+NUM_SAMPLES = 1_000
 VISUALIZE = False  # If true, the simulation will be visualized
 SAVE_BOOK_PARAMS = False  # If true, the parameters of the generated books will be saved to a file
 
@@ -83,7 +83,7 @@ box_size_ranges = {  # Variable box dimensions
     'z': (.009, .045),   # Z_b range
 }
 
-samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=NUM_SAMPLES, num_boxes= 1, allow_yaw=False)
+
 
 shelf_corner = np.array([
     (shelfBottomFrame.getPosition()[:3] + np.array([-shelf_depth/2, -shelf_width/2, 0])),
@@ -92,136 +92,145 @@ shelf_corner = np.array([
 demo_id = 0
 err = []
 
+
 if COLLECT_DATA:
     h5file = h5py.File("variable_demo.h5", "w")
 
-for sample in samples:
-    for book_params in sample:
-        for i, box in enumerate(sample):
-            q = ry.Quaternion().setRollPitchYaw(([0,0, box[-1]]))
-            C.addFrame(f"target_book_{i}") \
-                .setPosition(shelf_corner + np.append(box[3:5], (shelf_height+box[2])/2)) \
-                .setQuaternion(q.asArr()) \
-                .setShape(ry.ST.ssBox, size=[box[0], box[1], box[2], 0.005]) \
-                .setColor(np.random.rand(3) if RANDOM_COLOR else [1, 0, 0]) \
-                .setContact(0) \
-                .setMass(.1) \
-                .setAttribute("friction", .01) 
-        C.view(False)
+while demo_id < NUM_SAMPLES:
+    #TODO, make more efficient?
 
-        
-        # target at the middle of the shelf ending
-        target = np.array([
-            (shelfBottomFrame.getPosition()[:2] + np.array([-shelf_depth/2, 0])),
-        ])
-        target = np.append(target, C.getFrame("target_book_0").getPosition()[2])
+    samples = generate_random_box_params(shelf_size, box_size_ranges, num_samples=NUM_SAMPLES, num_boxes= 1, allow_yaw=False)
 
-        C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
-
-
-        roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE, noise_dict=noise_dict, camera=CAMERA)
-
-        success = roboenv.pull_real("target_book_0", target, accumulated_collisions=True, get_observation=COLLECT_DATA)
-        
-
-        if success and COLLECT_DATA:
-            #np.save("pc.npy", roboenv.points[0])
-
-            demo_group = h5file.create_group(f"demo_{demo_id}")
-
-            if SAVE_BOOK_PARAMS:
-                demo_group.create_dataset("book_params", data=book_params)
-
-            if PATH_MODE == "JOINT7DSPLINE" or PATH_MODE == "JOINT7D":
-                demo_group.create_dataset("path", data=roboenv.path)
-            if ROBOT_MODE == "floating" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
-                se3_path = np.zeros((roboenv.path.shape[0], 9))
-                
-                for i in range(roboenv.path.shape[0]):
-                    q = ry.Quaternion().set(roboenv.path[i][3:])
-                    R = q.getMatrix()
-                    # Combine position (3D) with first two rotation matrix columns (6D)
-                    se3_path[i, :3] = roboenv.path[i][:3]  # Position
-                    se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
-                
-                # Now use se3_path instead of the original path
-                demo_group.create_dataset("path", data=se3_path)
-
-            elif ROBOT_MODE == "normal" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
-                se3_path = np.zeros((roboenv.path.shape[0], 9))
-
-                C2 = ry.Config()
-                C2.addConfigurationCopy(C)
-                for i in range(roboenv.path.shape[0]):
-                    C2.setJointState(roboenv.path[i])
-                    ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
-
-                    q = ry.Quaternion().set(ee_pose[3:])
-                    R = q.getMatrix()
-                    se3_path[i, :3] = ee_pose[:3]  # Position
-                    se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
-
-                demo_group.create_dataset("path", data=se3_path)
-
-
-            elif PATH_MODE == "POS3DSPLINE" or PATH_MODE == "POS3D":
-                # save the spline path 3D control points
-                demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
-
-
-            elif PATH_MODE == "DELTA3DSPLINE":
-                delta_paths = np.empty((64, 3))
-                delta_paths[0] = roboenv.path[0][:3]-C.getJointState()[:3]
-                for i in range(1, roboenv.path.shape[0]):
-                    delta_paths[i] = roboenv.path[i][:3] - roboenv.path[i-1][:3]
-                demo_group.create_dataset("path", data=delta_paths)  # Only delta positions
-
-            elif PATH_MODE == "RegressPC2Pos":
-                print(roboenv.path.shape)
-                demo_group.create_dataset("path", data=roboenv.path[31, :3])  # Only position
-
-            elif PATH_MODE == "WAYplusTIMING":
-                # Save the waypoints and timing\
-                demo_group.create_dataset("path", data=roboenv.path[:, :3])  
-                demo_group.create_dataset("ways", data=roboenv.ways) 
-                demo_group.create_dataset("timings", data=roboenv.timings) 
-
-            if OBSERVATION_MODE == "POINTCLOUD":
-                demo_group.create_dataset("points", data=roboenv.points)
-            elif OBSERVATION_MODE == "RGB":
-                if COMPRESS:
-                        demo_group.create_dataset(
-                        "rgb", 
-                        data=roboenv.rgb_image,
-                        compression="gzip",
-                        compression_opts=4
-                        )
-                else:
-                    demo_group.create_dataset("rgb", data=roboenv.rgb_image)
-            
-            elif OBSERVATION_MODE == "DEPTH":
-                if COMPRESS:
-                        demo_group.create_dataset(
-                        "depth", 
-                        data=roboenv.depth_image,
-                        compression="gzip",
-                        compression_opts=4
-                        )
-                else:
-                    demo_group.create_dataset("depth", data=roboenv.depth_image)
+    for sample in samples:
+        for book_params in sample:
+            for i, box in enumerate(sample):
+                q = ry.Quaternion().setRollPitchYaw(([0,0, box[-1]]))
+                C.addFrame(f"target_book_{i}") \
+                    .setPosition(shelf_corner + np.append(box[3:5], (shelf_height+box[2])/2)) \
+                    .setQuaternion(q.asArr()) \
+                    .setShape(ry.ST.ssBox, size=[box[0], box[1], box[2], 0.005]) \
+                    .setColor(np.random.rand(3) if RANDOM_COLOR else [1, 0, 0]) \
+                    .setContact(0) \
+                    .setMass(.1) \
+                    .setAttribute("friction", .01) 
+            C.view(False)
 
             
-            demo_id += 1
+            # target at the middle of the shelf ending
+            target = np.array([
+                (shelfBottomFrame.getPosition()[:2] + np.array([-shelf_depth/2, 0])),
+            ])
+            target = np.append(target, C.getFrame("target_book_0").getPosition()[2])
 
-        elif success and DEBUG:
-            err.append(np.linalg.norm(C.getFrame("target_book_0").getPosition() - target))
+            C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
-        C.delFrame(f"target_book_0")
-        C.view(False)
-        C.setJointState(q0)
+
+            roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE, noise_dict=noise_dict, camera=CAMERA)
+
+            success = roboenv.pull_real("target_book_0", target, accumulated_collisions=True, get_observation=COLLECT_DATA)
+            
+
+            if success and COLLECT_DATA:
+                #np.save("pc.npy", roboenv.points[0])
+
+                demo_group = h5file.create_group(f"demo_{demo_id}")
+
+                if SAVE_BOOK_PARAMS:
+                    demo_group.create_dataset("book_params", data=book_params)
+
+                if PATH_MODE == "JOINT7DSPLINE" or PATH_MODE == "JOINT7D":
+                    demo_group.create_dataset("path", data=roboenv.path)
+                if ROBOT_MODE == "floating" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
+                    se3_path = np.zeros((roboenv.path.shape[0], 9))
+                    
+                    for i in range(roboenv.path.shape[0]):
+                        q = ry.Quaternion().set(roboenv.path[i][3:])
+                        R = q.getMatrix()
+                        # Combine position (3D) with first two rotation matrix columns (6D)
+                        se3_path[i, :3] = roboenv.path[i][:3]  # Position
+                        se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+                    
+                    # Now use se3_path instead of the original path
+                    demo_group.create_dataset("path", data=se3_path)
+
+                elif ROBOT_MODE == "normal" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
+                    se3_path = np.zeros((roboenv.path.shape[0], 9))
+
+                    C2 = ry.Config()
+                    C2.addConfigurationCopy(C)
+                    for i in range(roboenv.path.shape[0]):
+                        C2.setJointState(roboenv.path[i])
+                        ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
+
+                        q = ry.Quaternion().set(ee_pose[3:])
+                        R = q.getMatrix()
+                        se3_path[i, :3] = ee_pose[:3]  # Position
+                        se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+
+                    demo_group.create_dataset("path", data=se3_path)
+
+
+                elif PATH_MODE == "POS3DSPLINE" or PATH_MODE == "POS3D":
+                    # save the spline path 3D control points
+                    demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
+
+
+                elif PATH_MODE == "DELTA3DSPLINE":
+                    delta_paths = np.empty((64, 3))
+                    delta_paths[0] = roboenv.path[0][:3]-C.getJointState()[:3]
+                    for i in range(1, roboenv.path.shape[0]):
+                        delta_paths[i] = roboenv.path[i][:3] - roboenv.path[i-1][:3]
+                    demo_group.create_dataset("path", data=delta_paths)  # Only delta positions
+
+                elif PATH_MODE == "RegressPC2Pos":
+                    print(roboenv.path.shape)
+                    demo_group.create_dataset("path", data=roboenv.path[31, :3])  # Only position
+
+                elif PATH_MODE == "WAYplusTIMING":
+                    # Save the waypoints and timing\
+                    demo_group.create_dataset("path", data=roboenv.path[:, :3])  
+                    demo_group.create_dataset("ways", data=roboenv.ways) 
+                    demo_group.create_dataset("timings", data=roboenv.timings) 
+
+                if OBSERVATION_MODE == "POINTCLOUD":
+                    demo_group.create_dataset("points", data=roboenv.points)
+                elif OBSERVATION_MODE == "RGB":
+                    if COMPRESS:
+                            demo_group.create_dataset(
+                            "rgb", 
+                            data=roboenv.rgb_image,
+                            compression="gzip",
+                            compression_opts=4
+                            )
+                    else:
+                        demo_group.create_dataset("rgb", data=roboenv.rgb_image)
+                
+                elif OBSERVATION_MODE == "DEPTH":
+                    if COMPRESS:
+                            demo_group.create_dataset(
+                            "depth", 
+                            data=roboenv.depth_image,
+                            compression="gzip",
+                            compression_opts=4
+                            )
+                    else:
+                        demo_group.create_dataset("depth", data=roboenv.depth_image)
+
+                
+                demo_id += 1
+
+
+            elif success and DEBUG:
+                err.append(np.linalg.norm(C.getFrame("target_book_0").getPosition() - target))
+
+            C.delFrame(f"target_book_0")
+            C.view(False)
+            C.setJointState(q0)
+            
+            C.getFrame(prefix+'panda_finger_joint1').setJointState(np.array([.01]))
         
-        C.getFrame(prefix+'panda_finger_joint1').setJointState(np.array([.01]))
-
+        if demo_id >= NUM_SAMPLES:
+            break
 
 if DEBUG:
     print("Average error to target:", np.mean(err))
