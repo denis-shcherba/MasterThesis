@@ -3,7 +3,23 @@ import robotic as ry
 import cmath 
 from collections import deque
 import random
+import cv2
 
+def crop_or_rescale_img(img, crop: bool = False, rescale: bool = True, crop_size: int = 96, rescale_size: int = 96) -> np.ndarray:
+    if crop:
+        original_height, original_width = img.shape
+        left = (original_width - crop_size) // 2
+        top = (original_height - crop_size) // 2
+        right = left + crop_size
+        bottom = top + crop_size
+
+        post_img = img[top:bottom, left:right, :]
+
+    if rescale:
+        post_img = cv2.resize(img, (rescale_size, rescale_size), interpolation=cv2.INTER_LINEAR)
+
+
+    return post_img
 
 def choose_starting_point(point_list, metric=""):
     """

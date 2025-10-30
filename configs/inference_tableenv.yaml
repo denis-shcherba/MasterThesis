@@ -1,9 +1,9 @@
 defaults:
   - _self_  
-  - model: transformer_depth7dof
-  - data: depth7dof
-  - inference: transformer_depth7dof
-  - env: default_3d
+  - model: transformer_depth
+  - data: depth
+  - inference: transformer_depth
+  - env: wrist_9d_table
 
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: 'depth'
@@ -11,7 +11,7 @@ output_subdir: null
 num_eval_episodes: 500
 simulate: True
 is_waypointPlusTimings: False
-action_execution_horizon: 12
+action_execution_horizon: 4
 seed: 42
 context_length: 8
 prediction_length: 16

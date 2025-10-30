@@ -372,6 +372,7 @@ class TableEnv(BaseRobotEnv):
         print(self.C.getJointState())
 
         self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
+        self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
         self.C.addFrame("target").setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9]).setPosition([.2, .4, .7])
     
         self.gripper = "l_gripper"  # TODO into abstract class
@@ -531,36 +532,65 @@ class TableEnv(BaseRobotEnv):
         self.C.setJointState(self.q0)
 
         self._setup_scene()
-
-        if self.sim != None:
-            del self.sim
         
-        if self.simulate:
+        if self.botop:
+            self.bot = ry.BotOp(self.C, self.on_real)
+        elif self.simulate:
             self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0, camera=self.camera_name)
-        
+
         observation = self._get_obs()
         info = self._get_info()
         
         return observation, info
 
-    def step(self, action):        
-        if self.simulate:
-            if self.robot_mode == "floating":
-                for _ in range(100):
-                    self.sim._sim.step(action, 0.01, ry.ControlMode.position)
+    def step(self, action):
+        # Your logic to apply an action to the environment
+        # `action` will be a numpy array matching `self.action_space`
+        #print(f"Executing action: {action}")
+        
+        if self.robot_mode == "floating":
+            for _ in range(100):  # Simulate for 100 steps
+                self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
+                self.C.view()
+        elif self.robot_mode == "jointspace":
+            for _ in range(100):
+                self.sim._sim.step(action, 0.01, ry.ControlMode.position)
+        elif self.robot_mode == "taskspace":
+            komo = ry.KOMO()
+            komo.setConfig(self.C, False)
+            komo.setTiming(1, 1, 1., 0)
+            
+            komo.clearObjectives()
+            komo.addControlObjective([], 0, 1e-1)
+            komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3])
+            rot_matrix = gram_schmidt_orthonormalize(action[3:])
+            quat = ry.Quaternion().setMatrix(rot_matrix).asArr()
+
+            komo.addObjective([], ry.FS.quaternion, [self.gripper_name], ry.OT.sos, [1e2], quat)
+            sol = ry.NLP_Solver(komo.nlp())
+            sol.setOptions(stopInners=1, damping=1e-4, verbose=0)
+            ret = sol.solve()
+            # komo.view(True, f'sol{s}')
+
+            if self.botop:
+                self.bot.move([komo.getPath()[0]], [.01])
+                while self.bot.getTimeToEnd() > 0:
+                    self.bot.wait(self.C)
+            elif self.simulate:
+                for _ in range(20):
+                    self.sim._sim.step(komo.getPath()[0], .01, ry.ControlMode.position)
                     self.C.view()
-            elif self.robot_mode == "jointspace":
-                 for _ in range(100):
-                    self.sim._sim.step(action, 0.01, ry.ControlMode.position)
-            elif self.robot_mode == "taskspace":
-                pass
+
+        else:
+            self.C.setJointState([action[0], action[1], action[2]])  # Assuming the first 7 values are joint angles
+
+        # --- After action, get the new results ---
         observation = self._get_obs()
+        reward = 1.0 # TODO Your logic for calculating reward, if even necessary
+        terminated = False # Your logic for whether the episode has ended (e.g., task success)
+        truncated = False # Your logic for whether the episode was cut short (e.g., time limit)
         info = self._get_info()
         
-        reward = -info["distance_to_target"]
-        terminated = info["success"]
-        truncated = False 
-
-        self.C.view(False)
+        self.C.view(False)  # Update the view after the action
+        # The step function MUST return these five values in this order
         return observation, reward, terminated, truncated, info
-

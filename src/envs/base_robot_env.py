@@ -3,6 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import robotic as ry
 from envs.simulator import Simulator
+from envs.utils import crop_or_rescale_img
 import abc
 
 class BaseRobotEnv(gym.Env, abc.ABC):
@@ -24,6 +25,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                  robot_mode="floating",
                  path_mode="SE39D",
                  simulate=True,
+                 botop=False,
+                 on_real=False,
                  camera_name="cameraStatic",
                  seed=42):
         super().__init__()
@@ -33,6 +36,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         self.robot_mode = robot_mode
         self.path_mode = path_mode
         self.simulate = simulate
+        self.botop = botop
+        self.on_real = on_real
         self.camera_name = camera_name
         self.C = ry.Config()
         self.seed = seed
@@ -42,13 +47,16 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
         self.C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setPosition([1,0,0]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
         self.C.view_setCamera(self.C.getFrame("worldCamera"))
-        
+
         # --- Setup Robot ---
         self._load_robot()
         self.q0 = self.C.getJointState()
 
         if self.simulate:
             self.sim = None
+
+        if self.botop:
+            self.bot=None
 
         if self.obs_type == "pixels_agent_pos":
             self.observation_space = spaces.Dict(
@@ -132,7 +140,27 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             points = self.sim.getPoints(n_samples=4096, vis=True)
             observation["points"] = points
         elif self.obs_type == "depth_agent_pos":
-            depth = self.sim.getDepth(rescale=True, rescale_size=96)
+            if self.botop:
+                if self.on_real:
+                    pass # opencv?
+                else:
+                    _, depth = self.bot.getImageAndDepth(self.camera_name)
+                    depth = crop_or_rescale_img(depth, crop=False, rescale=True, rescale_size=96)
+            elif self.simulate:
+                self.camview = ry.CameraView(self.C)
+                self.camview.setCamera(self.C.getFrame(self.camera_name))
+
+                _, depth = self.camview.computeImageAndDepth(self.C)
+                depth = crop_or_rescale_img(depth, crop=False, rescale=True, rescale_size=96)
+
+                # Camera_view = a.getFxycxy()
+                # ry.CameraView(self.C).setCamera(self.C.getFrame(self.camera_name)).getFxycxy()
+                # print(Camera_view)
+                # print(self.C)
+                # depth = self.sim.getDepth(rescale=True, rescale_size=96)
+            # import matplotlib.pyplot as plt
+            # plt.imshow(depth)
+            # plt.show()
             observation["depth"] = depth
 
         observation["agent_pos"] = agent_pos
@@ -174,6 +202,10 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         print(f"Resetting {self.__class__.__name__}.")
         
         self.C.setJointState(self.q0)
+        if self.botop:
+            del self.bot
+        elif self.simulate:
+            del self.sim
 
 
     @abc.abstractmethod

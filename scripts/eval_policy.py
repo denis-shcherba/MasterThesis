@@ -94,7 +94,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_tableenv", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
@@ -109,7 +109,10 @@ def eval_policy(cfg: DictConfig) -> None:
     log.info(f"Using padding strategy: {padding_strategy}")
 
     torch.manual_seed(cfg.seed)
-    env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
+    if cfg.env.get("env", None) == "table":
+        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), seed=cfg.seed, collect_data=True)
+    else:
+        env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.action_execution_horizon
 
     # Model
