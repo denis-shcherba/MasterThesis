@@ -53,8 +53,9 @@ class ShelfEnv(gym.Env):
         self.books = []
 
         camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
-        self.C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setPosition([1,0,0]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
-        self.C.view_setCamera(self.C.getFrame("worldCamera"))
+        self.C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setPosition([1,0,0]).setAttributes({"focalLength": .895}).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
+        
+        self.C.viewer().setCamera(self.C.getFrame("worldCamera"))
         
         self._create_shelf_scene(shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant)
         self.q0 = self.C.getJointState()
@@ -193,7 +194,7 @@ class ShelfEnv(gym.Env):
             .setColor([1, 0, 0]) \
             .setContact(1) \
             .setMass(.1) \
-            .setAttribute("friction", .01) 
+            .setAttributes({"friction": .01}) 
         
         self.C.view(False)
         
@@ -529,13 +530,13 @@ class TableEnv(BaseRobotEnv):
 
     def getImageDepth(self):
         if self.botop:
-            _, depth = self.bot.getImageAndDepth(self.camera_name)
+            rgb, depth = self.bot.getImageAndDepth(self.camera_name)
         elif self.simulate:
             self.camview = ry.CameraView(self.C)
             self.camview.setCamera(self.C.getFrame(self.camera_name))
 
-            _, depth = self.camview.computeImageAndDepth(self.C)
-        return depth
+            rgb, depth = self.camview.computeImageAndDepth(self.C)
+        return rgb, depth
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)

@@ -1,0 +1,1 @@
+# TODO prolly better than dino as you give language conditioned segmentation?

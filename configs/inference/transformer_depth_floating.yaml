@@ -1,0 +1,3 @@
+checkpoint_path: outputs/final_outputs/floating_gripper/transformer_8_16_data_1000.pth
+normalization_stats_path: outputs/final_outputs/floating_gripper/transformer_8_16_data_1000.yaml
+padding_strategy: zero

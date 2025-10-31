@@ -2,8 +2,8 @@ defaults:
   - _self_  
   - model: transformer_depth
   - data: depth
-  - inference: transformer_depth
-  - env: wrist_9d
+  - inference: transformer_depth_floating
+  - env: default_3d
 
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: 'depth'
@@ -14,7 +14,7 @@ is_waypointPlusTimings: False
 action_execution_horizon: 4
 seed: 42
 context_length: 8
-prediction_length: 8
+prediction_length: 16
 
 hydra:
   run:

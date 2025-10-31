@@ -1,4 +1,0 @@
-checkpoint_path: outputs/final_outputs/8To16.pth
-normalization_stats_path: outputs/final_outputs/7DoF.yaml
-
-padding_strategy: zero

@@ -1,0 +1,3 @@
+checkpoint_path: outputs/final_outputs/tableenv.pth
+normalization_stats_path: outputs/final_outputs/tableenv.yaml
+padding_strategy: zero
