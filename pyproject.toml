@@ -26,7 +26,6 @@ dependencies = [
     "hydra-core",
     "h5py",
     "matplotlib",
-    "robotic==0.3.1",
     "omegaconf",
     "lxml",
     "trimesh",

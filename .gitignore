@@ -21,3 +21,5 @@ eval_outputs/
 checkpoints/
 .vscode/
 test_outputs/
+thesis/
+.venv

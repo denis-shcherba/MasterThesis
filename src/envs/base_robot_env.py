@@ -45,15 +45,16 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
         # --- Setup Camera ---
         camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
-        self.C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setPosition([1,0,0]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
-        self.C.view_setCamera(self.C.getFrame("worldCamera"))
+        self.C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setPosition([1,0,0]).setAttributes({"focalLength": .895}).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
+        #self.C.view.setCamera(self.C.getFrame("worldCamera"))
+
 
         # --- Setup Robot ---
         self._load_robot()
         self.q0 = self.C.getJointState()
 
         if self.simulate:
-            self.sim = None
+            self.sim = None 
 
         if self.botop:
             self.bot=None
@@ -142,6 +143,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         elif self.obs_type == "depth_agent_pos":
             if self.botop:
                 if self.on_real:
+                    _, depth = self.bot.getImageAndDepth(self.camera_name)
+                    depth = crop_or_rescale_img(depth, crop=False, rescale=True, rescale_size=96)
                     pass # opencv?
                 else:
                     _, depth = self.bot.getImageAndDepth(self.camera_name)
@@ -201,7 +204,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         super().reset(seed=seed) 
         print(f"Resetting {self.__class__.__name__}.")
         
-        self.C.setJointState(self.q0)
+        if not self.on_real:
+            self.C.setJointState(self.q0)
         if self.botop:
             del self.bot
         elif self.simulate:

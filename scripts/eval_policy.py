@@ -110,7 +110,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
     torch.manual_seed(cfg.seed)
     if cfg.env.get("env", None) == "table":
-        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), seed=cfg.seed, collect_data=True)
+        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=True)
     else:
         env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.action_execution_horizon

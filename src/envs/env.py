@@ -405,7 +405,7 @@ class TableEnv(BaseRobotEnv):
             .setColor([1, 0, 0]) \
             .setContact(1) \
             .setMass(.1) \
-            .setAttribute("friction", .01) 
+            .setAttributes({"friction": .01}) 
         
         self.C.view(False)
         
@@ -527,14 +527,31 @@ class TableEnv(BaseRobotEnv):
     def save_data(self):
         pass
 
+    def getImageDepth(self):
+        if self.botop:
+            _, depth = self.bot.getImageAndDepth(self.camera_name)
+        elif self.simulate:
+            self.camview = ry.CameraView(self.C)
+            self.camview.setCamera(self.C.getFrame(self.camera_name))
+
+            _, depth = self.camview.computeImageAndDepth(self.C)
+        return depth
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.C.setJointState(self.q0)
+        if not self.on_real:
+            self.C.setJointState(self.q0)
+            pass
 
         self._setup_scene()
         
         if self.botop:
             self.bot = ry.BotOp(self.C, self.on_real)
+            if self.on_real:
+                self.bot.home(self.C)
+                self.bot.moveTo(self.q0)
+                while self.bot.getTimeToEnd() > 0:
+                    self.bot.wait(self.C)
         elif self.simulate:
             self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0, camera=self.camera_name)
 
@@ -556,12 +573,18 @@ class TableEnv(BaseRobotEnv):
             for _ in range(100):
                 self.sim._sim.step(action, 0.01, ry.ControlMode.position)
         elif self.robot_mode == "taskspace":
+            
+            # clip minimum height for z to avoid collisions with table
+            if action[2] < 0.67:
+                action[2] = 0.67
+            
             komo = ry.KOMO()
             komo.setConfig(self.C, False)
             komo.setTiming(1, 1, 1., 0)
             
             komo.clearObjectives()
             komo.addControlObjective([], 0, 1e-1)
+
             komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3])
             rot_matrix = gram_schmidt_orthonormalize(action[3:])
             quat = ry.Quaternion().setMatrix(rot_matrix).asArr()
@@ -573,7 +596,7 @@ class TableEnv(BaseRobotEnv):
             # komo.view(True, f'sol{s}')
 
             if self.botop:
-                self.bot.move([komo.getPath()[0]], [.01])
+                self.bot.move([komo.getPath()[0]], [.5])
                 while self.bot.getTimeToEnd() > 0:
                     self.bot.wait(self.C)
             elif self.simulate:
