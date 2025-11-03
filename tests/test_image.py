@@ -2,7 +2,7 @@ import robotic as ry
 import matplotlib.pyplot as plt
 import numpy as np
 import gymnasium as gym
-import envs.env  # noqa: F401  
+import envs.shelf_env  # noqa: F401  
 
 env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode="taskspace", camera_name="cameraWrist", simulate=True, seed=42, collect_data=False)
 

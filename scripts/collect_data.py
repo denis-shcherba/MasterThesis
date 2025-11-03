@@ -2,7 +2,7 @@ import hydra
 from omegaconf import DictConfig
 import logging
 import gymnasium as gym
-import envs.env  # noqa: F401  
+import envs.shelf_env  # noqa: F401  
 
 log = logging.getLogger(__name__)
 

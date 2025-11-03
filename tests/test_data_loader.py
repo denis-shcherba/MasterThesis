@@ -16,7 +16,7 @@ from utils.data_utils import  denormalize_actions
 import robotic as ry
 import matplotlib.pyplot as plt
 import gymnasium as gym
-import envs.env  # noqa: F401 
+import envs.shelf_env  # noqa: F401 
 import time
 log = logging.getLogger(__name__)
 

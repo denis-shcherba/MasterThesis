@@ -1,0 +1,16 @@
+
+robot_mode: "pos3d"         # "normal" or "floating"
+simulate: true
+botop: false
+on_real: false
+camera_name: "cameraWrist"    # or "cameraWrist"
+env: "table"
+
+allow_book_yaw: false
+
+box_size_ranges:
+  x: [0.1, 0.15]
+  y: [0.14, 0.23]
+  z: [0.009, 0.045]
+
+

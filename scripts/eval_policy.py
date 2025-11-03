@@ -12,12 +12,12 @@ import json
 from hydra.core.hydra_config import HydraConfig
 import robotic as ry
 import gymnasium as gym
-import envs.env  # noqa: F401  
+import envs  # noqa: F401  
 import matplotlib.pyplot as plt
 
 log = logging.getLogger(__name__)
 DEBUG_DEPTH = False
-DEBUG_STATE = True
+DEBUG_STATE = False
 
 def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
     for name in env.unwrapped.C.getFrameNames():
@@ -94,7 +94,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_floating", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
@@ -110,7 +110,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
     torch.manual_seed(cfg.seed)
     if cfg.env.get("env", None) == "table":
-        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=True)
+        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False)
     else:
         env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.action_execution_horizon
@@ -233,7 +233,8 @@ def eval_policy(cfg: DictConfig) -> None:
                 if DEBUG_DEPTH:
                     test_depth_sequence(depth_seq.cpu().numpy())
                 if DEBUG_STATE:
-                    show_state_input_seq(cfg, env, denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze(), color=[0, 1, 0, .9])
+                    state_seq_denorm = denormalize_actions(state_seq, normalization_stats["action_stats"]).squeeze()
+                    show_state_input_seq(cfg, env, state_seq_denorm, color=[0, 1, 0, .9])
                 with torch.no_grad():
                     action_chunk = model(depth_seq, state_seq)
                 action_chunk = denormalize_actions(action_chunk, normalization_stats["action_stats"])

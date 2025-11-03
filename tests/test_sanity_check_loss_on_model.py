@@ -8,7 +8,7 @@ import logging
 import os
 from tqdm import tqdm
 import gymnasium as gym
-import envs.env  # noqa: F401 
+import envs.shelf_env  # noqa: F401 
 # --- Assumed imports from your project structure ---
 # You might need to adjust these paths based on your file organization
 from models.policy_head.policy_network import create_model

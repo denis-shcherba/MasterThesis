@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import robotic as ry
-from envs.simulator import Simulator
+from importlib.resources import files
 from envs.utils import crop_or_rescale_img
 import abc
 
@@ -50,7 +50,6 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
         self.C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setPosition([1,0,0]).setAttributes({"focalLength": .895}).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
         self.C.viewer().setCamera(self.C.getFrame("worldCamera"))
-
         # --- Setup Robot ---
         self._load_robot()
         self.q0 = self.C.getJointState()
@@ -96,7 +95,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         """Loads the robot model based on self.robot_mode."""
         print(f"Loading robot in mode: {self.robot_mode}")
         if self.robot_mode == "jointspace" or self.robot_mode == "taskspace" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
-            self.C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingleThesis.g'))
+            self.C.addFile(str(files("envs.scenes") / "single.g"))
             self.prefix = "l_"
             self.gripper_name = "l_gripper"
             self.palm_name = "l_palm"
@@ -109,7 +108,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                  self.C.delFrame("panda_collCameraWrist")
 
         elif self.robot_mode == "floating":
-            self.C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
+            self.C.addFile(str(files("envs.scenes") / "floating.g"))
             self.gripper_name = "gripper"
             self.palm_name = "palm"
             self.prefix = ""
@@ -124,10 +123,12 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
     def _get_obs(self):
         """Gets an observation from the environment (common logic)."""
-        if self.robot_mode == "jointspace":
+        if self.robot_mode == "jointspace" or self.robot_mode == "floating":
             agent_pos_raw = self.C.getJointState()
-        elif self.robot_mode == "floating" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
-            agent_pos_raw = self.C.getJointState()[:3]
+        elif self.robot_mode == "pos3d":
+            agent_pos_raw = self.C.getFrame(self.gripper_name).getPosition()
+        elif self.robot_mode == "pos3d_rel":
+            agent_pos_raw = self.C.getFrame(self.gripper_name).getPosition()-self.last_pos
         elif self.robot_mode == "taskspace":
             agent_pos_raw = np.zeros(9)
             pose = self.C.getFrame(self.gripper_name).getPose()

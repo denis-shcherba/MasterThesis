@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium.utils.env_checker import check_env
 
 # Import your custom environment package to register it
-import envs.env  # noqa: F401 
+import envs.shelf_env  # noqa: F401 
 
 env = gym.make("ShelfEnv-v0")  # Adjust args as needed
 env.reset()
