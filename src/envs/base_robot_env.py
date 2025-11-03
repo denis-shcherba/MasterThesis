@@ -28,6 +28,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                  botop=False,
                  on_real=False,
                  camera_name="cameraStatic",
+                 gripper="l_gripper",
                  seed=42):
         super().__init__()
         
@@ -41,6 +42,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         self.camera_name = camera_name
         self.C = ry.Config()
         self.seed = seed
+        self.gripper = gripper
+
         np.random.seed(self.seed)
 
         # --- Setup Camera ---
@@ -51,6 +54,9 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         # --- Setup Robot ---
         self._load_robot()
         self.q0 = self.C.getJointState()
+
+        if "rel" in self.robot_mode:
+            self.last_pos = self.C.getFrame(self.gripper).getPosition()
 
         if self.simulate:
             self.sim = None 
@@ -89,7 +95,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     def _load_robot(self):
         """Loads the robot model based on self.robot_mode."""
         print(f"Loading robot in mode: {self.robot_mode}")
-        if self.robot_mode == "jointspace" or self.robot_mode == "taskspace":
+        if self.robot_mode == "jointspace" or self.robot_mode == "taskspace" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
             self.C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingleThesis.g'))
             self.prefix = "l_"
             self.gripper_name = "l_gripper"
@@ -120,7 +126,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         """Gets an observation from the environment (common logic)."""
         if self.robot_mode == "jointspace":
             agent_pos_raw = self.C.getJointState()
-        elif self.robot_mode == "floating":
+        elif self.robot_mode == "floating" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
             agent_pos_raw = self.C.getJointState()[:3]
         elif self.robot_mode == "taskspace":
             agent_pos_raw = np.zeros(9)

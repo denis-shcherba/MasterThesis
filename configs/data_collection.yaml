@@ -1,5 +1,5 @@
 defaults:
-  - env: wrist_9d
+  - env: wrist_9d_table
 
 num_samples: 1_000
 output_subdir: null

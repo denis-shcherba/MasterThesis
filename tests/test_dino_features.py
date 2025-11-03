@@ -2,19 +2,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from transformers import AutoImageProcessor, AutoModel
-from PIL import Image
-import requests
-import torch # Ensure torch is imported for tensor operations if needed
 import robotic as ry
-import gymnasium as gym
-import envs.env  # noqa: F401  
-from envs.utils import crop_or_rescale_img
 
-env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode="taskspace", camera_name="cameraWrist", simulate=True, seed=42, collect_data=False)
+C = ry.Config()
+C.addFile("$RAI_PATH/scenarios/pandaSingle.g")
 
-env.reset()
-rgb, depth = env.unwrapped.getImageDepth()
-depth_scaled = crop_or_rescale_img(depth, False, True )
+C.setJointState([.0, .0, .0, -2., 0. ,2., -0.5])
+camview = ry.CameraView(C)
+camview.setCamera(C.getFrame("cameraWrist"))
+
+
+C.addFrame("box") \
+    .setPosition([0, .4, .7]) \
+    .setShape(ry.ST.ssBox, size=[.2, .1, .04, 0.005]) \
+    .setColor([1, 0, 0]) \
+    .setContact(1) \
+    .setMass(.1) \
+    .setAttributes({"friction": .01}) 
+
+C.view(True)
+rgb, depth_scaled = camview.computeImageAndDepth(C)
+
+#depth_scaled = crop_or_rescale_img(depth, False, True )
 
 depth_norm = (depth_scaled - depth_scaled.min()) / (depth_scaled.max() - depth_scaled.min()) 
 depth_norm_255 = (depth_norm * 255).astype(np.uint8)

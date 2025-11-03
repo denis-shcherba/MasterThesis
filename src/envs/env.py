@@ -370,14 +370,14 @@ class TableEnv(BaseRobotEnv):
 
         self.camera_name = camera_name
 
+        self_las_pos = np.array([0., 0., 0.])
+
         print(self.C.getJointState())
 
         self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
         self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
         self.C.addFrame("target").setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9]).setPosition([.2, .4, .7])
     
-        self.gripper = "l_gripper"  # TODO into abstract class
-
         if collect_data:    # TODO parameters
             self.h5file = h5py.File("table_demo.h5", "w")
             self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name)
@@ -459,22 +459,6 @@ class TableEnv(BaseRobotEnv):
         if success:
             demo_group = self.h5file.create_group(f"demo_{self.demo_id}")
 
-            # if PATH_MODE == "JOINT7DSPLINE" or PATH_MODE == "JOINT7D":
-            #     demo_group.create_dataset("path", data=roboenv.path)
-            # if ROBOT_MODE == "floating" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
-            #     se3_path = np.zeros((roboenv.path.shape[0], 9))
-                
-            #     for i in range(roboenv.path.shape[0]):
-            #         q = ry.Quaternion().set(roboenv.path[i][3:])
-            #         R = q.getMatrix()
-            #         # Combine position (3D) with first two rotation matrix columns (6D)
-            #         se3_path[i, :3] = roboenv.path[i][:3]  # Position
-            #         se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
-                
-            #     # Now use se3_path instead of the original path
-            #     demo_group.create_dataset("path", data=se3_path)
-
-            # elif ROBOT_MODE == "normal" and (PATH_MODE == "SE39DSPLINE" or PATH_MODE == "SE39D"):
             se3_path = np.zeros((self.roboenv.path.shape[0], 9))
 
             C2 = ry.Config()
@@ -485,27 +469,19 @@ class TableEnv(BaseRobotEnv):
 
                 q = ry.Quaternion().set(ee_pose[3:])
                 R = q.getMatrix()
-                se3_path[i, :3] = ee_pose[:3]  # Position
-                se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+                if "rel" in self.robot_mode:
+                    se3_path[i, :3] = ee_pose[:3] - self.last_pos
+                    self.last_pos = ee_pose[:3]
 
-            demo_group.create_dataset("path", data=se3_path)
+                else:
+                    se3_path[i, :3] = ee_pose[:3]  # Position
+                    se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+ 
+            if self.robot_mode == "taskspace":
+                demo_group.create_dataset("path", data=se3_path)
+            elif self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
+                demo_group.create_dataset("path", data=se3_path[:, :3])
 
-
-            # elif PATH_MODE == "POS3DSPLINE" or PATH_MODE == "POS3D":
-            #     # save the spline path 3D control points
-            #     demo_group.create_dataset("path", data=roboenv.path[:, :3])  # Only position
-
-            # elif OBSERVATION_MODE == "RGB":
-            #     if COMPRESS:
-            #             demo_group.create_dataset(
-            #             "rgb", 
-            #             data=roboenv.rgb_image,
-            #             compression="gzip",
-            #             compression_opts=4
-            #             )
-            #     else:
-            #         demo_group.create_dataset("rgb", data=roboenv.rgb_image)
-            
             if self.img_type.upper() == "DEPTH":
                 demo_group.create_dataset(
                 "depth", 
@@ -556,6 +532,7 @@ class TableEnv(BaseRobotEnv):
         elif self.simulate:
             self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0, camera=self.camera_name)
 
+        self.last_pos = self.C.getFrame(self.gripper_name).getPosition()
         observation = self._get_obs()
         info = self._get_info()
         
@@ -573,7 +550,7 @@ class TableEnv(BaseRobotEnv):
         elif self.robot_mode == "jointspace":
             for _ in range(100):
                 self.sim._sim.step(action, 0.01, ry.ControlMode.position)
-        elif self.robot_mode == "taskspace":
+        elif self.robot_mode == "taskspace" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
             
             # clip minimum height for z to avoid collisions with table
             if action[2] < 0.67:
@@ -587,10 +564,12 @@ class TableEnv(BaseRobotEnv):
             komo.addControlObjective([], 0, 1e-1)
 
             komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3])
-            rot_matrix = gram_schmidt_orthonormalize(action[3:])
-            quat = ry.Quaternion().setMatrix(rot_matrix).asArr()
+            
+            if self.robot_mode == "taskspace":
+                rot_matrix = gram_schmidt_orthonormalize(action[3:])
+                quat = ry.Quaternion().setMatrix(rot_matrix).asArr()
 
-            komo.addObjective([], ry.FS.quaternion, [self.gripper_name], ry.OT.sos, [1e2], quat)
+                komo.addObjective([], ry.FS.quaternion, [self.gripper_name], ry.OT.sos, [1e2], quat)
             sol = ry.NLP_Solver(komo.nlp())
             sol.setOptions(stopInners=1, damping=1e-4, verbose=0)
             ret = sol.solve()

@@ -14,7 +14,7 @@ is_waypointPlusTimings: False
 action_execution_horizon: 4
 seed: 42
 context_length: 8
-prediction_length: 16
+prediction_length: 8
 
 hydra:
   run:

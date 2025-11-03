@@ -5,7 +5,7 @@ floatY (floatX){ joint:transY, limits:[-2 2], mass:.01 }
 floatZ (floatY){ joint:transZ, limits:[0 3], mass:.01, q: 1 }
 #floatBall (floatZ){ joint:quatBall, limits:[-1 -1 -1 -1 1 1 1 1], mass:.01 }
 
-Include: <../panda/panda_gripper.g>
+Include <$RAI_PATH/panda/panda_gripper.g>
 
 gripper_base(floatZ): { Q:"t(0 0 .1035) d(180 1 0 0) d(-90 0 0 1)", shape: marker, size: [.03] }
 Edit panda_hand(gripper_base): {}
@@ -32,5 +32,4 @@ cameraWrist(gripper): {
  shape: camera, size: [.1],
  focalLength: 0.895, width: 640, height: 360, zRange: [.01, 10]
 }
-
 

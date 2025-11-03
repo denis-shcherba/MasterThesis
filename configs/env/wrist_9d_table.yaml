@@ -1,12 +1,10 @@
 
-robot_mode: "taskspace"         # "normal" or "floating"
-path_mode: "POS3D"            
-simulate: false
-botop: true
-on_real: true
+robot_mode: "pos3d_rel"         # "normal" or "floating"
+simulate: true
+botop: false
+on_real: false
 camera_name: "cameraWrist"    # or "cameraWrist"
 env: "table"
-
 
 allow_book_yaw: false
 

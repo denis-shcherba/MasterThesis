@@ -1,6 +1,5 @@
 
-robot_mode: "taskspace"         # "normal" or "floating"
-path_mode: "POS3D"            
+robot_mode: "taskspace"         # "normal" or "floating"    
 simulate: true
 camera_name: "cameraWrist"    # or "cameraWrist"
 
@@ -9,7 +8,6 @@ shelf_quaternion: [1, 0, 0, 1]
 shelf_openings_small: [4, 11]
 shelf_equidistant: false
 
-num_samples_books: 10
 num_boxes_per_sample: 1
 allow_book_yaw: false
 
