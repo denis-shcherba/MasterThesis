@@ -5,6 +5,7 @@ action_dim: 3            # Dimension of action space
 dropout_rate: 0.2        # Dropout rate for regularization
 output_activation: null  
 policy_head_type: transformer
+encoder_type: dino
 
 # Multimodal policy specific settings
 state_dim: 3            # Same as action_dim for now (maybe change/omit)

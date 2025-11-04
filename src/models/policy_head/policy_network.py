@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from models.perception.pointnet import PointNet
+from models.perception.dinoencoder import DINOCLSEncoder
 from models.perception.depthimageencoder import DepthImageEncoder
 from models.policy_head.policy_head import MLPHead, ResidualMLPHead, TransformerHead, DiffusionHead
 import math
@@ -167,6 +168,7 @@ class MultiModalPolicy(nn.Module):
                  dropout_rate=0.3, fusion_method='concat',
                  time_encoding='none', time_embedding_dim=256, max_timesteps=64,
                  observation_mode='points',
+                 encoder_type='resnet',
                  policy_head_type: str = 'mlp',
                  mlp_hidden_dims: Optional[list] = None,
                  use_residual: bool = False,
@@ -193,11 +195,16 @@ class MultiModalPolicy(nn.Module):
         self.max_timesteps = max_timesteps
         self.policy_head_type = policy_head_type
         self.observation_mode = observation_mode
+        self.encoder_type = encoder_type
         self.prediction_length = prediction_length if prediction_length is not None else context_length
 
         # Observation encoder
         if self.observation_mode == 'depth':
-            self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
+            if self.encoder_type == 'resnet':
+                self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
+            elif self.encoder_type == 'dino':
+                self.obs_encoder = DINOCLSEncoder(feature_dim=feature_dim)
+
         else:
             raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
 
@@ -324,11 +331,6 @@ class MultiModalPolicy(nn.Module):
 
         # Encode state
         if states is not None and self.state_encoder is not None:
-            for i in range(128):
-                if (states[i] == 0).all(dim=1).sum().item()==8:
-                    pass
-                elif (states[i] == 0).all(dim=1).sum().item()==7:
-                    pass
             states = states.reshape(batch_size * seq_len, -1)
             state_features = self.state_encoder(states)
 
@@ -479,6 +481,7 @@ def create_model(model_cfg):
         output_activation=model_cfg.get('output_activation', None),
         policy_head_type=model_cfg.get('policy_head_type', 'mlp'),
         observation_mode=model_cfg.get('observation_mode'),
+        encoder_type=model_cfg.get('encoder_type', 'resnet'),
         # For multimodal policy
         state_dim=model_cfg.get('state_dim', 0),
         fusion_method=model_cfg.get('fusion_method', 'concat'),
