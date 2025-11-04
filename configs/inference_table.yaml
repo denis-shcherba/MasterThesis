@@ -3,7 +3,7 @@ defaults:
   - model: transformer_depth
   - data: depth
   - inference: transformer_depth_table
-  - env: table_3d_abs
+  - env: table_3d_rel
 
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: 'depth'

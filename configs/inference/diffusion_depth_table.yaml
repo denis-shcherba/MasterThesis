@@ -1,0 +1,3 @@
+checkpoint_path: outputs/final_outputs/table_env/tableenv_3drel_diff.pth
+normalization_stats_path: outputs/final_outputs/table_env/tableenv_3d.yaml
+padding_strategy: zero

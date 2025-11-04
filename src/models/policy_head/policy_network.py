@@ -287,8 +287,7 @@ class MultiModalPolicy(nn.Module):
             return nn.Linear(1, embedding_dim)
         raise ValueError(f"Unknown time_encoding method: {encoding_type}")
 
-    def forward(self, observations, states=None, timestep=None, 
-            prev_actions=None, return_full_sequence=False, true_actions=None) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, observations, states=None, timestep=None, true_actions=None) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass through the policy. Handles both single-step and sequence data.
         
@@ -325,7 +324,11 @@ class MultiModalPolicy(nn.Module):
 
         # Encode state
         if states is not None and self.state_encoder is not None:
-
+            for i in range(128):
+                if (states[i] == 0).all(dim=1).sum().item()==8:
+                    pass
+                elif (states[i] == 0).all(dim=1).sum().item()==7:
+                    pass
             states = states.reshape(batch_size * seq_len, -1)
             state_features = self.state_encoder(states)
 
@@ -363,28 +366,8 @@ class MultiModalPolicy(nn.Module):
             # Reshape for transformer: (B, T, D)
             obs_sequence = fused_features.view(batch_size, seq_len, -1)
             
-            # Handle previous actions for teacher forcing
-            if prev_actions is None:
-                # If no previous actions provided, create zeros
-                # This happens during inference or first timestep
-                prev_actions = torch.zeros(batch_size, seq_len, self.action_dim, 
-                                        device=observations.device, 
-                                        dtype=observations.dtype)
-            
-            # Ensure prev_actions has correct shape
-            if prev_actions.shape[1] != seq_len:
-                # If sequence lengths don't match, pad or truncate
-                if prev_actions.shape[1] < seq_len:
-                    # Pad with zeros at the beginning (shifted right)
-                    padding = torch.zeros(batch_size, seq_len - prev_actions.shape[1], 
-                                        self.action_dim, device=prev_actions.device)
-                    prev_actions = torch.cat([padding, prev_actions], dim=1)
-                else:
-                    # Truncate to match sequence length
-                    prev_actions = prev_actions[:, -seq_len:, :]
-            
             # Forward through transformer
-            action_seq = self.policy_head(obs_sequence, prev_actions)  # (B, T, action_dim)
+            action_seq = self.policy_head(obs_sequence)  # (B, T, action_dim)
             
             # Return based on what's requested
             if True:

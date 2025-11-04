@@ -275,9 +275,6 @@ class TransformerHead(nn.Module):
         self.prediction_length = prediction_length # <-- NEW
         self.output_dim = output_dim
         
-        # Action embedding for the input sequence is still useful
-        self.action_embed = nn.Linear(output_dim, embed_dim)
-        
         # Project observation features into the embedding dimension
         self.input_proj = nn.Linear(input_dim, embed_dim)
         
@@ -307,7 +304,7 @@ class TransformerHead(nn.Module):
         if name == 'sigmoid': return nn.Sigmoid()
         raise ValueError(f"Unsupported activation: {name}")
 
-    def forward(self, obs_sequence, prev_actions_sequence):
+    def forward(self, obs_sequence):
         """
         Args:
             obs_sequence: Tensor of observations, shape (B, context_length, input_dim)
@@ -317,8 +314,7 @@ class TransformerHead(nn.Module):
         """
         # 1. Embed inputs and add positional encoding
         obs_embed = self.input_proj(obs_sequence)
-        action_embed = self.action_embed(prev_actions_sequence)
-        x = obs_embed + action_embed + self.pos_emb
+        x = obs_embed + self.pos_emb
         
         # 2. Encode the entire input sequence (NO MASK)
         # The output 'encoded_seq' has shape (B, context_length, embed_dim)

@@ -264,6 +264,7 @@ class ManipulationDataset(Dataset):
         """
         MODIFIED: Fetches data and applies left-padding to history sequences
         if they fall before the start of a demonstration.
+        Ensures at least the current observation is always included.
         """
         if not hasattr(self, 'h5_file'):
             self.h5_file = h5py.File(self.h5_file_path, 'r', libver='latest', swmr=True)
@@ -276,39 +277,38 @@ class ManipulationDataset(Dataset):
         future_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][future_start_t:future_end_t].astype(np.float32)
 
         # 2. --- Handle the PAST (history) sequence with PADDING ---
-        past_start_t = future_start_t - self.sequence_length
-        past_end_t = future_start_t
-
-        num_to_pad = max(0, -past_start_t)
+        # Include current observation (future_start_t) in history
+        history_end_t = future_start_t + 1
+        history_start_t = history_end_t - self.sequence_length
+        
+        num_to_pad = max(0, -history_start_t)
         num_to_fetch = self.sequence_length - num_to_pad
-
+        
         obs_sample_shape = self._load_obs(meta['demo_key'], 0, 1).shape[1:]
         obs_sequence = np.zeros((self.sequence_length, *obs_sample_shape), dtype=np.float32)
         past_actions_sequence = np.zeros((self.sequence_length, self.action_dim), dtype=np.float32)
         
-        if num_to_fetch > 0:
-            real_data_start_t = past_end_t - num_to_fetch
-            
-            real_obs = self._load_obs(meta['demo_key'], real_data_start_t, past_end_t)
-            real_actions = self.h5_file[f"{meta['demo_key']}/path"][real_data_start_t:past_end_t].astype(np.float32)
-            
-            if self.augment_data and self.split == 'train' and self.observation_mode == 'depth':
-                augmented_obs = np.array([self._augment_depth_image(img) for img in real_obs])
-                real_obs = augmented_obs
+        # num_to_fetch is always >= 1 (at minimum the current observation)
+        real_data_start_t = max(0, history_start_t)
+        
+        real_obs = self._load_obs(meta['demo_key'], real_data_start_t, history_end_t)
+        real_actions = self.h5_file[f"{meta['demo_key']}/path"][real_data_start_t:history_end_t].astype(np.float32)
+        
+        if self.augment_data and self.split == 'train' and self.observation_mode == 'depth':
+            augmented_obs = np.array([self._augment_depth_image(img) for img in real_obs])
+            real_obs = augmented_obs
 
-            obs_sequence[num_to_pad:] = real_obs
-            past_actions_sequence[num_to_pad:] = real_actions
+        obs_sequence[num_to_pad:] = real_obs
+        past_actions_sequence[num_to_pad:] = real_actions
 
         # 3. --- Handle Normalization ---
         if self.normalize_actions:
-            if num_to_fetch > 0:
-                past_actions_sequence[num_to_pad:] = self._normalize_actions(past_actions_sequence[num_to_pad:])
+            past_actions_sequence[num_to_pad:] = self._normalize_actions(past_actions_sequence[num_to_pad:])
             future_actions_sequence = self._normalize_actions(future_actions_sequence)
         
         if self.observation_mode == 'depth' and self.normalize_depth:
-            if num_to_fetch > 0:
-                normalized_obs = np.array([self._normalize_depth(img) for img in obs_sequence[num_to_pad:]])
-                obs_sequence[num_to_pad:] = normalized_obs
+            normalized_obs = np.array([self._normalize_depth(img) for img in obs_sequence[num_to_pad:]])
+            obs_sequence[num_to_pad:] = normalized_obs
 
         # 4. --- Load metadata and convert to tensors ---
         book_params = self.h5_file[f"{meta['demo_key']}/book_params"][...].astype(np.float32) if 'book_params' in self.h5_file[f"{meta['demo_key']}"] else np.array([0.0], dtype=np.float32)
