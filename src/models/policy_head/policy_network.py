@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from models.perception.pointnet import PointNet
-from models.perception.dinoencoder import DINOCLSEncoder
+from models.perception.dinoencoder import FeatureAdapter
 from models.perception.depthimageencoder import DepthImageEncoder
 from models.policy_head.policy_head import MLPHead, ResidualMLPHead, TransformerHead, DiffusionHead
 import math
@@ -202,8 +202,10 @@ class MultiModalPolicy(nn.Module):
         if self.observation_mode == 'depth':
             if self.encoder_type == 'resnet':
                 self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
-            elif self.encoder_type == 'dino':
-                self.obs_encoder = DINOCLSEncoder(feature_dim=feature_dim)
+        elif self.observation_mode == 'dino_cls':
+            self.obs_encoder = FeatureAdapter(feature_dim=feature_dim)
+        elif self.observation_mode == 'dino_patch':
+            pass # To be implemented
 
         else:
             raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
@@ -318,12 +320,11 @@ class MultiModalPolicy(nn.Module):
 
             if timestep is not None:
                 timestep = timestep.view(batch_size * seq_len)
-
+        elif self.observation_mode == 'dino_cls':
+            batch_size, seq_len = observations.shape[:2]
+            obs_features = self.obs_encoder(observations)  # (B*S, feature_dim)
         elif self.observation_mode == 'points':
             obs_features = self.obs_encoder(obs_input)  # (B*S, feature_dim)
-        elif self.observation_mode == 'depth':
-            obs_input = obs_input.unsqueeze(1)
-            obs_features = self.obs_encoder(obs_input)
         else:
             raise ValueError(f"Unsupported observation mode: {self.observation_mode}")
 

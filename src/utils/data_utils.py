@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from transformers import AutoModel
 
 def numpy_to_python(obj):
     if isinstance(obj, dict):
@@ -100,3 +101,35 @@ def denormalize_actions(normalized_actions, stats):
     
     else:
         raise ValueError(f"Unknown normalization mode: {stats['method']}.")
+    
+def get_cls_features(depth_array_1x96x96: np.ndarray) -> np.ndarray:
+    """
+    Converts a batch of depth numpy arrays to DINO CLS feature vectors.
+    
+    Args:
+        depth_array_64x96x96: (64, 96, 96) numpy array of depth images (already scaled/normalized).
+        
+    Returns:
+        (64, 768) numpy array of DINO CLS features.
+    """
+    DINO_MODEL_NAME = 'facebook/dinov2-base'
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dino_model = AutoModel.from_pretrained(DINO_MODEL_NAME).to(device)
+    dino_model.eval()
+    for param in dino_model.parameters():
+        param.requires_grad = False
+    # 1. Convert to Torch Tensor and add Channel/Batch dims (64, 96, 96) -> (64, 1, 96, 96)
+    # Convert to float and normalize if necessary (assuming your original data is [0, 1] normalized)    
+    # 2. Replicate to 3 channels (64, 1, 96, 96) -> (64, 3, 96, 96) and move to device
+    input_tensor_3ch = depth_array_1x96x96.repeat(1, 3, 1, 1).to(device)
+
+    with torch.no_grad():
+        outputs = dino_model(input_tensor_3ch)
+        
+    # 3. Extract the CLS token (index 0 of the sequence dimension)
+    # Shape: (Batch_size, Num_Tokens + 1, Hidden_Size) -> (Batch_size, Hidden_Size)
+    cls_features = outputs.last_hidden_state[:, 0, :] 
+    
+    # 4. Convert back to CPU NumPy array
+    return cls_features

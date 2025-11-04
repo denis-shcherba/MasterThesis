@@ -51,6 +51,15 @@ class ManipulationDataset(Dataset):
         self.logger = logging.getLogger(__name__)
         self.rng = np.random.default_rng(random_seed)
 
+        if self.observation_mode == 'depth':
+            self.obs_key = 'depth'
+        elif self.observation_mode == 'dino_cls': 
+            self.obs_key = 'cls_features'
+            # Disable image-specific features when using extracted features
+            self.normalize_depth = False # Features are already pre-normalized/transformed by DINO
+            self.augment_data = False    # Augmentation should not be run on features
+            print("INFO: Using pre-extracted CLS features. Depth normalization and augmentation disabled.")
+
         if self.augment_data and self.split == 'train':
             self.logger.info(f"Applying depth augmentation with dropout={depth_dropout_prob} and noise_scale={depth_noise_scale}")
         self.depth_dropout_prob = depth_dropout_prob
@@ -112,18 +121,28 @@ class ManipulationDataset(Dataset):
     def _index_demonstrations(self):
         with h5py.File(self.h5_file_path, 'r') as f:
             demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
+            
             for demo_idx, demo_key in enumerate(demo_keys):
                 path_shape = f[f'{demo_key}/path'].shape
-                if self.observation_mode == 'depth':
-                    obs_shape = f[f'{demo_key}/depth'].shape
-                else:
-                    obs_shape = f[f'{demo_key}/points'].shape
                 
+                # *** MODIFIED: Use self.obs_key to find the observation data ***
+                obs_data_key = f'{demo_key}/{self.obs_key}'
+                if obs_data_key not in f:
+                    # Skip if the required observation key (e.g., 'cls_features') doesn't exist
+                    continue
+                
+                obs_shape = f[obs_data_key].shape
+                
+                # Check 1: path data is 2D and action_dim matches
+                # Check 2: observation (time) steps match action (time) steps
                 if len(path_shape) != 2 or path_shape[1] != self.action_dim or obs_shape[0] != path_shape[0]:
                     continue
                 
+                # Save the full observation shape (e.g., (768,) for CLS features)
+                obs_sample_shape = obs_shape[1:] 
+                
                 num_timesteps = path_shape[0]
-                meta = {'demo_id': demo_idx, 'demo_key': demo_key, 'num_timesteps': num_timesteps}
+                meta = {'demo_id': demo_idx, 'demo_key': demo_key, 'num_timesteps': num_timesteps, 'obs_sample_shape': obs_sample_shape} # <-- Store shape
                 self.demo_meta.append(meta)
                 
                 if num_timesteps >= self.future_sequence_length:
@@ -262,10 +281,10 @@ class ManipulationDataset(Dataset):
 
     def __getitem__(self, idx):
         """
-        MODIFIED: Fetches data and applies left-padding to history sequences
-        if they fall before the start of a demonstration.
-        Ensures at least the current observation is always included.
+        Fetches data, using pre-calculated CLS features when observation_mode='dino_cls'.
+        Applies left-padding to history sequences if they fall before the start of a demonstration.
         """
+        # Ensure HDF5 file is open
         if not hasattr(self, 'h5_file'):
             self.h5_file = h5py.File(self.h5_file_path, 'r', libver='latest', swmr=True)
 
@@ -282,30 +301,41 @@ class ManipulationDataset(Dataset):
         history_start_t = history_end_t - self.sequence_length
         
         num_to_pad = max(0, -history_start_t)
-        num_to_fetch = self.sequence_length - num_to_pad
         
-        obs_sample_shape = self._load_obs(meta['demo_key'], 0, 1).shape[1:]
+        # OBS_SAMPLE_SHAPE: This will be (768,) for DINO features, or (H, W) for depth images.
+        obs_sample_shape = meta['obs_sample_shape']
+        
+        # Initialize sequence arrays with correct shape
         obs_sequence = np.zeros((self.sequence_length, *obs_sample_shape), dtype=np.float32)
         past_actions_sequence = np.zeros((self.sequence_length, self.action_dim), dtype=np.float32)
         
-        # num_to_fetch is always >= 1 (at minimum the current observation)
+        # Determine the slice to fetch from the HDF5 file
         real_data_start_t = max(0, history_start_t)
         
+        # Load the real observations (DINO features or raw depth) and actions
         real_obs = self._load_obs(meta['demo_key'], real_data_start_t, history_end_t)
         real_actions = self.h5_file[f"{meta['demo_key']}/path"][real_data_start_t:history_end_t].astype(np.float32)
         
+        # *** Conditional Logic for Augmentation/Normalization (Only for RAW depth) ***
+        # This section is skipped when self.observation_mode == 'dino_cls' because:
+        # 1. self.augment_data is False
+        # 2. self.normalize_depth is False
         if self.augment_data and self.split == 'train' and self.observation_mode == 'depth':
             augmented_obs = np.array([self._augment_depth_image(img) for img in real_obs])
             real_obs = augmented_obs
 
+        # Copy data into the sequence array (after padding slot)
         obs_sequence[num_to_pad:] = real_obs
         past_actions_sequence[num_to_pad:] = real_actions
 
         # 3. --- Handle Normalization ---
+        # Action normalization is always applied
         if self.normalize_actions:
             past_actions_sequence[num_to_pad:] = self._normalize_actions(past_actions_sequence[num_to_pad:])
             future_actions_sequence = self._normalize_actions(future_actions_sequence)
         
+        # Depth normalization only runs if self.observation_mode == 'depth' AND self.normalize_depth is True.
+        # It is correctly skipped for 'dino_cls' features.
         if self.observation_mode == 'depth' and self.normalize_depth:
             normalized_obs = np.array([self._normalize_depth(img) for img in obs_sequence[num_to_pad:]])
             obs_sequence[num_to_pad:] = normalized_obs
@@ -322,10 +352,12 @@ class ManipulationDataset(Dataset):
         }
     
     def _load_obs(self, demo_key, start=None, end=None):
-        key = 'depth' if self.observation_mode == 'depth' else 'points'
+        obs_key_path = f"{demo_key}/{self.obs_key}"
+        
         if start is None:
-            return self.h5_file[f"{demo_key}/{key}"][...].astype(np.float32)
-        return self.h5_file[f"{demo_key}/{key}"][start:end].astype(np.float32)
+            return self.h5_file[obs_key_path][...].astype(np.float32)
+            
+        return self.h5_file[obs_key_path][start:end].astype(np.float32)
 
     def _normalize_actions(self, actions):
         stats = self.action_stats

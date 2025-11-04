@@ -13,9 +13,9 @@ train:
   grad_clip: 1.0
 
 # Global settings
-observation_mode: 'depth'  
+observation_mode: dino_cls
 seed: 42
-experiment_name: "SimpleSingleStepBC"
+experiment_name: SimpleSingleStepBC
 output_dir: ${hydra:runtime.output_dir}
 context_length: 8
 prediction_length: 8

@@ -6,7 +6,7 @@ import logging
 import os
 from models.policy_head.policy_network import create_model
 from data_handling.processing import pose_9d_to_7d, pose_7d_to_9d
-from utils.data_utils import normalize_depth, normalize_state, denormalize_actions
+from utils.data_utils import normalize_depth, normalize_state, denormalize_actions, get_cls_features
 import yaml
 import json
 from hydra.core.hydra_config import HydraConfig
@@ -177,31 +177,35 @@ def eval_policy(cfg: DictConfig) -> None:
                 # Get current observation and normalize it
                 current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
                 current_state = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
-                normalized_current_depth = normalize_depth(current_depth, normalization_stats["depth_stats"])
+                if cfg.observation_mode == 'depth':
+                    depth_obs = normalize_depth(current_depth, normalization_stats["depth_stats"])
+                elif cfg.observation_mode == 'dino_cls':
+                    depth_obs = get_cls_features(current_depth)
+
                 normalized_current_state = normalize_state(current_state, normalization_stats["action_stats"])
-                
+
                 # --- MODIFIED: Fixed Zero Padding Logic ---
                 if padding_strategy == 'zero':
                     # Create sequence with proper zero padding
                     if len(depth_sequence) == 0:
                         # First prediction: all zeros except last entry (current obs)
-                        dummy_depth = torch.zeros_like(normalized_current_depth)
+                        dummy_depth = torch.zeros_like(depth_obs)
                         dummy_state = torch.zeros_like(normalized_current_state)
                         
-                        padded_depth_list = [dummy_depth] * (sequence_length - 1) + [normalized_current_depth]
+                        padded_depth_list = [dummy_depth] * (sequence_length - 1) + [depth_obs]
                         padded_state_list = [dummy_state] * (sequence_length - 1) + [normalized_current_state]
                     else:
                         # Subsequent predictions: zero pad + history + current
                         history_length = len(depth_sequence)
                         num_zeros_needed = max(0, sequence_length - history_length - 1)
                         
-                        dummy_depth = torch.zeros_like(normalized_current_depth)
+                        dummy_depth = torch.zeros_like(depth_obs)
                         dummy_state = torch.zeros_like(normalized_current_state)
                         
                         # Build sequence: [zeros] + [history] + [current]
                         padded_depth_list = ([dummy_depth] * num_zeros_needed + 
                                            depth_sequence[-min(history_length, sequence_length-1):] + 
-                                           [normalized_current_depth])
+                                           [depth_obs])
                         padded_state_list = ([dummy_state] * num_zeros_needed + 
                                            state_sequence[-min(history_length, sequence_length-1):] + 
                                            [normalized_current_state])
@@ -216,11 +220,11 @@ def eval_policy(cfg: DictConfig) -> None:
                     num_pad = sequence_length - len(depth_sequence) - 1  # -1 for current obs
                     if num_pad > 0:
                         # Replicate the current observation for padding
-                        padded_depth_list = [normalized_current_depth] * num_pad + depth_sequence + [normalized_current_depth]
+                        padded_depth_list = [depth_obs] * num_pad + depth_sequence + [depth_obs]
                         padded_state_list = [normalized_current_state] * num_pad + state_sequence + [normalized_current_state]
                     else:
                         # Use history + current
-                        padded_depth_list = depth_sequence[-(sequence_length-1):] + [normalized_current_depth]
+                        padded_depth_list = depth_sequence[-(sequence_length-1):] + [depth_obs]
                         padded_state_list = state_sequence[-(sequence_length-1):] + [normalized_current_state]
                 
                 else:
@@ -254,12 +258,15 @@ def eval_policy(cfg: DictConfig) -> None:
             
             # Store the normalized observation in history (after action execution)
             depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
-            depth = normalize_depth(depth, normalization_stats["depth_stats"])
-            
+            if cfg.observation_mode == 'depth':
+                depth_obs = normalize_depth(depth, normalization_stats["depth_stats"])
+            elif cfg.observation_mode == 'dino_cls':
+                depth_obs = get_cls_features(depth)
+                
             state_tensor = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
             state_tensor = normalize_state(state_tensor, normalization_stats["action_stats"])
             
-            depth_sequence.append(depth)
+            depth_sequence.append(depth)    # depth_obs?
             state_sequence.append(state_tensor)
 
             # Keep only the most recent observations (sliding window)

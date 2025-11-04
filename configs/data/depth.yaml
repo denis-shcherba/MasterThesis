@@ -1,5 +1,5 @@
 # Path to the HDF5 file containing demonstrations
-h5_file_path: demos/table_demo_3posrel.h5
+h5_file_path: demos/table_demo_3posrel_dinocls.h5
 
 # Data loading parameters
 batch_size: ${train.batch_size}  
