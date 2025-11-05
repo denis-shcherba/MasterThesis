@@ -209,11 +209,13 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         """
         super().reset(seed=seed) 
         print(f"Resetting {self.__class__.__name__}.")
-        if self.camera_name == "cameraStatic":
-            self.C.getFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
-                .setPosition(self.camera_base_pos+np.random.uniform(low=np.array([self.camera_offset_x_range[0], self.camera_offset_y_range[0], self.camera_offset_z_range[0]]), high=np.array([self.camera_offset_x_range[1], self.camera_offset_y_range[1], self.camera_offset_z_range[1]]), size=(3,))) \
-                .setQuaternion([np.cos(np.deg2rad(180/2)), 0, np.sin(np.deg2rad(180/2)), 0]) \
-                .setAttributes({"focalLength": np.random.uniform(self.focal_length_range[0], self.focal_length_range[1]), "width": 640, "height": 360}) \
+
+        if (self.camera_offset_ranges is not None) and (self.focal_length_range is not None):
+            if self.camera_name == "cameraStatic":
+                self.C.getFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
+                    .setPosition(self.camera_base_pos+np.random.uniform(low=np.array([self.camera_offset_x_range[0], self.camera_offset_y_range[0], self.camera_offset_z_range[0]]), high=np.array([self.camera_offset_x_range[1], self.camera_offset_y_range[1], self.camera_offset_z_range[1]]), size=(3,))) \
+                    .setQuaternion([np.cos(np.deg2rad(180/2)), 0, np.sin(np.deg2rad(180/2)), 0]) \
+                    .setAttributes({"focalLength": np.random.uniform(self.focal_length_range[0], self.focal_length_range[1]), "width": 640, "height": 360}) \
 
 
         if not self.on_real:

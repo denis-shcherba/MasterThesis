@@ -8,8 +8,8 @@ import hydra
 from omegaconf import DictConfig
 import logging
 
-SHOW_DEPTH = False
-SHOW_RGB = True
+SHOW_DEPTH = True
+SHOW_RGB = False
 
 log = logging.getLogger(__name__)
 

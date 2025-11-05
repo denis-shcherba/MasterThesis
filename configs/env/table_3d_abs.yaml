@@ -8,15 +8,17 @@ env: table
 
 allow_book_yaw: false
 
+
+# TODO use ranges and box positions
+
 box_size_ranges:
   x: [0.1, 0.15]
   y: [0.14, 0.23]
   z: [0.009, 0.045]
 
-
 table_offset_ranges:
-  width: [0, 0]
-  length: [0, 0.]
+  width: [-0.25, 0.25]
+  length: [-0.1, 0.1]
   yaw: [-10., 10.]
 
 camera_offset_ranges:
@@ -29,5 +31,4 @@ camera_rpy_ranges:
   pitch: [-10, 10]
   yaw: [-15, 15]
 
-# CAMERA
 focal_length_range: [1.0, 2.0]

@@ -47,19 +47,24 @@ class TableEnv(BaseRobotEnv):
         self.camera_base_pos = self.C.getFrame(self.gripper).getPosition() + np.array([0, .1, .5])
 
         # Domain randomization parameters
+        self.table_offset_ranges = table_offset_ranges
         if table_offset_ranges is not None:
             self.table_width_range = table_offset_ranges.width
             self.table_length_range = table_offset_ranges.length
             self.table_yaw_range = table_offset_ranges.yaw  # degrees
         
-        if camera_offset_ranges is not None:
+        self.camera_offset_ranges = camera_offset_ranges
+        if self.camera_offset_ranges is not None:
             self.camera_offset_x_range = camera_offset_ranges.x
             self.camera_offset_y_range = camera_offset_ranges.y
             self.camera_offset_z_range = camera_offset_ranges.z
+
+        # TODO: implement these ranges in reset
         if camera_rpy_ranges is not None:
             self.camera_pitch_range = camera_rpy_ranges.pitch # degrees
             self.camera_yaw_range = camera_rpy_ranges.yaw # degrees
             self.camera_roll_range = camera_rpy_ranges.roll  # degrees
+
         self.focal_length_range = focal_length_range 
 
         self.depth_noise_range = (0.0, 0.02)  # meters
@@ -67,7 +72,6 @@ class TableEnv(BaseRobotEnv):
 
         self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
         self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
-        self.C.addFrame("target").setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9]).setPosition([.2, .4, .7])
     
         self.C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
 
@@ -101,7 +105,11 @@ class TableEnv(BaseRobotEnv):
             .setMass(.1) \
             .setAttributes({"friction": .01}) 
         
+        self.C.addFrame("target").setParent(self.C.getFrame(frame_name))
+        self.C.getFrame("target").setRelativePosition([.2, 0, 0]).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
+
         self.C.view(False)
+
         
     def _spawn_books_scene(self):
         sample = generate_random_box_sizes(
@@ -210,7 +218,13 @@ class TableEnv(BaseRobotEnv):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        #self.C.getFrame("table").setQuaternion([0, 0,np.cos(np.deg2rad(45/2)),  np.sin(np.deg2rad(45/2))]) \
+        if self.table_offset_ranges is not None:
+            table_width = self.table_base_dims[0] + np.random.uniform(self.table_width_range[0], self.table_width_range[1])
+            table_length = self.table_base_dims[1] + np.random.uniform(self.table_length_range[0], self.table_length_range[1])
+            table_yaw = np.random.uniform(self.table_yaw_range[0], self.table_yaw_range[1])
+
+            self.C.getFrame("table").setShape(ry.ST.ssBox, [table_width, table_length, self.C.getFrame("table").getSize()[2], self.C.getFrame("table").getSize()[3]])
+            self.C.getFrame("table").setQuaternion([np.cos(np.deg2rad(table_yaw/2)), 0, 0,  np.sin(np.deg2rad(table_yaw/2))]) 
 
         if not self.on_real:
             self.C.setJointState(self.q0)

@@ -5,9 +5,19 @@ from transformers import AutoModel
 import os
 
 # --- Configuration ---
-H5_FILE_PATH = 'table_demo_camera_static_dino_cls.h5' # <-- CHANGE THIS to your file path
+H5_FILE_PATH = 'table_demo_camera_static.h5' # <-- CHANGE THIS to your file path
 DINO_MODEL_NAME = 'facebook/dinov2-base'
 CLS_FEATURE_DIM = 768 # DINOv2-base CLS token dimension
+
+# --- NEW: Feature Selection ---
+# Set these to True or False based on what you want to save.
+# Example 1 (CLS only):     SAVE_CLS_FEATURES = True,  SAVE_PATCH_FEATURES = False
+# Example 2 (Patch only):   SAVE_CLS_FEATURES = False, SAVE_PATCH_FEATURES = True
+# Example 3 (Both):         SAVE_CLS_FEATURES = True,  SAVE_PATCH_FEATURES = True
+SAVE_CLS_FEATURES = True
+SAVE_PATCH_FEATURES = True
+# --------------------------
+
 
 # --- Setup DINO Model ---
 # Use CUDA if available
@@ -25,36 +35,52 @@ except Exception as e:
     print(f"Error loading DINO model: {e}")
     exit()
 
-# --- Pre-processing Function ---
-def get_cls_features(depth_array_64x96x96: np.ndarray) -> np.ndarray:
+# --- MODIFIED: Pre-processing Function ---
+def get_dino_features(depth_array_64x96x96: np.ndarray) -> (np.ndarray, np.ndarray):
     """
-    Converts a batch of depth numpy arrays to DINO CLS feature vectors.
+    Converts a batch of depth numpy arrays to DINO CLS and Patch feature vectors.
     
     Args:
-        depth_array_64x96x96: (64, 96, 96) numpy array of depth images (already scaled/normalized).
+        depth_array_64x96x96: (Batch_size, 96, 96) numpy array of depth images.
         
     Returns:
-        (64, 768) numpy array of DINO CLS features.
+        Tuple[np.ndarray, np.ndarray]:
+        - (Batch_size, CLS_FEATURE_DIM) numpy array of DINO CLS features.
+        - (Batch_size, Num_Patches, PATCH_FEATURE_DIM) numpy array of DINO Patch features 
+          (e.g., (64, 256, 768) for base model).
     """
-    # 1. Convert to Torch Tensor and add Channel/Batch dims (64, 96, 96) -> (64, 1, 96, 96)
+    # 1. Convert to Torch Tensor and add Channel/Batch dims (B, 96, 96) -> (B, 1, 96, 96)
     # Convert to float and normalize if necessary (assuming your original data is [0, 1] normalized)
     depth_tensor_1ch = torch.from_numpy(depth_array_64x96x96).float().unsqueeze(1)
     
-    # 2. Replicate to 3 channels (64, 1, 96, 96) -> (64, 3, 96, 96) and move to device
+    # 2. Replicate to 3 channels (B, 1, 96, 96) -> (B, 3, 96, 96) and move to device
     input_tensor_3ch = depth_tensor_1ch.repeat(1, 3, 1, 1).to(device)
 
     with torch.no_grad():
         outputs = dino_model(input_tensor_3ch)
         
-    # 3. Extract the CLS token (index 0 of the sequence dimension)
-    # Shape: (Batch_size, Num_Tokens + 1, Hidden_Size) -> (Batch_size, Hidden_Size)
+    # 3. Extract features
+    # last_hidden_state shape is (Batch_size, Num_Tokens + 1, Hidden_Size)
+    # e.g., (64, 257, 768) for base model (256 patches + 1 CLS)
+    
+    # CLS token is at index 0
     cls_features = outputs.last_hidden_state[:, 0, :] 
     
+    # Patch tokens are from index 1 onwards
+    patch_features = outputs.last_hidden_state[:, 1:, :]
+    
     # 4. Convert back to CPU NumPy array
-    return cls_features.cpu().numpy()
+    return cls_features.cpu().numpy(), patch_features.cpu().numpy()
 
-# --- Main HDF5 Processing Loop ---
+# --- MODIFIED: Main HDF5 Processing Loop ---
 def process_h5_file(file_path):
+    # --- NEW: Check configuration ---
+    if not SAVE_CLS_FEATURES and not SAVE_PATCH_FEATURES:
+        print("Error: Both SAVE_CLS_FEATURES and SAVE_PATCH_FEATURES are False.")
+        print("Nothing to save. Please enable at least one.")
+        return
+    # -------------------------------
+
     print(f"\nProcessing H5 file: {file_path}")
     
     # Open the file in append/read-write mode ('a')
@@ -73,28 +99,43 @@ def process_h5_file(file_path):
             # Read the entire depth array into memory
             depth_data = f[demo_name]['depth'][:] 
             
-            # Ensure depth array has the expected shape (64, 96, 96)
+            # Ensure depth array has the expected shape (B, 96, 96)
             if depth_data.ndim != 3 or depth_data.shape[1] != 96 or depth_data.shape[2] != 96:
                 print(f"  [ERROR] {demo_name} - Unexpected depth shape: {depth_data.shape}")
                 continue
+                
+            original_shape = depth_data.shape
 
-            # 2. Generate DINO CLS Features
-            new_cls_features = get_cls_features(depth_data)
+            # 2. Generate DINO Features
+            # We still get both, but will only save what's requested
+            new_cls_features, new_patch_features = get_dino_features(depth_data)
 
             # 3. Replace/Overwrite the data
             
             # a) Delete the old 'depth' dataset
             del f[demo_name]['depth']
             
-            # b) Create a new 'cls_features' dataset
-            # New shape will be (64, 768)
-            f[demo_name].create_dataset('cls_features', data=new_cls_features, compression="gzip")
+            # --- NEW: Conditional Saving ---
+            saved_keys = []
             
-            # The 'path' array (64, 3) remains untouched.
+            # b) Create a new 'cls_features' dataset if requested
+            if SAVE_CLS_FEATURES:
+                f[demo_name].create_dataset('cls_features', data=new_cls_features, compression="gzip")
+                saved_keys.append(f"cls_features {new_cls_features.shape}")
             
-            print(f"  ✅ {demo_name}: Replaced depth (64x96x96) with cls_features (64x{CLS_FEATURE_DIM}).")
+            # c) Create a new 'patch_features' dataset if requested
+            if SAVE_PATCH_FEATURES:
+                f[demo_name].create_dataset('patch_features', data=new_patch_features, compression="gzip")
+                saved_keys.append(f"patch_features {new_patch_features.shape}")
+            # ---------------------------------
+            
+            # The 'path' array remains untouched.
+            
+            # --- MODIFIED: Updated print statement ---
+            print(f"  ✅ {demo_name}: Replaced depth {original_shape} with {', '.join(saved_keys)}.")
 
-    print("\n\nProcessing complete! New feature key is 'cls_features'.")
+    # --- MODIFIED: Updated final message ---
+    print(f"\n\nProcessing complete! New feature keys are: {', '.join(k.split(' ')[0] for k in saved_keys)}")
 
 if __name__ == "__main__":
     process_h5_file(H5_FILE_PATH)
