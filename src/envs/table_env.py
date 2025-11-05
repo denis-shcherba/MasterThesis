@@ -23,6 +23,12 @@ class TableEnv(BaseRobotEnv):
                 camera_name="wristCamera",
                 collect_data=False,
                 q0=[.0, .0, .0, -2., 0. ,2., -0.5],
+                #domain randomization parameters
+                table_offset_ranges = None,
+                camera_offset_ranges = None,
+                camera_rpy_ranges = None,
+                focal_length_range = (1.5, 1.5),
+
                  **kwargs):
         super().__init__(**kwargs)
         
@@ -35,15 +41,36 @@ class TableEnv(BaseRobotEnv):
         self.q0 = np.array(q0)
 
         self.camera_name = camera_name
+        self.last_pos = np.array([0., 0., 0.])
 
-        self_las_pos = np.array([0., 0., 0.])
+        self.table_base_dims = np.array([1.2, 1.1, .1])  # Default table dimensions (width, depth, height)
+        self.camera_base_pos = self.C.getFrame(self.gripper).getPosition() + np.array([0, .1, .5])
 
-        print(self.C.getJointState())
+        # Domain randomization parameters
+        if table_offset_ranges is not None:
+            self.table_width_range = table_offset_ranges.width
+            self.table_length_range = table_offset_ranges.length
+            self.table_yaw_range = table_offset_ranges.yaw  # degrees
+        
+        if camera_offset_ranges is not None:
+            self.camera_offset_x_range = camera_offset_ranges.x
+            self.camera_offset_y_range = camera_offset_ranges.y
+            self.camera_offset_z_range = camera_offset_ranges.z
+        if camera_rpy_ranges is not None:
+            self.camera_pitch_range = camera_rpy_ranges.pitch # degrees
+            self.camera_yaw_range = camera_rpy_ranges.yaw # degrees
+            self.camera_roll_range = camera_rpy_ranges.roll  # degrees
+        self.focal_length_range = focal_length_range 
+
+        self.depth_noise_range = (0.0, 0.02)  # meters
+
 
         self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
         self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
         self.C.addFrame("target").setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9]).setPosition([.2, .4, .7])
     
+        self.C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
+
         if collect_data:    # TODO parameters
             self.h5file = h5py.File("table_demo.h5", "w")
             self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name)
@@ -182,12 +209,15 @@ class TableEnv(BaseRobotEnv):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+
+        #self.C.getFrame("table").setQuaternion([0, 0,np.cos(np.deg2rad(45/2)),  np.sin(np.deg2rad(45/2))]) \
+
         if not self.on_real:
             self.C.setJointState(self.q0)
             pass
 
-        self._setup_scene()
-        
+        self._setup_scene()    
+
         if self.botop:
             self.bot = ry.BotOp(self.C, self.on_real)
             if self.on_real:

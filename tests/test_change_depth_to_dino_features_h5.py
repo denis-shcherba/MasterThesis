@@ -5,7 +5,7 @@ from transformers import AutoModel
 import os
 
 # --- Configuration ---
-H5_FILE_PATH = 'table_demo_3posrel.h5' # <-- CHANGE THIS to your file path
+H5_FILE_PATH = 'table_demo_camera_static_dino_cls.h5' # <-- CHANGE THIS to your file path
 DINO_MODEL_NAME = 'facebook/dinov2-base'
 CLS_FEATURE_DIM = 768 # DINOv2-base CLS token dimension
 

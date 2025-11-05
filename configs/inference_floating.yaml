@@ -6,7 +6,7 @@ defaults:
   - env: default_3d
 
 experiment_name: "Transformer 10 step input Inference"
-observation_mode: 'depth'
+observation_mode: depth
 output_subdir: null
 num_eval_episodes: 500
 simulate: True

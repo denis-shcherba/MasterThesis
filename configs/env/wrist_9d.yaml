@@ -1,7 +1,7 @@
 
-robot_mode: "taskspace"         # "normal" or "floating"    
+robot_mode: taskspace         # "normal" or "floating"    
 simulate: true
-camera_name: "cameraWrist"    # or "cameraWrist"
+camera_name: cameraWrist    # or "cameraWrist"
 
 shelf_pos_xyz: [.8, 0., .3]
 shelf_quaternion: [1, 0, 0, 1]

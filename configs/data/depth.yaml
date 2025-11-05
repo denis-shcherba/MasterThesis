@@ -1,5 +1,5 @@
 # Path to the HDF5 file containing demonstrations
-h5_file_path: demos/table_demo_3posrel_dinocls.h5
+h5_file_path: demos/table_demo_camera_static_dino_cls.h5
 
 # Data loading parameters
 batch_size: ${train.batch_size}  
@@ -23,8 +23,8 @@ random_seed: 42         # Random seed for reproducibility
 #normalization options
 normalize_depth: true  
 normalize_actions: true
-depth_normalization_method: 'minmax'  
-action_normalization_method: 'minmax' 
+depth_normalization_method: minmax  
+action_normalization_method: minmax
 normalize_action_indices: [0, 1, 2]
 
 #augmentation

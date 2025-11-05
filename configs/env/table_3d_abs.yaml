@@ -1,10 +1,10 @@
 
-robot_mode: "pos3d"         # "normal" or "floating"
+robot_mode: pos3d         # "normal" or "floating"
 simulate: true
 botop: false
 on_real: false
-camera_name: "cameraWrist"    # or "cameraWrist"
-env: "table"
+camera_name: cameraStatic    # or "cameraWrist"
+env: table
 
 allow_book_yaw: false
 
@@ -14,3 +14,20 @@ box_size_ranges:
   z: [0.009, 0.045]
 
 
+table_offset_ranges:
+  width: [0, 0]
+  length: [0, 0.]
+  yaw: [-10., 10.]
+
+camera_offset_ranges:
+  x: [-0.1, 0.1]
+  y: [-0.1, 0.1]
+  z: [-0.1, 0.1]
+
+camera_rpy_ranges:
+  roll: [-5, 5]
+  pitch: [-10, 10]
+  yaw: [-15, 15]
+
+# CAMERA
+focal_length_range: [1.0, 2.0]

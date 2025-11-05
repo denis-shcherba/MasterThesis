@@ -94,7 +94,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_floating", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
@@ -215,18 +215,6 @@ def eval_policy(cfg: DictConfig) -> None:
                             padded_depth_list = padded_depth_list[-sequence_length:]
                             padded_state_list = padded_state_list[-sequence_length:]
                 
-                elif padding_strategy == 'copy':
-                    # Original copy padding logic
-                    num_pad = sequence_length - len(depth_sequence) - 1  # -1 for current obs
-                    if num_pad > 0:
-                        # Replicate the current observation for padding
-                        padded_depth_list = [depth_obs] * num_pad + depth_sequence + [depth_obs]
-                        padded_state_list = [normalized_current_state] * num_pad + state_sequence + [normalized_current_state]
-                    else:
-                        # Use history + current
-                        padded_depth_list = depth_sequence[-(sequence_length-1):] + [depth_obs]
-                        padded_state_list = state_sequence[-(sequence_length-1):] + [normalized_current_state]
-                
                 else:
                     raise ValueError(f"Unknown padding_strategy: {padding_strategy}")
                 # ----------------------------------------------
@@ -266,7 +254,7 @@ def eval_policy(cfg: DictConfig) -> None:
             state_tensor = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
             state_tensor = normalize_state(state_tensor, normalization_stats["action_stats"])
             
-            depth_sequence.append(depth)    # depth_obs?
+            depth_sequence.append(depth_obs)    # depth_obs?
             state_sequence.append(state_tensor)
 
             # Keep only the most recent observations (sliding window)

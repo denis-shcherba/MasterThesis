@@ -1,10 +1,10 @@
 
-robot_mode: "pos3d_rel"         # "normal" or "floating"
+robot_mode: pos3d_rel         # "normal" or "floating"
 simulate: true
 botop: false
 on_real: false
-camera_name: "cameraWrist"    # or "cameraWrist"
-env: "table"
+camera_name: cameraWrist    # or "cameraWrist"
+env: table
 
 allow_book_yaw: false
 

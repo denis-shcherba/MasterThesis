@@ -1,8 +1,8 @@
 
-robot_mode: "floating"
-path_mode: "POS3D"            
+robot_mode: floating
+path_mode: POS3D            
 simulate: true
-camera_name: "cameraStatic"  
+camera_name: cameraStatic  
 seed: 42
 
 shelf_pos_xyz: [.8, 0., .3]

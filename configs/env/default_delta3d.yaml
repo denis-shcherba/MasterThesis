@@ -1,9 +1,9 @@
 
-robot_mode: "floating"         # "normal" or "floating"
+robot_mode: floating         # "normal" or "floating"
 collect_data: false
-path_mode: "DELTA3D"            
+path_mode: DELTA3D            
 simulate: true
-camera_name: "cameraStatic"    # or "cameraWrist"
+camera_name: cameraStatic    # or "cameraWrist"
 
 shelf_pos_xyz: [.8, 0., .3]
 shelf_quaternion: [1, 0, 0, 1]
