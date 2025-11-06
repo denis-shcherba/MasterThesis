@@ -1,3 +1,3 @@
-checkpoint_path: outputs/final_outputs/table_env/tableenv_3d_static_4_4.pth
-normalization_stats_path: outputs/final_outputs/table_env/tableenv_3d_static_4_4.yaml
+checkpoint_path: outputs/final_outputs/table_env/transformer_8_8_data_5000_drand.pth
+normalization_stats_path: outputs/final_outputs/table_env/transformer_8_8_data_5000_drand.yaml
 padding_strategy: zero

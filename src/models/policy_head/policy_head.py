@@ -306,31 +306,29 @@ class TransformerHead(nn.Module):
 
     def forward(self, obs_sequence):
         """
-        Args:
-            obs_sequence: Tensor of observations, shape (B, context_length, input_dim)
-            prev_actions_sequence: Tensor of previous actions, shape (B, context_length, output_dim)
-        Returns:
-            Tensor of PREDICTED FUTURE actions, shape (B, prediction_length, output_dim)
+        ...
         """
         # 1. Embed inputs and add positional encoding
         obs_embed = self.input_proj(obs_sequence)
         x = obs_embed + self.pos_emb
         
-        # 2. Encode the entire input sequence (NO MASK)
-        # The output 'encoded_seq' has shape (B, context_length, embed_dim)
-        encoded_seq = self.transformer_encoder(x)
+        # 2. Encode the entire input sequence
+        encoded_seq = self.transformer_encoder(x) # Shape: (B, context_length, embed_dim)
         
-        # 3. Take the final hidden state as the context summary
-        # This vector at the last time step has seen all previous inputs.
-        context_summary = encoded_seq[:, -1, :] # Shape: (B, embed_dim)
+        # 3. --- THIS IS THE CHANGE ---
+        # Instead of taking the last token:
+        # context_summary = encoded_seq[:, -1, :] # Shape: (B, embed_dim)
+        
+        # Average all the encoded tokens across the time dimension (dim=1)
+        context_summary = torch.mean(encoded_seq, dim=1) # Shape: (B, embed_dim)
         
         # 4. Use the prediction head to generate the future chunk
-        predicted_chunk_flat = self.prediction_head(context_summary) # Shape: (B, m * action_dim)
+        predicted_chunk_flat = self.prediction_head(context_summary) 
         
         # 5. Reshape to the desired output format
         predicted_chunk = predicted_chunk_flat.view(
             -1, self.prediction_length, self.output_dim
-        ) # Shape: (B, m, action_dim)
+        )
         
         return self.output_activation(predicted_chunk)
 

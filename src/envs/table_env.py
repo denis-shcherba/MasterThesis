@@ -74,6 +74,9 @@ class TableEnv(BaseRobotEnv):
         self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
     
         self.C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
+            .setPosition(self.camera_base_pos) \
+            .setQuaternion([np.cos(np.deg2rad(180/2)), 0, np.sin(np.deg2rad(180/2)), 0]) \
+            .setAttributes({"focalLength": 1.5, "width": 640, "height": 360})
 
         if collect_data:    # TODO parameters
             self.h5file = h5py.File("table_demo.h5", "w")
@@ -105,7 +108,9 @@ class TableEnv(BaseRobotEnv):
             .setMass(.1) \
             .setAttributes({"friction": .01}) 
         
-        self.C.addFrame("target").setParent(self.C.getFrame(frame_name))
+        self.C.addFrame("target_p").setPose(self.C.getFrame(frame_name).getPose())
+
+        self.C.addFrame("target").setParent(self.C.getFrame("target_p"))
         self.C.getFrame("target").setRelativePosition([.2, 0, 0]).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
 
         self.C.view(False)
@@ -126,6 +131,9 @@ class TableEnv(BaseRobotEnv):
     def _delete_books(self):
         for book in self.books:
             self.C.delFrame(book)
+        if self.C.getFrame("target") is not None:
+            self.C.delFrame("target")
+            self.C.delFrame("target_p")
         self.C.view(False)
         self.books = []
 
