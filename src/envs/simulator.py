@@ -36,7 +36,8 @@ class Simulator:
     def getDepth(self, crop: bool = False, rescale: bool = True, crop_size: int = 96, rescale_size: int = 96) -> np.ndarray:
         _, depth = self._sim.getImageAndDepth()
         if crop == True:
-            pass
+            depth = depth[120:, 150:500]
+
         elif rescale == True:
             depth = rescale_img(depth, rescale_size)
 
@@ -123,9 +124,9 @@ class Simulator:
         for i, control_point in enumerate(path):
             if capture_obs:
                 if self.observation_mode == "DEPTH":
-                    depth = self.getDepth(crop=False, rescale=True)
+                    depth = self.getDepth(crop=True, rescale=True)
                     # if i == 0:
-                    #     plt.imshow(depth)
+                    #     plt.imshow(depth, cmap='gray')
                     #     plt.show()
                     self.depth.append(depth)
                 elif self.observation_mode == "RGB":

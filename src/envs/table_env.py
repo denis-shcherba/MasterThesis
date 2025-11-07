@@ -20,6 +20,7 @@ class TableEnv(BaseRobotEnv):
                 img_type="DEPTH",
                 box_size_ranges= {'x': (.1, .15), 'y': (.14, .23), 'z': (.009, .045)},
                 box_offset_ranges= {'x': (-.05, .05), 'y': (-.05, .05)},
+                allow_book_yaw=False,
                 camera_name="wristCamera",
                 collect_data=False,
                 q0=[.0, .0, .0, -2., 0. ,2., -0.5],
@@ -35,6 +36,7 @@ class TableEnv(BaseRobotEnv):
         
         self.box_size_ranges = box_size_ranges
         self.box_offset_ranges = box_offset_ranges
+        self.allow_book_yaw = allow_book_yaw
         self.books = []
 
         self.path_type = path_type
@@ -45,7 +47,7 @@ class TableEnv(BaseRobotEnv):
         self.last_pos = np.array([0., 0., 0.])
 
         self.table_base_dims = np.array([1.2, 1.1, .1])  # Default table dimensions (width, depth, height)
-        self.camera_base_pos = self.C.getFrame(self.gripper).getPosition() + np.array([0, 0, .5])
+        self.camera_base_pos = self.C.getFrame(self.gripper).getPosition() + np.array([0, .2, .3])
 
         # Domain randomization parameters
         self.table_offset_ranges = table_offset_ranges
@@ -93,8 +95,10 @@ class TableEnv(BaseRobotEnv):
             np.random.uniform(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1]), 
             0])
             
-
-        q_orientation = ry.Quaternion().setRollPitchYaw([0, 0, 0])   # TODO?
+        yaw = 0
+        if self.allow_book_yaw:
+            yaw = np.random.uniform(0, np.pi)
+        q_orientation = ry.Quaternion().setRollPitchYaw([0, 0, yaw])   # TODO?
         
         frame_name = f"{prefix}_{i}"
         self.books.append(frame_name)
@@ -119,10 +123,7 @@ class TableEnv(BaseRobotEnv):
         sample = generate_random_box_sizes(
             box_size_ranges=self.box_size_ranges,
             num_samples=1,
-            # num_boxes=self.num_boxes_per_sample,
-            # allow_yaw=self.allow_book_yaw     # TODO? prolly not
         )
-
         for i, book_params in enumerate(sample):
             self._spawn_book(book_params, i)            
 

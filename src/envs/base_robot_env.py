@@ -221,9 +221,12 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 
         if (self.camera_offset_ranges is not None) and (self.focal_length_range is not None):
             if self.camera_name == "cameraStatic":
+                r = np.random.uniform(np.deg2rad(self.camera_pitch_range[0]), np.deg2rad(self.camera_pitch_range[1]))
+                p = np.random.uniform(np.deg2rad(self.camera_roll_range[0]), np.deg2rad(self.camera_roll_range[1]))
+                y = np.random.uniform(np.deg2rad(self.camera_yaw_range[0]), np.deg2rad(self.camera_yaw_range[1]))
                 self.C.getFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
                     .setPosition(self.camera_base_pos+np.random.uniform(low=np.array([self.camera_offset_x_range[0], self.camera_offset_y_range[0], self.camera_offset_z_range[0]]), high=np.array([self.camera_offset_x_range[1], self.camera_offset_y_range[1], self.camera_offset_z_range[1]]), size=(3,))) \
-                    .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
+                    .setQuaternion(ry.Quaternion().setRollPitchYaw([r, np.pi+p, np.pi+y]).asArr()) \
                     .setAttributes({"focalLength": np.random.uniform(self.focal_length_range[0], self.focal_length_range[1]), "width": 640, "height": 360, "zrange": [.01, 10]}) \
 
 

@@ -11,10 +11,10 @@ output_subdir: null
 num_eval_episodes: 500
 simulate: True
 is_waypointPlusTimings: False
-action_execution_horizon: 8
+action_execution_horizon: 16
 seed: 42
 context_length: 8
-prediction_length: 8
+prediction_length: 24
 
 hydra:
   run:

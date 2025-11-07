@@ -8,16 +8,21 @@ env: table
 
 allow_book_yaw: false
 
-# TODO use ranges and box positions
 box_size_ranges:
-  x: [0.1, 0.15]
-  y: [0.14, 0.23]
-  z: [0.009, 0.045]
+  x: [0.08, 0.1]
+  y: [0.13, 0.15]
+  z: [0.04, 0.06]
+
+box_offset_ranges:
+  x: [-0.2, 0.2]
+  y: [-0.1, 0.05] 
+
 
 table_offset_ranges:
-  width: [-0.25, 0.25]
-  length: [-0, 0.1]
-  yaw: [-24., -16.]
+  width: [-0.05, 0.05]
+  length: [0.1, 0.1]
+  yaw: [0, 0]
+
 
 camera_offset_ranges:
   x: [0.0, 0.0]
@@ -25,17 +30,18 @@ camera_offset_ranges:
   z: [0, 0.]
 
 camera_rpy_ranges:
-  roll: [-5, 5]
-  pitch: [-10, 10]
-  yaw: [-15, 15]
+  roll: [0, 0]
+  pitch: [-2.5, -7.5]
+  yaw: [0, 0]
+
+focal_length_range: [0.895, 0.895]
 
 depth_noise_ranges:
   active: True
-  binocular_baseline: [0.0, .1]
+  binocular_baseline: [.02, .05]
   depth_smoothing: [1, 1]
-  noise_all: [0.0, .2]
-  noise_wide: [0., 0.2]
-  noise_local: [0., 0.1]
-  noise_pixel: [0.0, 0.01]
+  noise_all: [.2, .5]
+  noise_wide: [0., 0.3]
+  noise_local: [0., 0.2]
+  noise_pixel: [0.0, 0.03]
 
-focal_length_range: [0.895, 0.895]
