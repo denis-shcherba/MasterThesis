@@ -30,7 +30,7 @@ class ManipulationDataset(Dataset):
         observation_mode: str = 'depth',
         depth_normalization_method: str = 'minmax',
         action_normalization_method: str = 'minmax',
-        normalize_action_indices: Optional[List[int]] = None,  
+        normalize_action_indices: Optional[List[int]] = None
     ):
         self.h5_file_path = h5_file_path
         self.is_regression = is_regression
@@ -46,41 +46,56 @@ class ManipulationDataset(Dataset):
         self.observation_mode = observation_mode
         self.depth_normalization_method = depth_normalization_method
         self.action_normalization_method = action_normalization_method
-        self.normalize_action_indices = normalize_action_indices  # NEW
+        self.normalize_action_indices = normalize_action_indices
 
         self.logger = logging.getLogger(__name__)
         self.rng = np.random.default_rng(random_seed)
 
         if self.observation_mode == 'depth':
             self.obs_key = 'depth'
-        elif self.observation_mode == 'dino_cls': 
+
+        elif self.observation_mode == 'dino_cls':
             self.obs_key = 'cls_features'
-            # Disable image-specific features when using extracted features
-            self.normalize_depth = False # Features are already pre-normalized/transformed by DINO
-            self.augment_data = False    # Augmentation should not be run on features
-            print("INFO: Using pre-extracted CLS features. Depth normalization and augmentation disabled.")
+            self.normalize_depth = False
+            self.augment_data = False
+            print("INFO: Using pre-extracted DINO CLS features. "
+                  "Depth normalization and augmentation disabled.")
+
+        elif self.observation_mode == 'dino_patches':
+            # (T, num_patches, dim) or (T, H_p, W_p, dim)
+            self.obs_key = 'patch_features'
+            self.normalize_depth = False
+            self.augment_data = False
+            print("INFO: Using pre-extracted DINO PATCH features "
+                  "(no depth normalization / augmentation).")
+
+        else:
+            raise ValueError(f"Unknown observation_mode: {self.observation_mode}")
 
         if self.augment_data and self.split == 'train':
-            self.logger.info(f"Applying depth augmentation with dropout={depth_dropout_prob} and noise_scale={depth_noise_scale}")
+            self.logger.info(
+                f"Applying depth augmentation with dropout={depth_dropout_prob} "
+                f"and noise_scale={depth_noise_scale}"
+            )
         self.depth_dropout_prob = depth_dropout_prob
         self.depth_noise_scale = depth_noise_scale
-        
         self.demo_meta: List[Dict] = []
         self.valid_indices: List[Tuple[int, int]] = []
         self._index_demonstrations()
         if self.split in ['train', 'val']:
             self._create_split(train_split)
         self._subsample_if_needed(subsample_demos)
+
         with h5py.File(self.h5_file_path, 'r') as f:
             if self.normalize_actions:
                 self.action_stats = self._compute_action_normalization_stats(f)
             else:
                 self.action_stats = None
+
             if self.normalize_depth and self.observation_mode == 'depth':
                 self.depth_stats = self._compute_depth_normalization_stats(f)
             else:
                 self.depth_stats = None
-
     def _augment_depth_image(self, depth_image: np.ndarray) -> np.ndarray:
         """Applies domain randomization noise to a single depth image."""
         augmented_image = depth_image.copy()
@@ -125,10 +140,9 @@ class ManipulationDataset(Dataset):
             for demo_idx, demo_key in enumerate(demo_keys):
                 path_shape = f[f'{demo_key}/path'].shape
                 
-                # *** MODIFIED: Use self.obs_key to find the observation data ***
                 obs_data_key = f'{demo_key}/{self.obs_key}'
                 if obs_data_key not in f:
-                    # Skip if the required observation key (e.g., 'cls_features') doesn't exist
+                    self.logger.warning(f"Skipping demo {demo_key}: Observation key '{self.obs_key}' not found.")
                     continue
                 
                 obs_shape = f[obs_data_key].shape
@@ -136,6 +150,7 @@ class ManipulationDataset(Dataset):
                 # Check 1: path data is 2D and action_dim matches
                 # Check 2: observation (time) steps match action (time) steps
                 if len(path_shape) != 2 or path_shape[1] != self.action_dim or obs_shape[0] != path_shape[0]:
+                    self.logger.warning(f"Skipping demo {demo_key}: Shape mismatch. Path: {path_shape}, Obs: {obs_shape}")
                     continue
                 
                 # Save the full observation shape (e.g., (768,) for CLS features)

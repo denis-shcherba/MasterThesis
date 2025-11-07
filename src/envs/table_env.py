@@ -28,6 +28,7 @@ class TableEnv(BaseRobotEnv):
                 camera_offset_ranges = None,
                 camera_rpy_ranges = None,
                 focal_length_range = (1.5, 1.5),
+                depth_noise_ranges = None,
 
                  **kwargs):
         super().__init__(**kwargs)
@@ -44,7 +45,7 @@ class TableEnv(BaseRobotEnv):
         self.last_pos = np.array([0., 0., 0.])
 
         self.table_base_dims = np.array([1.2, 1.1, .1])  # Default table dimensions (width, depth, height)
-        self.camera_base_pos = self.C.getFrame(self.gripper).getPosition() + np.array([0, .1, .5])
+        self.camera_base_pos = self.C.getFrame(self.gripper).getPosition() + np.array([0, 0, .5])
 
         # Domain randomization parameters
         self.table_offset_ranges = table_offset_ranges
@@ -67,16 +68,14 @@ class TableEnv(BaseRobotEnv):
 
         self.focal_length_range = focal_length_range 
 
-        self.depth_noise_range = (0.0, 0.02)  # meters
-
+        self.depth_noise_ranges = depth_noise_ranges
 
         self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
         self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
     
-        self.C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
+        self.C.getFrame("cameraStatic") \
             .setPosition(self.camera_base_pos) \
-            .setQuaternion([np.cos(np.deg2rad(180/2)), 0, np.sin(np.deg2rad(180/2)), 0]) \
-            .setAttributes({"focalLength": 1.5, "width": 640, "height": 360})
+            .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
 
         if collect_data:    # TODO parameters
             self.h5file = h5py.File("table_demo.h5", "w")

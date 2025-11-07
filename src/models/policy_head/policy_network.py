@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from models.perception.pointnet import PointNet
-from models.perception.dinoencoder import FeatureAdapter
+from models.perception.dinoencoder import FeatureAdapter, FeatureAdapterCNN
 from models.perception.depthimageencoder import DepthImageEncoder
 from models.policy_head.policy_head import MLPHead, ResidualMLPHead, TransformerHead, DiffusionHead
 import math
@@ -204,8 +204,8 @@ class MultiModalPolicy(nn.Module):
                 self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
         elif self.observation_mode == 'dino_cls':
             self.obs_encoder = FeatureAdapter(feature_dim=feature_dim)
-        elif self.observation_mode == 'dino_patch':
-            pass # To be implemented
+        elif self.observation_mode == 'dino_patches':
+            self.obs_encoder = FeatureAdapterCNN(feature_dim=feature_dim)
 
         else:
             raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
@@ -323,6 +323,9 @@ class MultiModalPolicy(nn.Module):
         elif self.observation_mode == 'dino_cls':
             batch_size, seq_len = observations.shape[:2]
             obs_features = self.obs_encoder(observations)  # (B*S, feature_dim)
+        elif self.observation_mode == 'dino_patches':
+            batch_size, seq_len = observations.shape[:2]
+            obs_features = self.obs_encoder(observations) 
         elif self.observation_mode == 'points':
             obs_features = self.obs_encoder(obs_input)  # (B*S, feature_dim)
         else:

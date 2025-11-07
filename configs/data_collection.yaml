@@ -1,6 +1,6 @@
 defaults:
-  - env: table_3d_abs
+  - env: table_3d_abs_real
 
-num_samples: 5_000
+num_samples: 500
 output_subdir: null
 seed: 42

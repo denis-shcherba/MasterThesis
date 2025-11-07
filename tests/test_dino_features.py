@@ -23,8 +23,6 @@ C.addFrame("box") \
 C.view(True)
 rgb, depth_scaled = camview.computeImageAndDepth(C)
 
-#depth_scaled = crop_or_rescale_img(depth, False, True )
-
 depth_norm = (depth_scaled - depth_scaled.min()) / (depth_scaled.max() - depth_scaled.min()) 
 depth_norm_255 = (depth_norm * 255).astype(np.uint8)
 

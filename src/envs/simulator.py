@@ -4,7 +4,7 @@ import time
 import numpy as np
 import robotic as ry
 from robotic import SimulationEngine
-from envs.utils import point_in_box_filtering, crop_or_rescale_img
+from envs.utils import point_in_box_filtering, rescale_img
 import cv2
 import matplotlib.pyplot as plt 
 
@@ -22,6 +22,7 @@ class Simulator:
         observation_mode: str = "DEPTH"
     ):
         self._sim = ry.Simulation(config, engine, verbose=verbose)
+        self._sim.setSimulateDepthNoise(True)
         self.config = config
         self.init_state = self._sim.getState()
         self.camera = camera
@@ -34,8 +35,10 @@ class Simulator:
 
     def getDepth(self, crop: bool = False, rescale: bool = True, crop_size: int = 96, rescale_size: int = 96) -> np.ndarray:
         _, depth = self._sim.getImageAndDepth()
-
-        depth = crop_or_rescale_img(depth, crop, rescale, crop_size, rescale_size)
+        if crop == True:
+            pass
+        elif rescale == True:
+            depth = rescale_img(depth, rescale_size)
 
         return depth
     
@@ -117,10 +120,13 @@ class Simulator:
 
         """
         sim_steps = int(n_steps // tau)
-        for control_point in path:
+        for i, control_point in enumerate(path):
             if capture_obs:
                 if self.observation_mode == "DEPTH":
-                    depth = self.getDepth()
+                    depth = self.getDepth(crop=False, rescale=True)
+                    # if i == 0:
+                    #     plt.imshow(depth)
+                    #     plt.show()
                     self.depth.append(depth)
                 elif self.observation_mode == "RGB":
                     rgb = self.getRGB()

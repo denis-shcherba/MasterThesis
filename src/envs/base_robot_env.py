@@ -3,7 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import robotic as ry
 from importlib.resources import files
-from envs.utils import crop_or_rescale_img
+from envs.utils import rescale_img
 import abc
 
 class BaseRobotEnv(gym.Env, abc.ABC):
@@ -150,17 +150,17 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             if self.botop:
                 if self.on_real:
                     _, depth = self.bot.getImageAndDepth(self.camera_name)
-                    depth = crop_or_rescale_img(depth, crop=False, rescale=True, rescale_size=96)
+                    depth = rescale_img(depth, rescale_size=96)
                     pass # opencv?
                 else:
                     _, depth = self.bot.getImageAndDepth(self.camera_name)
-                    depth = crop_or_rescale_img(depth, crop=False, rescale=True, rescale_size=96)
+                    depth = rescale_img(depth, rescale_size=96)
             elif self.simulate:
                 self.camview = ry.CameraView(self.C)
                 self.camview.setCamera(self.C.getFrame(self.camera_name))
 
                 _, depth = self.camview.computeImageAndDepth(self.C)
-                depth = crop_or_rescale_img(depth, crop=False, rescale=True, rescale_size=96)
+                depth = rescale_img(depth, rescale_size=96)
 
                 # Camera_view = a.getFxycxy()
                 # ry.CameraView(self.C).setCamera(self.C.getFrame(self.camera_name)).getFxycxy()
@@ -210,12 +210,21 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         super().reset(seed=seed) 
         print(f"Resetting {self.__class__.__name__}.")
 
+        if self.depth_noise_ranges is not None:
+            if self.depth_noise_ranges['active']:
+                ry.params_add({'DepthNoise/binocular_baseline': np.random.uniform(self.depth_noise_ranges['binocular_baseline'][0], self.depth_noise_ranges['binocular_baseline'][1]),
+                  'DepthNoise/depth_smoothing': np.random.uniform(self.depth_noise_ranges['depth_smoothing'][0], self.depth_noise_ranges['depth_smoothing'][1]),
+                  'DepthNoise/noise_all': np.random.uniform(self.depth_noise_ranges['noise_all'][0], self.depth_noise_ranges['noise_all'][1]),
+                  'DepthNoise/noise_wide': np.random.uniform(self.depth_noise_ranges['noise_wide'][0], self.depth_noise_ranges['noise_wide'][1]),
+                  'DepthNoise/noise_local': np.random.uniform(self.depth_noise_ranges['noise_local'][0], self.depth_noise_ranges['noise_local'][1]),
+                  'DepthNoise/noise_pixel': np.random.uniform(self.depth_noise_ranges['noise_pixel'][0], self.depth_noise_ranges['noise_pixel'][1])})
+                
         if (self.camera_offset_ranges is not None) and (self.focal_length_range is not None):
             if self.camera_name == "cameraStatic":
                 self.C.getFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
                     .setPosition(self.camera_base_pos+np.random.uniform(low=np.array([self.camera_offset_x_range[0], self.camera_offset_y_range[0], self.camera_offset_z_range[0]]), high=np.array([self.camera_offset_x_range[1], self.camera_offset_y_range[1], self.camera_offset_z_range[1]]), size=(3,))) \
-                    .setQuaternion([np.cos(np.deg2rad(180/2)), 0, np.sin(np.deg2rad(180/2)), 0]) \
-                    .setAttributes({"focalLength": np.random.uniform(self.focal_length_range[0], self.focal_length_range[1]), "width": 640, "height": 360}) \
+                    .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
+                    .setAttributes({"focalLength": np.random.uniform(self.focal_length_range[0], self.focal_length_range[1]), "width": 640, "height": 360, "zrange": [.01, 10]}) \
 
 
         if not self.on_real:
