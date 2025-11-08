@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 log = logging.getLogger(__name__)
 DEBUG_DEPTH = False
-DEBUG_STATE = False
+DEBUG_STATE = True
 
 def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
     for name in env.unwrapped.C.getFrameNames():

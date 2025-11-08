@@ -5,6 +5,7 @@ import robotic as ry
 from importlib.resources import files
 from envs.utils import rescale_img
 import abc
+import matplotlib.pyplot as plt
 
 class BaseRobotEnv(gym.Env, abc.ABC):
     """
@@ -150,6 +151,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             if self.botop:
                 if self.on_real:
                     _, depth = self.bot.getImageAndDepth(self.camera_name)
+                    depth = depth[120:, 150:500]
                     depth = rescale_img(depth, rescale_size=96)
                     pass # opencv?
                 else:
@@ -160,7 +162,10 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 self.camview.setCamera(self.C.getFrame(self.camera_name))
 
                 _, depth = self.camview.computeImageAndDepth(self.C)
+                depth = depth[120:, 150:500]
                 depth = rescale_img(depth, rescale_size=96)
+                # plt.imshow(depth, cmap='gray')
+                # plt.show()
 
                 # Camera_view = a.getFxycxy()
                 # ry.CameraView(self.C).setCamera(self.C.getFrame(self.camera_name)).getFxycxy()
