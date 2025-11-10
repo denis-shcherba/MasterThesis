@@ -393,23 +393,23 @@ class MultiModalPolicy(nn.Module):
 class DinoCLSToKeypoint(nn.Module):
     """
     A much simpler policy network (MLP) that regresses DINO CLS directly  to a 3-element key EE-position.
-
     """
     
-    def __init__(self, feature_dim: int = 256):
+    def __init__(self, feature_dim: int = 256, dropout_prob: float = 0.2): # Pass dropout_prob
         """
         Initialize the SimplifiedPolicy network.
         
         Args:
             feature_dim (int): Dimensionality of the features extracted by the Adapter.
+            dropout_prob (float): Dropout probability for the adapter.
         """
         super(DinoCLSToKeypoint, self).__init__()
 
         self.feature_dim = feature_dim
         self.output_dim = 3 # Fixed output for end position (x, y, z)
-
-        # Regression head: maps the global point cloud features to the 3D end position
-        self.adapter = FeatureAdapter(feature_dim=feature_dim)
+        
+        # Pass the dropout_prob to the adapter
+        self.adapter = FeatureAdapter(feature_dim=feature_dim, dropout_prob=dropout_prob) 
         self.regressor_head = nn.Linear(feature_dim, self.output_dim)
 
     def forward(self, dino_cls: torch.Tensor) -> torch.Tensor:

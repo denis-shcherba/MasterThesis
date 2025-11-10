@@ -8,7 +8,7 @@ class FeatureAdapter(nn.Module):
     Input shape: (Batch_size, Seq_len, D_dino) 
     Output shape: (Batch_size * Seq_len, D_policy)
     """
-    def __init__(self, dino_feature_dim=768, feature_dim=256):
+    def __init__(self, dino_feature_dim=768, feature_dim=256, dropout_prob=0.2): # Added dropout_prob
         super(FeatureAdapter, self).__init__()
         self.feature_dim = feature_dim
         self.dino_feature_dim = dino_feature_dim
@@ -16,9 +16,10 @@ class FeatureAdapter(nn.Module):
         self.mlp_adapter = nn.Sequential(
             nn.Linear(self.dino_feature_dim, self.dino_feature_dim // 2),  # Hidden layer
             nn.GELU(),
+            nn.Dropout(p=dropout_prob),                                  
             nn.Linear(self.dino_feature_dim // 2, self.feature_dim)       # Projection layer
         )
-        print(f"Initialized trainable FeatureAdapter: {self.dino_feature_dim} -> {self.feature_dim}")
+        print(f"Initialized trainable FeatureAdapter: {self.dino_feature_dim} -> {self.feature_dim} with dropout {dropout_prob}")
 
     def forward(self, x: torch.Tensor):
         """
