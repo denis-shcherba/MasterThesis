@@ -22,6 +22,7 @@ class TableEnv(BaseRobotEnv):
                 box_offset_ranges= {'x': (-.05, .05), 'y': (-.05, .05)},
                 allow_book_yaw=False,
                 camera_name="wristCamera",
+                extras="",
                 collect_data=False,
                 q0=[.0, .0, .0, -2., 0. ,2., -0.5],
                 #domain randomization parameters
@@ -41,6 +42,7 @@ class TableEnv(BaseRobotEnv):
 
         self.path_type = path_type
         self.img_type = img_type
+        self.extras = extras
         self.q0 = np.array(q0)
 
         self.camera_name = camera_name
@@ -111,6 +113,10 @@ class TableEnv(BaseRobotEnv):
             .setMass(.1) \
             .setAttributes({"friction": .01}) 
         
+        if self.extras.upper() == "WAYPOINTS":
+            self.C.addFrame("waypoint_marker").setPosition(self.C.getFrame(self.books[0]).getPosition()+np.array([0, 0, b_size_z/2])).setShape(ry.ST.marker, [.1]).setColor([0, 0, 1, .5])
+            self.waypoint_pos = self.C.getFrame("waypoint_marker").getPosition()
+
         self.C.addFrame("target_p").setPose(self.C.getFrame(frame_name).getPose())
 
         self.C.addFrame("target").setParent(self.C.getFrame("target_p"))
@@ -134,6 +140,8 @@ class TableEnv(BaseRobotEnv):
         if self.C.getFrame("target") is not None:
             self.C.delFrame("target")
             self.C.delFrame("target_p")
+        if self.C.getFrame("waypoint_marker") is not None:
+            self.C.delFrame("waypoint_marker")
         self.C.view(False)
         self.books = []
 
@@ -206,6 +214,9 @@ class TableEnv(BaseRobotEnv):
                 compression="gzip",
                 compression_opts=4
                 )
+
+            if "WAYPOINTS" in self.extras.upper():
+                demo_group.create_dataset("waypoints", data=self.waypoint_pos)
             
 
             self.demo_id += 1

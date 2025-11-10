@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: transformer_depth
+  - model: regression
   - loss: default_mse
   - optimizer: adam
   - data: depth
@@ -20,7 +20,7 @@ output_dir: ${hydra:runtime.output_dir}
 context_length: 8
 prediction_length: 16
 
-is_regression: false
+is_regression: true
 is_waypointPlusTimings: false # whether to use a separate network for waypoint and timing prediction naming
 
 

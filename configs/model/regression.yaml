@@ -3,3 +3,4 @@ type: regression         # Options: pointcloud, multimodal, ensemble
 feature_dim: 256         # Feature dimension from PointNet
 action_dim: 3            # Dimension of action space 
 dropout_rate: 0.2        # Dropout rate for regularization
+observation_mode: ${observation_mode}  # inherit from global config

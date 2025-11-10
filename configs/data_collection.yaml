@@ -4,3 +4,4 @@ defaults:
 num_samples: 1_000
 output_subdir: null
 seed: 42
+extras: WAYPOINTS

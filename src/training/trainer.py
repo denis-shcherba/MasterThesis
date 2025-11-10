@@ -388,6 +388,19 @@ class ActionPolicyTrainer(BaseTrainer):
         loss = self.criterion(pred_actions, target_action)
         return loss
 
+class RegressionPolicyTrainer(BaseTrainer):
+    """
+    """
+    def _compute_loss(self, batch):
+
+        initial_obs = batch["initial_observation"].to(self.device).unsqueeze(1)
+        target_action = batch["waypoint"].to(self.device)   
+
+        pred_actions = self.model(initial_obs) 
+
+        loss = self.criterion(pred_actions, target_action)
+        return loss
+
 class DiffusionPolicyTrainer(BaseTrainer):
     """
     Trainer for a diffusion policy.
@@ -480,8 +493,11 @@ def create_trainer(model, optimizer, criterion, device, cfg):
     if cfg.get("is_waypointPlusTimings", False):
         return WaypointTimingTrainer(model, optimizer, criterion, device, cfg)
 
-    elif cfg.model.policy_head_type == 'diffusion':
+    elif cfg.model.get("policy_head_type") == 'diffusion':
         return DiffusionPolicyTrainer(model, optimizer, criterion, device, cfg)
+
+    elif cfg.model.get("type") == "regression":
+        return RegressionPolicyTrainer(model, optimizer, criterion, device, cfg)
 
     else:
         return SequencePolicyTrainer(model, optimizer, criterion, device, cfg)

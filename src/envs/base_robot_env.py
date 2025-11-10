@@ -164,8 +164,6 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 _, depth = self.camview.computeImageAndDepth(self.C)
                 depth = depth[120:, 150:500]
                 depth = rescale_img(depth, rescale_size=96)
-                # plt.imshow(depth, cmap='gray')
-                # plt.show()
 
                 # Camera_view = a.getFxycxy()
                 # ry.CameraView(self.C).setCamera(self.C.getFrame(self.camera_name)).getFxycxy()

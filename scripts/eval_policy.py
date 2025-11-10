@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 log = logging.getLogger(__name__)
 DEBUG_DEPTH = False
-DEBUG_STATE = True
+DEBUG_STATE = False
 
 def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
     for name in env.unwrapped.C.getFrameNames():
@@ -110,7 +110,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
     torch.manual_seed(cfg.seed)
     if cfg.env.get("env", None) == "table":
-        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False)
+        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges)
     else:
         env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.action_execution_horizon

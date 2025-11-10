@@ -389,7 +389,44 @@ class MultiModalPolicy(nn.Module):
             return self.policy_head(global_cond=cond_features, true_actions=true_actions)
         else:
             raise ValueError(f"Unknown policy_head_type: {self.policy_head_type}")
+
+class DinoCLSToKeypoint(nn.Module):
+    """
+    A much simpler policy network (MLP) that regresses DINO CLS directly  to a 3-element key EE-position.
+
+    """
+    
+    def __init__(self, feature_dim: int = 256):
+        """
+        Initialize the SimplifiedPolicy network.
         
+        Args:
+            feature_dim (int): Dimensionality of the features extracted by the Adapter.
+        """
+        super(DinoCLSToKeypoint, self).__init__()
+
+        self.feature_dim = feature_dim
+        self.output_dim = 3 # Fixed output for end position (x, y, z)
+
+        # Regression head: maps the global point cloud features to the 3D end position
+        self.adapter = FeatureAdapter(feature_dim=feature_dim)
+        self.regressor_head = nn.Linear(feature_dim, self.output_dim)
+
+    def forward(self, dino_cls: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through the simplified policy.
+        
+        Args:
+        
+        Returns:
+            torch.Tensor: Predicted end position tensor of shape (batch_size, 3).
+        """
+        features = self.adapter(dino_cls)
+
+        end_position = self.regressor_head(features)
+        
+        return end_position
+
 class SimplePCToPosRegressor(nn.Module):
     """
     A much simpler policy network that regresses a point cloud directly
@@ -440,8 +477,6 @@ class SimplePCToPosRegressor(nn.Module):
         
         return end_position
 
-
-
 def filter_kwargs(func, kwargs):
     sig = inspect.signature(func)
     return {k: v for k, v in kwargs.items() if k in sig.parameters}
@@ -457,7 +492,10 @@ def create_policy(policy_type='multimodal', **kwargs):
         return MultiModalPolicy(**filtered)
     elif policy_type == 'regression':
         filtered = filter_kwargs(SimplePCToPosRegressor.__init__, kwargs)
-        return SimplePCToPosRegressor(**filtered)
+        if kwargs.get("observation_mode") == "dino_cls":
+            return DinoCLSToKeypoint(**filtered)
+        else:
+            return SimplePCToPosRegressor(**filtered)
     elif policy_type == 'wayplustiming':
         filtered = filter_kwargs(WayPlusTimingsPolicy.__init__, kwargs)
         return WayPlusTimingsPolicy(**filtered)
