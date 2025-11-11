@@ -3,6 +3,9 @@ import numpy as np
 import torch
 from transformers import AutoModel
 import os
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import cv2
 
 # --- Configuration ---
 H5_FILE_PATH = 'table_demo.h5' # <-- CHANGE THIS to your file path
@@ -14,11 +17,11 @@ CLS_FEATURE_DIM = 768 # DINOv2-base CLS token dimension
 # Example 1 (CLS only):     SAVE_CLS_FEATURES = True,  SAVE_PATCH_FEATURES = False
 # Example 2 (Patch only):   SAVE_CLS_FEATURES = False, SAVE_PATCH_FEATURES = True
 # Example 3 (Both):         SAVE_CLS_FEATURES = True,  SAVE_PATCH_FEATURES = True
-SAVE_CLS_FEATURES = True
-SAVE_PATCH_FEATURES = False
+SAVE_CLS_FEATURES = False
+SAVE_PATCH_FEATURES = True
 # --------------------------
 
-
+cmap = cm.get_cmap('jet')
 # --- Setup DINO Model ---
 # Use CUDA if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -72,6 +75,100 @@ def get_dino_features(depth_array_64x96x96: np.ndarray) -> (np.ndarray, np.ndarr
     # 4. Convert back to CPU NumPy array
     return cls_features.cpu().numpy(), patch_features.cpu().numpy()
 
+def get_dino_features_jet(depth_array_Bx96x96: np.ndarray) -> (np.ndarray, np.ndarray):
+    """
+    Converts a batch of depth numpy arrays to DINO CLS and Patch feature vectors
+    using JET COLORMAP encoding.
+    """
+    
+    batch_size = depth_array_Bx96x96.shape[0]
+    
+    # 1. Normalize each image in the batch independently to [0, 1]
+    # This is CRITICAL for the colormap to work consistently
+    normalized_depth = np.zeros_like(depth_array_Bx96x96, dtype=np.float32)
+    for i in range(batch_size):
+        img = depth_array_Bx96x96[i]
+        min_val = img.min()
+        max_val = img.max()
+        if max_val - min_val > 1e-6: # Avoid division by zero
+            normalized_depth[i] = (img - min_val) / (max_val - min_val)
+        # else: leave as zeros
+            
+    # 2. Apply colormap
+    # cmap(normalized_depth) returns (B, 96, 96, 4) [RGBA]
+    colored_depth_rgba = cmap(normalized_depth)
+    
+    # 3. Take only RGB, discard Alpha (B, 96, 96, 3)
+    colored_depth_rgb = colored_depth_rgba[..., :3] # Ellipsis ... means "all other dims"
+    
+    # 4. Convert to (B, 3, 96, 96) Torch tensor for DINO
+    # (B, 96, 96, 3) -> (B, 3, 96, 96)
+    input_tensor_3ch = torch.from_numpy(colored_depth_rgb).permute(0, 3, 1, 2).float().to(device)
+
+    # 5. Get DINO features (same as your code)
+    with torch.no_grad():
+        outputs = dino_model(input_tensor_3ch)
+    
+    cls_features = outputs.last_hidden_state[:, 0, :]
+    patch_features = outputs.last_hidden_state[:, 1:, :]
+    
+    return cls_features.cpu().numpy(), patch_features.cpu().numpy()
+
+def get_dino_features_hha_lite(depth_array_Bx96x96: np.ndarray) -> (np.ndarray, np.ndarray):
+    """
+    Converts a batch of depth numpy arrays to DINO CLS and Patch feature vectors
+    using HHA-Lite (Depth, Gradient-X, Gradient-Y) encoding.
+    """
+    
+    batch_size = depth_array_Bx96x96.shape[0]
+    
+    # Output will be (B, 3, 96, 96)
+    output_hha_lite_batch = np.zeros((batch_size, 3, 96, 96), dtype=np.float32)
+
+    for i in range(batch_size):
+        # Use the original, non-normalized depth for gradient calculation
+        img = depth_array_Bx96x96[i].astype(np.float32)
+        
+        # --- Channel 1: Normalized Depth ---
+        min_val, max_val = img.min(), img.max()
+        if max_val - min_val > 1e-6:
+            norm_depth = (img - min_val) / (max_val - min_val)
+        else:
+            norm_depth = np.zeros((96, 96), dtype=np.float32)
+
+        # --- Channel 2: Normalized Gradient X ---
+        sobel_x = cv2.Sobel(img, cv2.CV_32F, 1, 0, ksize=3)
+        min_val, max_val = sobel_x.min(), sobel_x.max()
+        if max_val - min_val > 1e-6:
+            sobel_x = (sobel_x - min_val) / (max_val - min_val)
+        else:
+            sobel_x = np.zeros((96, 96), dtype=np.float32)
+            
+        # --- Channel 3: Normalized Gradient Y ---
+        sobel_y = cv2.Sobel(img, cv2.CV_32F, 0, 1, ksize=3)
+        min_val, max_val = sobel_y.min(), sobel_y.max()
+        if max_val - min_val > 1e-6:
+            sobel_y = (sobel_y - min_val) / (max_val - min_val)
+        else:
+            sobel_y = np.zeros((96, 96), dtype=np.float32)
+
+        # --- Stack channels ---
+        output_hha_lite_batch[i, 0, :, :] = norm_depth
+        output_hha_lite_batch[i, 1, :, :] = sobel_x
+        output_hha_lite_batch[i, 2, :, :] = sobel_y
+
+    # 4. Convert to Torch tensor
+    input_tensor_3ch = torch.from_numpy(output_hha_lite_batch).float().to(device)
+
+    # 5. Get DINO features (same as your code)
+    with torch.no_grad():
+        outputs = dino_model(input_tensor_3ch)
+    
+    cls_features = outputs.last_hidden_state[:, 0, :]
+    patch_features = outputs.last_hidden_state[:, 1:, :]
+    
+    return cls_features.cpu().numpy(), patch_features.cpu().numpy()
+
 # --- MODIFIED: Main HDF5 Processing Loop ---
 def process_h5_file(file_path):
     # --- NEW: Check configuration ---
@@ -108,8 +205,7 @@ def process_h5_file(file_path):
 
             # 2. Generate DINO Features
             # We still get both, but will only save what's requested
-            new_cls_features, new_patch_features = get_dino_features(depth_data)
-
+            new_cls_features, new_patch_features = get_dino_features_hha_lite(depth_data)
             # 3. Replace/Overwrite the data
             
             # a) Delete the old 'depth' dataset
