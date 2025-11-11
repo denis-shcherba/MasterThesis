@@ -88,6 +88,53 @@ class ManipulationDataset(Dataset):
             else:
                 self.depth_stats = None
 
+        if self.observation_mode in ['dino_cls', 'dino_patches']:
+            print(f"Starting preload for {self.split} split...")
+            self._preload_all_data()  # Preload everything
+            print(f"Preload complete for {self.split} split")
+            
+    def _preload_all_data(self):
+        """Preload ALL data into RAM - called once during init"""
+        self.feature_cache = {}
+        self.action_cache = {}
+        self.book_params_cache = {}
+        self.waypoint_cache = {}
+        self.initial_obs_cache = {}
+        
+        total_size = 0
+        
+        with h5py.File(self.h5_file_path, 'r') as f:
+            for meta in self.demo_meta:
+                demo_key = meta['demo_key']
+                
+                # Preload features
+                self.feature_cache[demo_key] = f[f"{demo_key}/{self.obs_key}"][...].astype(np.float32)
+                total_size += self.feature_cache[demo_key].nbytes
+                
+                # Preload actions
+                self.action_cache[demo_key] = f[f"{demo_key}/path"][...].astype(np.float32)
+                total_size += self.action_cache[demo_key].nbytes
+                
+                # Preload metadata
+                if 'book_params' in f[demo_key]:
+                    self.book_params_cache[demo_key] = f[f"{demo_key}/book_params"][...].astype(np.float32)
+                else:
+                    self.book_params_cache[demo_key] = np.array([0.0], dtype=np.float32)
+                
+                if 'waypoints' in f[demo_key]:
+                    self.waypoint_cache[demo_key] = f[f"{demo_key}/waypoints"][...].astype(np.float32)
+                else:
+                    self.waypoint_cache[demo_key] = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+                
+                self.initial_obs_cache[demo_key] = self.feature_cache[demo_key][0]
+        
+        print(f"✓ Preloaded {len(self.feature_cache)} demos: {total_size/1e9:.2f} GB in RAM")
+    
+        # Don't need HDF5 file anymore - prevent any disk access
+        if hasattr(self, 'h5_file') and self.h5_file is not None:
+            self.h5_file.close()
+            self.h5_file = None
+
     def _index_demonstrations(self):
         with h5py.File(self.h5_file_path, 'r') as f:
             demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
@@ -250,66 +297,45 @@ class ManipulationDataset(Dataset):
         return len(self.valid_indices)
 
     def __getitem__(self, idx):
-        """
-        Fetches data, using pre-calculated CLS features when observation_mode='dino_cls'.
-        Applies left-padding to history sequences if they fall before the start of a demonstration.
-        """
-        # Ensure HDF5 file is open
-        if not hasattr(self, 'h5_file'):
-            self.h5_file = h5py.File(self.h5_file_path, 'r', libver='latest', swmr=True)
-
+        """Now fully in-memory - no HDF5 access"""
         demo_idx, future_start_t = self.valid_indices[idx]
         meta = self.demo_meta[demo_idx]
+        demo_key = meta['demo_key']
         
-        # 1. --- Handle the FUTURE (target) sequence ---
+        # === ALL FROM CACHE - NO DISK I/O ===
         future_end_t = future_start_t + self.future_sequence_length
-        future_actions_sequence = self.h5_file[f"{meta['demo_key']}/path"][future_start_t:future_end_t].astype(np.float32)
+        future_actions_sequence = self.action_cache[demo_key][future_start_t:future_end_t].copy()
 
-        # 2. --- Handle the PAST (history) sequence with PADDING ---
-        # Include current observation (future_start_t) in history
         history_end_t = future_start_t + 1
         history_start_t = history_end_t - self.sequence_length
-        
         num_to_pad = max(0, -history_start_t)
         
-        # OBS_SAMPLE_SHAPE: This will be (768,) for DINO features, or (H, W) for depth images.
         obs_sample_shape = meta['obs_sample_shape']
-        
-        # Initialize sequence arrays with correct shape
         obs_sequence = np.zeros((self.sequence_length, *obs_sample_shape), dtype=np.float32)
         past_actions_sequence = np.zeros((self.sequence_length, self.action_dim), dtype=np.float32)
         
-        # Determine the slice to fetch from the HDF5 file
         real_data_start_t = max(0, history_start_t)
         
-        # Load the real observations (DINO features or raw depth) and actions
-        real_obs = self._load_obs(meta['demo_key'], real_data_start_t, history_end_t)
-        real_actions = self.h5_file[f"{meta['demo_key']}/path"][real_data_start_t:history_end_t].astype(np.float32)
-
-        # Copy data into the sequence array (after padding slot)
+        # Load from CACHE (not HDF5!)
+        real_obs = self.feature_cache[demo_key][real_data_start_t:history_end_t]
+        real_actions = self.action_cache[demo_key][real_data_start_t:history_end_t]
+        
         obs_sequence[num_to_pad:] = real_obs
         past_actions_sequence[num_to_pad:] = real_actions
 
-        # 3. --- Handle Normalization ---
-        # Action normalization is always applied
+        # Normalization...
         if self.normalize_actions:
             past_actions_sequence[num_to_pad:] = self._normalize_actions(past_actions_sequence[num_to_pad:])
             future_actions_sequence = self._normalize_actions(future_actions_sequence)
         
-        # Depth normalization only runs if self.observation_mode == 'depth' AND self.normalize_depth is True.
-        # It is correctly skipped for 'dino_cls' features.
         if self.observation_mode == 'depth' and self.normalize_depth:
             normalized_obs = np.array([self._normalize_depth(img) for img in obs_sequence[num_to_pad:]])
             obs_sequence[num_to_pad:] = normalized_obs
 
-        # 4. --- Load metadata and convert to tensors ---
-        book_params = self.h5_file[f"{meta['demo_key']}/book_params"][...].astype(np.float32) if 'book_params' in self.h5_file[f"{meta['demo_key']}"] else np.array([0.0], dtype=np.float32)
-        
-        # --- ADDED: Load waypoint if it exists ---
-        waypoint = self.h5_file[f"{meta['demo_key']}/waypoints"][...].astype(np.float32) if 'waypoints' in self.h5_file[f"{meta['demo_key']}"] else np.array([0.0, 0.0, 0.0], dtype=np.float32)
-
-        initial_obs = self.h5_file[f"{meta['demo_key']}/{self.obs_key}"][...].astype(np.float32)[0]
-
+        # Load metadata from CACHE (not HDF5!)
+        book_params = self.book_params_cache[demo_key]
+        waypoint = self.waypoint_cache[demo_key]
+        initial_obs = self.initial_obs_cache[demo_key]
 
         return {
             'observation_sequence': torch.from_numpy(obs_sequence).float(),
@@ -317,16 +343,20 @@ class ManipulationDataset(Dataset):
             'target_actions_sequence': torch.from_numpy(future_actions_sequence).float(),
             'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
             'book_params': torch.from_numpy(book_params).float(),
-            'waypoint': torch.from_numpy(waypoint).float(), 
+            'waypoint': torch.from_numpy(waypoint).float(),
             'initial_observation': torch.from_numpy(initial_obs).float()
         }
     
     def _load_obs(self, demo_key, start=None, end=None):
-        obs_key_path = f"{demo_key}/{self.obs_key}"
+        if hasattr(self, 'feature_cache') and demo_key in self.feature_cache:
+            if start is None:
+                return self.feature_cache[demo_key]
+            return self.feature_cache[demo_key][start:end]
         
+        # Fallback to HDF5
+        obs_key_path = f"{demo_key}/{self.obs_key}"
         if start is None:
             return self.h5_file[obs_key_path][...].astype(np.float32)
-            
         return self.h5_file[obs_key_path][start:end].astype(np.float32)
 
     def _normalize_actions(self, actions):
@@ -424,7 +454,7 @@ def create_dataloaders(
         shuffle=True,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
-        drop_last=True
+        drop_last=True,
     )
 
     val_loader = DataLoader(

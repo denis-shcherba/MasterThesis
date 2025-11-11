@@ -94,7 +94,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_regression", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
@@ -113,7 +113,7 @@ def eval_policy(cfg: DictConfig) -> None:
         env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges)
     else:
         env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
-    action_execution_horizon = cfg.action_execution_horizon
+    action_execution_horizon = cfg.get("action_execution_horizon")
 
     # Model
     log.info("Initializing model...")
@@ -141,6 +141,30 @@ def eval_policy(cfg: DictConfig) -> None:
     model.load_state_dict(state_dict)
     log.info("Model weights loaded successfully.")
 
+    model.eval()
+    log.info("Model set to evaluation mode.")
+
+    if cfg.get("is_regression", False):
+        log.info("Model is set for regression.")
+        for i in range(cfg.num_eval_episodes):
+            obs, info = env.reset()
+            plt.imshow(obs["depth"], cmap='gray')
+            plt.show()
+            current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
+
+            if cfg.observation_mode == 'dino_cls':
+                depth_obs = get_cls_features(current_depth)
+
+            depth_obs = depth_obs.unsqueeze(1)  
+
+            with torch.no_grad():
+                waypoint = model(depth_obs)
+
+            env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
+            env.unwrapped.C.view(True)
+        
+        quit()
+
     normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)
     if normalization_stats_path is None:
         log.error("normalization_stats_path not found.")
@@ -149,16 +173,12 @@ def eval_policy(cfg: DictConfig) -> None:
     with open(normalization_stats_path, 'r') as file:
         normalization_stats = yaml.safe_load(file)
 
-    model.eval()
-    log.info("Model set to evaluation mode.")
-
     info_dicts = []
     if cfg.model.policy_head_type == "diffusion":
         sequence_length = cfg.model.prediction_length
     else:
         sequence_length = cfg.model.context_length
         
-
     for evaluation in range(cfg.get("num_eval_episodes")):
         obs, info = env.reset()
 

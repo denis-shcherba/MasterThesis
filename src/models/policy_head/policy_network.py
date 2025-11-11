@@ -427,6 +427,43 @@ class DinoCLSToKeypoint(nn.Module):
         
         return end_position
 
+class DinoMapToKeypoint(nn.Module):
+    """
+    A much simpler policy network (MLP) that regresses DINO Feature Maps directly  to a 3-element key EE-position.
+    """
+    
+    def __init__(self, feature_dim: int = 256, dropout_prob: float = 0.2): # Pass dropout_prob
+        """
+        Initialize the SimplifiedPolicy network.
+        
+        Args:
+            feature_dim (int): Dimensionality of the features extracted by the Adapter.
+            dropout_prob (float): Dropout probability for the adapter.
+        """
+        super(DinoMapToKeypoint, self).__init__()
+
+        self.feature_dim = feature_dim
+        self.output_dim = 3 # Fixed output for end position (x, y, z)
+        
+        # Pass the dropout_prob to the adapter
+        self.adapter = FeatureAdapterCNN(feature_dim=feature_dim, dropout_prob=dropout_prob) 
+        self.regressor_head = nn.Linear(feature_dim, self.output_dim)
+
+    def forward(self, dino_cls: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through the simplified policy.
+        
+        Args:
+        
+        Returns:
+            torch.Tensor: Predicted end position tensor of shape (batch_size, 3).
+        """
+        features = self.adapter(dino_cls)
+
+        end_position = self.regressor_head(features)
+        
+        return end_position
+
 class SimplePCToPosRegressor(nn.Module):
     """
     A much simpler policy network that regresses a point cloud directly
@@ -494,6 +531,8 @@ def create_policy(policy_type='multimodal', **kwargs):
         filtered = filter_kwargs(SimplePCToPosRegressor.__init__, kwargs)
         if kwargs.get("observation_mode") == "dino_cls":
             return DinoCLSToKeypoint(**filtered)
+        elif kwargs.get("observation_mode") == "dino_patches":
+            return DinoMapToKeypoint(**filtered)
         else:
             return SimplePCToPosRegressor(**filtered)
     elif policy_type == 'wayplustiming':

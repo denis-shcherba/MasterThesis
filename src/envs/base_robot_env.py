@@ -159,9 +159,10 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                     depth = rescale_img(depth, rescale_size=96)
             elif self.simulate:
                 self.camview = ry.CameraView(self.C)
-                self.camview.setCamera(self.C.getFrame(self.camera_name))
 
-                _, depth = self.camview.computeImageAndDepth(self.C)
+                self.camview.setCamera(self.C.getFrame(self.camera_name))
+    
+                _, depth = self.camview.computeImageAndDepth(self.C, True)
                 depth = depth[120:, 150:500]
                 depth = rescale_img(depth, rescale_size=96)
 
