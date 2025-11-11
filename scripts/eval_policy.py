@@ -110,7 +110,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
     torch.manual_seed(cfg.seed)
     if cfg.env.get("env", None) == "table":
-        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges)
+        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
     else:
         env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.get("action_execution_horizon")
@@ -144,46 +144,56 @@ def eval_policy(cfg: DictConfig) -> None:
     model.eval()
     log.info("Model set to evaluation mode.")
 
+    cm_errs = []
+    
     if cfg.get("is_regression", False):
         log.info("Model is set for regression.")
         for i in range(cfg.num_eval_episodes):
             obs, info = env.reset()
-            plt.imshow(obs["depth"], cmap='gray')
-            plt.show()
+            # plt.imshow(obs["depth"], cmap='gray')
+            # plt.show()
             current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
 
             if cfg.observation_mode == 'dino_cls':
                 depth_obs = get_cls_features(current_depth)
             elif cfg.observation_mode == 'dino_patches':
                 depth_obs = get_patch_features(current_depth)
+            else:
+                depth_obs = current_depth # No normalization bc of droput (-1 depth)
 
             depth_obs = depth_obs.unsqueeze(1)  
 
             with torch.no_grad():
                 waypoint = model(depth_obs)
 
+            cm_err = np.linalg.norm(waypoint.cpu().numpy() - env.unwrapped.waypoint_pos)
+            cm_errs.append(cm_err)
+            #print("Predicted waypoint:", cm_err)
             env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
             
-            komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
-            komo.addObjective(
-            times=[], 
-            feature=ry.FS.jointState, 
-            frames=[],
-            type=ry.OT.sos, 
-            scale=[1e-1], 
-            target=env.unwrapped.q0
-            )
-            komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .05])
+            # komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
+            # komo.addObjective(
+            # times=[], 
+            # feature=ry.FS.jointState, 
+            # frames=[],
+            # type=ry.OT.sos, 
+            # scale=[1e-1], 
+            # target=env.unwrapped.q0
+            # )
+            # komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .05])
 
-            ret = ry.NLP_Solver(komo.nlp(), verbose=4) .solve()
-            print(ret)
+            # ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
+            # #print(ret)
 
-            komo.view(True, "IK solution")
-            if cfg.env.on_real:
-                env.unwrapped.bot.moveTo(komo.getPath()[0])
+            # komo.view(True, "IK solution")
+            # if cfg.env.on_real:
+            #     env.unwrapped.bot.moveTo(komo.getPath()[0])
 
-            #env.unwrapped.C.view(True)
+            # env.unwrapped.C.view(True)
 
+        avg_cm_err = sum(cm_errs) / len(cm_errs)
+        log.info(f"Average CM Error over {cfg.num_eval_episodes} episodes: {avg_cm_err:.5f} m")
+        log.info(f"Average squared error thus {avg_cm_err**2}.")
         quit()
 
     normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)

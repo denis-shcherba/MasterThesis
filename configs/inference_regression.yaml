@@ -6,7 +6,7 @@ defaults:
   - env: table_3d_abs_real
 
 experiment_name: "Transformer 10 step input Inference"
-observation_mode: dino_patches
+observation_mode: depth
 output_subdir: null
 num_eval_episodes: 50
 simulate: True

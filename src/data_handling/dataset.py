@@ -88,7 +88,7 @@ class ManipulationDataset(Dataset):
             else:
                 self.depth_stats = None
 
-        if self.observation_mode in ['dino_cls', 'dino_patches']:
+        if self.observation_mode in ['dino_cls', 'dino_patches', 'depth']:
             print(f"Starting preload for {self.split} split...")
             self._preload_all_data()  # Preload everything
             print(f"Preload complete for {self.split} split")
