@@ -432,7 +432,7 @@ class DinoMapToKeypoint(nn.Module):
     A much simpler policy network (MLP) that regresses DINO Feature Maps directly  to a 3-element key EE-position.
     """
     
-    def __init__(self, feature_dim: int = 256, dropout_prob: float = 0.2): # Pass dropout_prob
+    def __init__(self, feature_dim: int = 256, dropout_prob: float = 0.4): # Pass dropout_prob
         """
         Initialize the SimplifiedPolicy network.
         

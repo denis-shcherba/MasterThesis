@@ -133,3 +133,42 @@ def get_cls_features(depth_array_1x96x96: np.ndarray) -> np.ndarray:
     
     # 4. Convert back to CPU NumPy array
     return cls_features
+
+
+def get_patch_features(depth_array_1x96x96: np.ndarray) -> np.ndarray:
+    """
+    Converts a batch of depth images (1×96×96) to DINO patch feature grids.
+    
+    Args:
+        depth_array_1x96x96: numpy array of shape (B, 1, 96, 96)
+            Depth images already scaled/normalized to [0, 1].
+    
+    Returns:
+        patch_features: numpy array of shape (B, Num_Patches, 768)
+            DINO patch features (excluding CLS token).
+            For DINOv2-base, 96x96 input yields 36 patches (6x6 grid).
+    """
+    DINO_MODEL_NAME = "facebook/dinov2-base"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Load pretrained DINO model
+    dino_model = AutoModel.from_pretrained(DINO_MODEL_NAME).to(device)
+    dino_model.eval()
+    for param in dino_model.parameters():
+        param.requires_grad = False
+
+    # Prepare input tensor: (B, 1, 96, 96) → (B, 3, 96, 96)
+    if isinstance(depth_array_1x96x96, np.ndarray):
+        depth_tensor = torch.from_numpy(depth_array_1x96x96).float()
+    else:
+        depth_tensor = depth_array_1x96x96.float()
+
+    input_tensor_3ch = depth_tensor.repeat(1, 3, 1, 1).to(device)
+
+    # Forward through DINO
+    with torch.no_grad():
+        outputs = dino_model(input_tensor_3ch)
+        # Exclude CLS token → keep only patch tokens
+        patch_tokens = outputs.last_hidden_state[:, 1:, :]  # (B, Num_Patches, 768)
+
+    return patch_tokens

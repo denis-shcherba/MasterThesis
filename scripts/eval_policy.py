@@ -6,7 +6,7 @@ import logging
 import os
 from models.policy_head.policy_network import create_model
 from data_handling.processing import pose_9d_to_7d, pose_7d_to_9d
-from utils.data_utils import normalize_depth, normalize_state, denormalize_actions, get_cls_features
+from utils.data_utils import normalize_depth, normalize_state, denormalize_actions, get_cls_features, get_patch_features
 import yaml
 import json
 from hydra.core.hydra_config import HydraConfig
@@ -154,6 +154,8 @@ def eval_policy(cfg: DictConfig) -> None:
 
             if cfg.observation_mode == 'dino_cls':
                 depth_obs = get_cls_features(current_depth)
+            elif cfg.observation_mode == 'dino_patches':
+                depth_obs = get_patch_features(current_depth)
 
             depth_obs = depth_obs.unsqueeze(1)  
 
@@ -161,8 +163,27 @@ def eval_policy(cfg: DictConfig) -> None:
                 waypoint = model(depth_obs)
 
             env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
-            env.unwrapped.C.view(True)
-        
+            
+            komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
+            komo.addObjective(
+            times=[], 
+            feature=ry.FS.jointState, 
+            frames=[],
+            type=ry.OT.sos, 
+            scale=[1e-1], 
+            target=env.unwrapped.q0
+            )
+            komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .05])
+
+            ret = ry.NLP_Solver(komo.nlp(), verbose=4) .solve()
+            print(ret)
+
+            komo.view(True, "IK solution")
+            if cfg.env.on_real:
+                env.unwrapped.bot.moveTo(komo.getPath()[0])
+
+            #env.unwrapped.C.view(True)
+
         quit()
 
     normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)
