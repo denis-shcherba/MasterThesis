@@ -6,7 +6,7 @@ import logging
 import os
 from models.policy_head.policy_network import create_model
 from data_handling.processing import pose_9d_to_7d, pose_7d_to_9d
-from utils.data_utils import normalize_depth, normalize_state, denormalize_actions, get_cls_features, get_patch_features
+from utils.data_utils import normalize_depth, normalize_state, denormalize_actions, get_cls_features, get_patch_features, get_sam_pointcloud
 import yaml
 import json
 from hydra.core.hydra_config import HydraConfig
@@ -110,7 +110,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
     torch.manual_seed(cfg.seed)
     if cfg.env.get("env", None) == "table":
-        env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
+        env = gym.make("TableEnv-v0", obs_type="depth_rgb_agent_pos", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
     else:
         env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.get("action_execution_horizon")
@@ -158,10 +158,16 @@ def eval_policy(cfg: DictConfig) -> None:
                 depth_obs = get_cls_features(current_depth)
             elif cfg.observation_mode == 'dino_patches':
                 depth_obs = get_patch_features(current_depth)
+            elif cfg.observation_mode == 'sam_points':
+                current_rgb = torch.from_numpy(obs["rgb"]).float().cpu().numpy()
+                current_rgb = (current_rgb * 255).astype(np.uint8)
+                depth_obs = torch.from_numpy(get_sam_pointcloud(env.unwrapped.C, cfg.env.camera_name, current_rgb, current_depth.squeeze(0).cpu().numpy())).to(device).float()
             else:
                 depth_obs = current_depth # No normalization bc of droput (-1 depth)
 
             depth_obs = depth_obs.unsqueeze(1)  
+            if cfg.observation_mode == 'sam_points':
+                depth_obs = depth_obs.transpose(1, 0)
 
             with torch.no_grad():
                 waypoint = model(depth_obs)
@@ -169,8 +175,9 @@ def eval_policy(cfg: DictConfig) -> None:
             cm_err = np.linalg.norm(waypoint.cpu().numpy() - env.unwrapped.waypoint_pos)
             cm_errs.append(cm_err)
             #print("Predicted waypoint:", cm_err)
-            env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
-            
+            #env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
+            env.unwrapped.C.addFrame("predicted_waypoint", "cameraWrist").setRelativePosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
+
             # komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
             # komo.addObjective(
             # times=[], 
@@ -189,7 +196,7 @@ def eval_policy(cfg: DictConfig) -> None:
             # if cfg.env.on_real:
             #     env.unwrapped.bot.moveTo(komo.getPath()[0])
 
-            # env.unwrapped.C.view(True)
+            env.unwrapped.C.view(True)
 
         avg_cm_err = sum(cm_errs) / len(cm_errs)
         log.info(f"Average CM Error over {cfg.num_eval_episodes} episodes: {avg_cm_err:.5f} m")

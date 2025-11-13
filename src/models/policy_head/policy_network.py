@@ -510,7 +510,7 @@ class SimplePCToPosRegressor(nn.Module):
     then a simple linear layer for regression.
     """
     
-    def __init__(self, num_points: int = 1024, feature_dim: int = 256):
+    def __init__(self, num_points: int = 4096, feature_dim: int = 256):
         """
         Initialize the SimplifiedPolicy network.
         
@@ -543,6 +543,8 @@ class SimplePCToPosRegressor(nn.Module):
         """
         # 1. Extract global features from the point cloud using PointNet
         # pc_features will have shape (batch_size, feature_dim)
+        if point_cloud.dim() == 4:
+            point_cloud = point_cloud.squeeze(1)
         pc_features = self.pointnet(point_cloud)
         
         # 2. Regress the features to the 3D end position

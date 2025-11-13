@@ -48,8 +48,14 @@ class TableEnv(BaseRobotEnv):
         self.camera_name = camera_name
         self.last_pos = np.array([0., 0., 0.])
 
+        if not self.on_real:
+            self.C.setJointState(self.q0)
         self.table_base_dims = np.array([1.2, 1.1, .1])  # Default table dimensions (width, depth, height)
-        self.camera_base_pos = self.C.getFrame(self.gripper).getPosition() + np.array([0, .2, .3])
+
+        self.camera_base_pos = self.C.getFrame(self.camera_name).getPosition()
+        self.camera_base_rpy = ry.Quaternion().set(self.C.getFrame(self.camera_name).getQuaternion()).getRollPitchYaw()
+
+        #self.camera_base_pos = np.array([0., .56, 1.57]) 
 
         # Domain randomization parameters
         self.table_offset_ranges = table_offset_ranges
@@ -64,7 +70,7 @@ class TableEnv(BaseRobotEnv):
             self.camera_offset_y_range = camera_offset_ranges.y
             self.camera_offset_z_range = camera_offset_ranges.z
 
-        # TODO: implement these ranges in reset
+        self.camera_rpy_ranges = camera_rpy_ranges
         if camera_rpy_ranges is not None:
             self.camera_pitch_range = camera_rpy_ranges.pitch # degrees
             self.camera_yaw_range = camera_rpy_ranges.yaw # degrees
@@ -73,6 +79,10 @@ class TableEnv(BaseRobotEnv):
         self.focal_length_range = focal_length_range 
 
         self.depth_noise_ranges = depth_noise_ranges
+        if self.depth_noise_ranges is not None:
+            self.depth_noise_active = depth_noise_ranges['active']
+        else:
+            self.depth_noise_active = False
 
         self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
         self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
@@ -83,7 +93,7 @@ class TableEnv(BaseRobotEnv):
 
         if collect_data:    # TODO parameters
             self.h5file = h5py.File("table_demo.h5", "w")
-            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name)
+            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
             self.demo_id = 0
 
         self._setup_scene()
@@ -115,6 +125,8 @@ class TableEnv(BaseRobotEnv):
         
         if self.extras.upper() == "WAYPOINTS":
             self.C.addFrame("waypoint_marker").setPosition(self.C.getFrame(self.books[0]).getPosition()+np.array([0, 0, b_size_z/2])).setShape(ry.ST.marker, [.1]).setColor([0, 0, 1, .5])
+
+            #self.waypoint_pos = self.C.eval(ry.FS.positionRel, [self.camera_name, "waypoint_marker"])[0]
             self.waypoint_pos = self.C.getFrame("waypoint_marker").getPosition()
 
         self.C.addFrame("target_p").setPose(self.C.getFrame(frame_name).getPose())
@@ -186,7 +198,7 @@ class TableEnv(BaseRobotEnv):
 
                 q = ry.Quaternion().set(ee_pose[3:])
                 R = q.getMatrix()
-                if "rel" in self.robot_mode:
+                if "delta" in self.robot_mode:
                     se3_path[i, :3] = ee_pose[:3] - self.last_pos
                     self.last_pos = ee_pose[:3]
 
@@ -196,7 +208,7 @@ class TableEnv(BaseRobotEnv):
  
             if self.robot_mode == "taskspace":
                 demo_group.create_dataset("path", data=se3_path)
-            elif self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
+            elif self.robot_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
                 demo_group.create_dataset("path", data=se3_path[:, :3])
 
             if self.img_type.upper() == "DEPTH":
@@ -211,6 +223,14 @@ class TableEnv(BaseRobotEnv):
                 demo_group.create_dataset(
                 "rgb", 
                 data=self.roboenv.rgb_image,
+                compression="gzip",
+                compression_opts=4
+                )
+
+            elif self.img_type.upper() == "SAM_POINTS":
+                demo_group.create_dataset(
+                "points", 
+                data=self.roboenv.points[0],
                 compression="gzip",
                 compression_opts=4
                 )
@@ -248,7 +268,7 @@ class TableEnv(BaseRobotEnv):
         if not self.on_real:
             self.C.setJointState(self.q0)
             pass
-
+        
         self._setup_scene()    
 
         if self.botop:
@@ -279,10 +299,10 @@ class TableEnv(BaseRobotEnv):
         elif self.robot_mode == "jointspace":
             for _ in range(100):
                 self.sim._sim.step(action, 0.01, ry.ControlMode.position)
-        elif self.robot_mode == "taskspace" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
+        elif self.robot_mode == "taskspace" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
             
             # clip minimum height for z to avoid collisions with table
-            if "_rel" in self.robot_mode:
+            if "_delta" in self.robot_mode:
                 pass
             else:
                 if action[2] < 0.67:
@@ -295,7 +315,7 @@ class TableEnv(BaseRobotEnv):
             komo.clearObjectives()
             komo.addControlObjective([], 0, 1e-1)
 
-            if self.robot_mode == "pos3d_rel":
+            if self.robot_mode == "pos3d_delta":
                 komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3] + self.last_pos)
             else:
                 komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3])

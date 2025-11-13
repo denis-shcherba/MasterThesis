@@ -205,7 +205,7 @@ def process_h5_file(file_path):
 
             # 2. Generate DINO Features
             # We still get both, but will only save what's requested
-            new_cls_features, new_patch_features = get_dino_features_hha_lite(depth_data)
+            new_cls_features, new_patch_features = get_dino_features(depth_data)
             # 3. Replace/Overwrite the data
             
             # a) Delete the old 'depth' dataset

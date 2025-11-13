@@ -18,7 +18,7 @@ def run_data_collection(cfg: dict):
     print(f"Running with config: {cfg}")
 
     collector = None  # Initialize for finally block
-    env = gym.make("TableEnv-v0", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, extras=cfg.get("extras", ""), collect_data=True)
+    env = gym.make("TableEnv-v0", img_type="SAM_POINTS", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges = cfg.env.depth_noise_ranges, extras=cfg.get("extras", ""), collect_data=True)
 
     while env.unwrapped.demo_id < cfg.num_samples:
         env.reset()

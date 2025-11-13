@@ -64,6 +64,13 @@ class ManipulationDataset(Dataset):
             self.normalize_depth = False
             print("INFO: Using pre-extracted DINO PATCH features "
                   "(no depth normalization).")
+            
+        elif self.observation_mode == 'sam_points':
+            # (T, num_patches, dim) or (T, H_p, W_p, dim)
+            self.obs_key = 'points'
+            self.normalize_depth = False
+            print("INFO: Using pre-extracted DINO PATCH features "
+                  "(no depth normalization).")
 
         else:
             raise ValueError(f"Unknown observation_mode: {self.observation_mode}")
@@ -88,7 +95,7 @@ class ManipulationDataset(Dataset):
             else:
                 self.depth_stats = None
 
-        if self.observation_mode in ['dino_cls', 'dino_patches', 'depth']:
+        if self.observation_mode in ['dino_cls', 'dino_patches', 'depth', 'sam_points']:
             print(f"Starting preload for {self.split} split...")
             self._preload_all_data()  # Preload everything
             print(f"Preload complete for {self.split} split")
@@ -126,8 +133,11 @@ class ManipulationDataset(Dataset):
                 else:
                     self.waypoint_cache[demo_key] = np.array([0.0, 0.0, 0.0], dtype=np.float32)
                 
-                self.initial_obs_cache[demo_key] = self.feature_cache[demo_key][0]
-        
+                if self.observation_mode != 'sam_points':
+                    self.initial_obs_cache[demo_key] = self.feature_cache[demo_key][0]
+                else:
+                    self.initial_obs_cache[demo_key] = self.feature_cache[demo_key]
+
         print(f"✓ Preloaded {len(self.feature_cache)} demos: {total_size/1e9:.2f} GB in RAM")
     
         # Don't need HDF5 file anymore - prevent any disk access
@@ -151,7 +161,7 @@ class ManipulationDataset(Dataset):
                 
                 # Check 1: path data is 2D and action_dim matches
                 # Check 2: observation (time) steps match action (time) steps
-                if len(path_shape) != 2 or path_shape[1] != self.action_dim or obs_shape[0] != path_shape[0]:
+                if len(path_shape) != 2 or path_shape[1] != self.action_dim or (obs_shape[0] != path_shape[0] and self.obs_key != 'points'):
                     self.logger.warning(f"Skipping demo {demo_key}: Shape mismatch. Path: {path_shape}, Obs: {obs_shape}")
                     continue
                 

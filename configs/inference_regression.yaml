@@ -2,11 +2,11 @@ defaults:
   - _self_  
   - model: regression
   - data: depth
-  - inference: dino_regression
-  - env: table_3d_abs_real
+  - inference: sam_regression
+  - env: table_3d_rel_real
 
 experiment_name: "Transformer 10 step input Inference"
-observation_mode: dino_patches
+observation_mode: sam_points
 output_subdir: null
 num_eval_episodes: 50
 simulate: True

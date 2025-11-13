@@ -1,5 +1,5 @@
 defaults:
-  - env: table_3d_abs_real
+  - env: table_3d_rel_real
 
 num_samples: 1_000
 output_subdir: null

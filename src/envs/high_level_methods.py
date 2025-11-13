@@ -17,7 +17,8 @@ class RobotEnviroment:
                  visualize: bool=False,
                  path_mode: str="",
                  noise_dict: dict={},
-                 camera: str="cameraStatic") -> None:
+                 camera: str="cameraStatic",
+                 depth_noise = False) -> None:
         self.C = C
         self.visuals = visuals
         self.verbose = verbose
@@ -32,6 +33,7 @@ class RobotEnviroment:
         self.path_mode = path_mode
         self.noise_dict = noise_dict
         self.camera = camera
+        self.depth_noise = depth_noise  
         if self.noise_dict:
             self.state_noise = self.noise_dict.get("stateNoise")
             self.depth_noise = self.noise_dict.get("depthNoise")
@@ -269,7 +271,7 @@ class RobotEnviroment:
                 sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=self.visualize)
 
 
-            if self.observation_mode == "POINTCLOUD":
+            if self.observation_mode == "POINTCLOUD" or "SAM_POINTS":
                 self.points = sim.points
             elif self.observation_mode == "RGB":
                 self.rgb_image = sim.rgb
@@ -390,7 +392,7 @@ class RobotEnviroment:
                 path2 = path2_after_offset
                 del C2
         
-                sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode)
+                sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
                 if "SPLINE" in self.path_mode:
                     sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)
                     sim.run_trajectory_spline(np.asarray(path2), 2, capture_depth=get_observation)
@@ -399,7 +401,7 @@ class RobotEnviroment:
                     sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=self.visualize)
 
 
-                if self.observation_mode == "POINTCLOUD":
+                if self.observation_mode == "POINTCLOUD" or "SAM_POINTS":
                     self.points = sim.points
                 elif self.observation_mode == "RGB":
                     self.rgb_image = sim.rgb

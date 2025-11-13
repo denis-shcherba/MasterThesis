@@ -7,6 +7,9 @@ from robotic import SimulationEngine
 from envs.utils import point_in_box_filtering, rescale_img
 import cv2
 import matplotlib.pyplot as plt 
+from envs.utils import grounded_segmentation, plot_detections, sample_points
+
+
 
 class Simulator:
     """Wrapper class for ry Simulator, with functionality to run a simulation."""
@@ -19,10 +22,11 @@ class Simulator:
         camera: str = "cameraStatic",
         base_removal: bool = False,  # if true, shelf will be removed from observation
         visualize: bool = False,    # TODO?
-        observation_mode: str = "DEPTH"
+        observation_mode: str = "DEPTH",
+        depth_noise: bool = False,
     ):
         self._sim = ry.Simulation(config, engine, verbose=verbose)
-        self._sim.setSimulateDepthNoise(True)
+        self._sim.setSimulateDepthNoise(depth_noise)
         self.config = config
         self.init_state = self._sim.getState()
         self.camera = camera
@@ -124,14 +128,54 @@ class Simulator:
         for i, control_point in enumerate(path):
             if capture_obs:
                 if self.observation_mode == "DEPTH":
-                    depth = self.getDepth(crop=True, rescale=True)
-                    # if i == 0:
-                    #     plt.imshow(depth, cmap='gray')
-                    #     plt.show()
+                    depth = self.getDepth(crop=False, rescale=False)
                     self.depth.append(depth)
                 elif self.observation_mode == "RGB":
-                    rgb = self.getRGB()
+                    rgb = self.getRGB(rescale=False)
                     self.rgb.append(rgb)
+                
+                elif self.observation_mode == "SAM_POINTS":
+                    rgb = self.getRGB(crop=False, rescale=False)
+                    depth = self.getDepth(crop=False, rescale=False)
+                    if i == 0:
+
+                        labels = ["red cuboid"]
+                        threshold = 0.3
+
+                        detector_id = "IDEA-Research/grounding-dino-tiny"
+                        segmenter_id = "facebook/sam-vit-base"
+
+                        image_array, detections = grounded_segmentation(
+                            image=rgb,
+                            labels=labels,
+                            threshold=threshold,
+                            polygon_refinement=True,
+                            detector_id=detector_id,
+                            segmenter_id=segmenter_id
+                        )
+
+                        #plot_detections(image_array, detections)
+                        print("Detections:", len(detections))
+
+                        mask = detections[0].mask  # shape (H, W), bool
+                        mask = mask.astype(bool)
+                        masked_depth = depth.copy()
+                        masked_depth[~mask] = 0
+                        # plt.imshow(masked_depth)
+                        # plt.show()
+
+                        CameraView = ry.CameraView(self.config)
+                        CameraView = ry.CameraView(self.config)
+                        CameraView.setCamera(self.config.getFrame(self.camera))
+                        fx, fy, cx, cy = CameraView.getFxycxy()
+                        point_cloud = ry.depthImage2PointCloud(masked_depth, [fx, fy, cx, cy])
+
+                        points = point_cloud.reshape(-1, 3) 
+                        points = points[~np.all(points == 0, axis=1)]   # remove zero points
+                        points = sample_points(points, n_samples=4096)  # subsample points to 4096
+
+
+                    self.points.append(points) 
 
             for _ in range(10):
                 self._sim.step(control_point, tau, ry.ControlMode.position)
