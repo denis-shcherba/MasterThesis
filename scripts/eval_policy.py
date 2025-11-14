@@ -14,6 +14,7 @@ import robotic as ry
 import gymnasium as gym
 import envs  # noqa: F401  
 import matplotlib.pyplot as plt
+from envs.high_level_methods import RobotEnviroment
 
 log = logging.getLogger(__name__)
 DEBUG_DEPTH = False
@@ -181,25 +182,9 @@ def eval_policy(cfg: DictConfig) -> None:
             cm_errs.append(cm_err)
             #print("Predicted waypoint:", cm_err)
             env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
-            #env.unwrapped.C.addFrame("predicted_waypoint", "cameraWrist").setRelativePosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
 
-            komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
-            komo.addObjective(
-            times=[], 
-            feature=ry.FS.jointState, 
-            frames=[],
-            type=ry.OT.sos, 
-            scale=[1e-1], 
-            target=env.unwrapped.q0
-            )
-            komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .05])
-
-            ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
-            #print(ret)
-
-            komo.view(True, "IK solution")
-            if cfg.env.on_real:
-                env.unwrapped.bot.moveTo(komo.getPath()[0])
+            roboenv = RobotEnviroment(env.unwrapped.C, sim=True)
+            roboenv.pull_way2way("predicted_waypoint", None, False)
 
             #env.unwrapped.C.view(True)
 

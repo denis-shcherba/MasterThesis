@@ -320,134 +320,171 @@ class RobotEnviroment:
         return True
 
     def pull_real(self, object_, placePosition, accumulated_collisions=True, get_observation=False, base="big_xy_bottom_0_1") -> bool:
-            self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
+        self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
 
-            # self.C.addFrame("to_push_point").setPosition([self.C.getFrame(object_).getPosition()[0], self.C.getFrame(object_).getPosition()[1], self.C.getFrame(object_).getSize()[2]/2+self.C.getFrame(object_).getPosition()[2]]).setShape(ry.ST.marker, [.1]).setColor([1,0,0])
-            # self.C.view(True)
-            # quit()
-            M = manip.ManipulationModelling()
-            M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
-            
-            M.add_stable_frame(ry.JT.transXYPhi, base, '_pull_end', object_)
-            M.komo.addObjective([1], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
-            M.komo.addObjective([2], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
-
-            M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
-            print(self.C.getFrame(object_).getSize()[2])
-            M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([0, 0, .5*self.C.getFrame(object_).getSize()[2]+.01]))
-            M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
-
-            M.solve()
-            if not M.feasible:
-                print("INFEASIBLE AT M")
-                self.C.delFrame("tmp")
-                return False
-
-            M1 = M.sub_motion(0, accumulated_collisions=accumulated_collisions)
-            M1.retractPush([.0, .15], self.gripper, .03)
-            M1.approachPush([.85, 1.], self.gripper, .03)
-            path1 = M1.solve()
-            if not M1.feasible:
-                print("INFEASIBLE AT M1")
-                self.C.delFrame("tmp")
-                return False
-
-            # M1.komo.view(True)
-
-            M2 = M.sub_motion(1, accumulated_collisions=False)
-            M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e3], [], 1)   
-            
-
-            #target = self.C.getFrame("target").getPosition()
-            # delta = np.array(target) - self.C.getFrame(object_).getPosition()
-            # delta /= np.linalg.norm(delta)
-            # projection_matrix = np.eye(3) - np.outer(delta, delta)
-            # M2.komo.addObjective([1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
-            # M2.komo.addObjective([.5,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * np.array([0, 0, 1]))
-
-            path2 = M2.solve()
-            # M2.komo.view(True)
-
-
-            if not M2.feasible:
-                print("INFEASIBLE AT M2")
-                self.C.delFrame("tmp")
-
-                return False
-            
-            if self.sim == True:
-                offset = -0.01
-                path2_after_offset = []       
-                C2 = ry.Config()
-                C2.addConfigurationCopy(self.C)
-                
-                delta_x = np.array([0, 0, offset])  
-                
-                for q in path2:
-                    C2.setJointState(q)
-                    _, J = C2.eval(ry.FS.position, [self.gripper])
-                    delta_q = np.linalg.pinv(J) @ delta_x
-                    path2_after_offset.append(q + delta_q)
-                
-                path2 = path2_after_offset
-                del C2
+        # self.C.addFrame("to_push_point").setPosition([self.C.getFrame(object_).getPosition()[0], self.C.getFrame(object_).getPosition()[1], self.C.getFrame(object_).getSize()[2]/2+self.C.getFrame(object_).getPosition()[2]]).setShape(ry.ST.marker, [.1]).setColor([1,0,0])
+        # self.C.view(True)
+        # quit()
+        M = manip.ManipulationModelling()
+        M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
         
-                sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
-                if "SPLINE" in self.path_mode:
-                    sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)
-                    sim.run_trajectory_spline(np.asarray(path2), 2, capture_depth=get_observation)
-                else:
-                    sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=self.visualize)
-                    sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=self.visualize)
+        M.add_stable_frame(ry.JT.transXYPhi, base, '_pull_end', object_)
+        M.komo.addObjective([1], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
+        M.komo.addObjective([2], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
+
+        M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
+        print(self.C.getFrame(object_).getSize()[2])
+        M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([0, 0, .5*self.C.getFrame(object_).getSize()[2]+.01]))
+        M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
+
+        M.solve()
+        if not M.feasible:
+            print("INFEASIBLE AT M")
+            self.C.delFrame("tmp")
+            return False
+
+        M1 = M.sub_motion(0, accumulated_collisions=accumulated_collisions)
+        M1.retractPush([.0, .15], self.gripper, .03)
+        M1.approachPush([.85, 1.], self.gripper, .03)
+        path1 = M1.solve()
+        if not M1.feasible:
+            print("INFEASIBLE AT M1")
+            self.C.delFrame("tmp")
+            return False
+
+        # M1.komo.view(True)
+
+        M2 = M.sub_motion(1, accumulated_collisions=False)
+        M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e3], [], 1)   
+        
+
+        #target = self.C.getFrame("target").getPosition()
+        # delta = np.array(target) - self.C.getFrame(object_).getPosition()
+        # delta /= np.linalg.norm(delta)
+        # projection_matrix = np.eye(3) - np.outer(delta, delta)
+        # M2.komo.addObjective([1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
+        # M2.komo.addObjective([.5,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * np.array([0, 0, 1]))
+
+        path2 = M2.solve()
+        # M2.komo.view(True)
 
 
-                if self.observation_mode == "POINTCLOUD" or "SAM_POINTS":
-                    self.points = sim.points
-                    if self.points[0] is None:
-                        return False
-                    
-                elif self.observation_mode == "RGB":
-                    self.rgb_image = sim.rgb
-                elif self.observation_mode == "DEPTH":
-                    self.depth_image = sim.depth
-
-            else:
-                if self.visuals:
-                    M1.play(self.C, 1.)
-                    self.C.view(True)
-
-                    self.C.attach(self.gripper, object_)
-
-                    M2.play(self.C, 1.)
-
-                    self.C.attach(base, object_)
-                else:
-                    if get_observation:
-                        sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
-                        if self.observation_mode == "POINTCLOUD":
-                            self.points = sim.getPoints(vis=True)
-                        elif self.observation_mode == "RGB":
-                            self.rgb_image = sim.getRGB()
-
+        if not M2.feasible:
+            print("INFEASIBLE AT M2")
             self.C.delFrame("tmp")
 
-            if self.path_mode == "WAYplusTIMING":
-                
-                self.ways = []
-                C2 = ry.Config()
-                C2.addConfigurationCopy(self.C)
-                
-                C2.setJointState(path1[-1])
-                self.ways.append(C2.getFrame(self.gripper).getPosition())
-                
-                C2.setJointState(path2_after_offset[-1])
-                self.ways.append(C2.getFrame(self.gripper).getPosition())
-                del C2
+            return False
+        
+        if self.sim == True:
+            offset = -0.01
+            path2_after_offset = []       
+            C2 = ry.Config()
+            C2.addConfigurationCopy(self.C)
+            
+            delta_x = np.array([0, 0, offset])  
+            
+            for q in path2:
+                C2.setJointState(q)
+                _, J = C2.eval(ry.FS.position, [self.gripper])
+                delta_q = np.linalg.pinv(J) @ delta_x
+                path2_after_offset.append(q + delta_q)
+            
+            path2 = path2_after_offset
+            del C2
+    
+            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
+            if "SPLINE" in self.path_mode:
+                sim.run_trajectory_spline(np.array(path1), 2, capture_depth=get_observation)
+                sim.run_trajectory_spline(np.asarray(path2), 2, capture_depth=get_observation)
+            else:
+                sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=self.visualize)
+                sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=self.visualize)
 
-                self.timings = np.concatenate([np.full(32, 1), np.full(32, 2)])
 
-            self.path = np.concatenate((path1, path2_after_offset), axis=0)
-            return True
+            if self.observation_mode == "POINTCLOUD" or "SAM_POINTS":
+                self.points = sim.points
+                if self.points[0] is None:
+                    return False
+                
+            elif self.observation_mode == "RGB":
+                self.rgb_image = sim.rgb
+            elif self.observation_mode == "DEPTH":
+                self.depth_image = sim.depth
+
+        else:
+            if self.visuals:
+                M1.play(self.C, 1.)
+                self.C.view(True)
+
+                self.C.attach(self.gripper, object_)
+
+                M2.play(self.C, 1.)
+
+                self.C.attach(base, object_)
+            else:
+                if get_observation:
+                    sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal)
+                    if self.observation_mode == "POINTCLOUD":
+                        self.points = sim.getPoints(vis=True)
+                    elif self.observation_mode == "RGB":
+                        self.rgb_image = sim.getRGB()
+
+        self.C.delFrame("tmp")
+
+        if self.path_mode == "WAYplusTIMING":
+            
+            self.ways = []
+            C2 = ry.Config()
+            C2.addConfigurationCopy(self.C)
+            
+            C2.setJointState(path1[-1])
+            self.ways.append(C2.getFrame(self.gripper).getPosition())
+            
+            C2.setJointState(path2_after_offset[-1])
+            self.ways.append(C2.getFrame(self.gripper).getPosition())
+            del C2
+
+            self.timings = np.concatenate([np.full(32, 1), np.full(32, 2)])
+
+        self.path = np.concatenate((path1, path2_after_offset), axis=0)
+        return True
+
+    def pull_way2way(self, pullWay, placeWay, accumulated_collisions=True) -> bool:
+
+        M = manip.ManipulationModelling()
+        #M.setup_motion(self.C, K=2, steps_per_phase=1, homing_scale=.1, acceleration_scale=1, accumulated_collisions=False, joint_limits=True, quaternion_norms=False)
+        M.setup_sequence(self.C, 2, homing_scale=.01, velocity_scale=.1, accumulated_collisions=False, joint_limits=True, quaternion_norms=False)
+        M.komo.addObjective([1], ry.FS.positionDiff, [self.gripper, pullWay], ry.OT.eq, [1])
+        M.komo.addObjective([2], ry.FS.positionRel, [self.gripper, pullWay], ry.OT.eq, [1], [.1, 0, 0])
+        M.komo.addObjective([1], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
+        M.komo.addObjective([2], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
+
+        M.solve()
+
+
+        M1 = M.sub_motion(0, accumulated_collisions=False)
+        M1.retractPush([.0, .15], self.gripper, .03)
+        M1.approachPush([.85, 1.], self.gripper, .03)
+        path1 = M1.solve()
+
+        M2 = M.sub_motion(1, accumulated_collisions=False)
+        M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e3], [], 1)   
+
+        path2 = M2.solve()
+
+        #M1.komo.view(True)
+
+        if not M.feasible:
+            print("INFEASIBLE AT M")
+            return False
+
+        self.path = np.concatenate((path1, path2), axis=0)
+
+        # if self.sim == True:
+        #     sim = Simulator(self.C, verbose=self.verbose, base_removal=False, camera=self.camera)
+        #     sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.1, capture_obs=False, visualize=True)
+        #     sim.run_trajectory_position_control(np.array(path2), n_steps=2, tau=0.1, capture_obs=False, visualize=True)
+
 
     def pull_point():
         #TODO
