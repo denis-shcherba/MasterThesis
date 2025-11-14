@@ -403,6 +403,9 @@ class RobotEnviroment:
 
                 if self.observation_mode == "POINTCLOUD" or "SAM_POINTS":
                     self.points = sim.points
+                    if self.points[0] is None:
+                        return False
+                    
                 elif self.observation_mode == "RGB":
                     self.rgb_image = sim.rgb
                 elif self.observation_mode == "DEPTH":

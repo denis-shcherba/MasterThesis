@@ -161,7 +161,12 @@ def eval_policy(cfg: DictConfig) -> None:
             elif cfg.observation_mode == 'sam_points':
                 current_rgb = torch.from_numpy(obs["rgb"]).float().cpu().numpy()
                 current_rgb = (current_rgb * 255).astype(np.uint8)
-                depth_obs = torch.from_numpy(get_sam_pointcloud(env.unwrapped.C, cfg.env.camera_name, current_rgb, current_depth.squeeze(0).cpu().numpy())).to(device).float()
+                sam_pc = get_sam_pointcloud(env.unwrapped.C, cfg.env.camera_name, current_rgb, current_depth.squeeze(0).cpu().numpy())
+                if sam_pc is None:
+                    log.error("SAM point cloud is None, skipping this episode.")
+                    continue
+                else:
+                    depth_obs = torch.from_numpy(sam_pc).to(device).float()
             else:
                 depth_obs = current_depth # No normalization bc of droput (-1 depth)
 
@@ -175,28 +180,28 @@ def eval_policy(cfg: DictConfig) -> None:
             cm_err = np.linalg.norm(waypoint.cpu().numpy() - env.unwrapped.waypoint_pos)
             cm_errs.append(cm_err)
             #print("Predicted waypoint:", cm_err)
-            #env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
-            env.unwrapped.C.addFrame("predicted_waypoint", "cameraWrist").setRelativePosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
+            env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
+            #env.unwrapped.C.addFrame("predicted_waypoint", "cameraWrist").setRelativePosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
 
-            # komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
-            # komo.addObjective(
-            # times=[], 
-            # feature=ry.FS.jointState, 
-            # frames=[],
-            # type=ry.OT.sos, 
-            # scale=[1e-1], 
-            # target=env.unwrapped.q0
-            # )
-            # komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .05])
+            komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
+            komo.addObjective(
+            times=[], 
+            feature=ry.FS.jointState, 
+            frames=[],
+            type=ry.OT.sos, 
+            scale=[1e-1], 
+            target=env.unwrapped.q0
+            )
+            komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .05])
 
-            # ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
-            # #print(ret)
+            ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
+            #print(ret)
 
-            # komo.view(True, "IK solution")
-            # if cfg.env.on_real:
-            #     env.unwrapped.bot.moveTo(komo.getPath()[0])
+            komo.view(True, "IK solution")
+            if cfg.env.on_real:
+                env.unwrapped.bot.moveTo(komo.getPath()[0])
 
-            env.unwrapped.C.view(True)
+            #env.unwrapped.C.view(True)
 
         avg_cm_err = sum(cm_errs) / len(cm_errs)
         log.info(f"Average CM Error over {cfg.num_eval_episodes} episodes: {avg_cm_err:.5f} m")
