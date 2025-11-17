@@ -1,7 +1,7 @@
 defaults:
-  - env: table_3d_rel_real
+  - env: table_3d_abs_real
 
-num_samples: 1000
+num_samples: 1_000
 output_subdir: null
 seed: 42
 extras: WAYPOINTS

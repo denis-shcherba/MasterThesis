@@ -91,13 +91,25 @@ class TableEnv(BaseRobotEnv):
             .setPosition(self.camera_base_pos) \
             .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
 
+        if self.img_type.upper() == "BOX_POINTS":
+            box_mask_height = 1
+            box_mask_width = 1.2
+            box_mask_depth = 1.75
+            pos_offset_x = 0
+            pos_offset_y = 0
+            pos_offset_z = .03
+
+            self.C.addFrame("BOX_MASK") \
+                .setShape(ry.ST.box, size=[box_mask_width, box_mask_depth, box_mask_height]) \
+                .setColor([1, 0, 0, .2]) \
+                .setPosition(self.C.getFrame("table").getPosition()+np.array([pos_offset_x, pos_offset_y, pos_offset_z+self.C.getFrame("table").getSize()[2]/2+box_mask_height/2])) \
+                
         if collect_data:    # TODO parameters
             self.h5file = h5py.File("table_demo.h5", "w")
             self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
             self.demo_id = 0
-
+            
         self._setup_scene()
-
 
     def _spawn_book(self, book_params, i=0, prefix="target_book"):
         b_size_x, b_size_y, b_size_z = book_params
@@ -184,6 +196,7 @@ class TableEnv(BaseRobotEnv):
         return {"distance_to_target": distance, "success": success}
 
     def collect_data(self):
+
         success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=True, base="table")
         if success:
             demo_group = self.h5file.create_group(f"demo_{self.demo_id}")
@@ -210,7 +223,6 @@ class TableEnv(BaseRobotEnv):
                 demo_group.create_dataset("path", data=se3_path)
             elif self.robot_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
                 demo_group.create_dataset("path", data=se3_path[:, :3])
-
             if self.img_type.upper() == "DEPTH":
                 demo_group.create_dataset(
                 "depth", 
@@ -234,11 +246,18 @@ class TableEnv(BaseRobotEnv):
                 compression="gzip",
                 compression_opts=4
                 )
-
+            elif self.img_type.upper() == "BOX_POINTS":
+                demo_group.create_dataset(
+                "points", 
+                data=self.roboenv.points,
+                compression="gzip",
+                compression_opts=4
+                )
+        
             if "WAYPOINTS" in self.extras.upper():
                 demo_group.create_dataset("waypoints", data=self.waypoint_pos)
             
-
+            print(f"Collected Demo: {self.demo_id}")
             self.demo_id += 1
 
     def save_data(self):

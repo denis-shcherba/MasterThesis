@@ -186,6 +186,11 @@ def eval_policy(cfg: DictConfig) -> None:
             roboenv = RobotEnviroment(env.unwrapped.C, sim=True)
             roboenv.pull_way2way("predicted_waypoint", None, False)
 
+            bot = ry.BotOp(env.unwrapped.C, False)
+            bot.moveAutoTimed(roboenv.path)
+            while bot.getTimeToEnd() > 0:
+                bot.wait(env.unwrapped.C, 0.1)
+
             #env.unwrapped.C.view(True)
 
         avg_cm_err = sum(cm_errs) / len(cm_errs)

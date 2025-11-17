@@ -51,6 +51,10 @@ class ManipulationDataset(Dataset):
 
         if self.observation_mode == 'depth':
             self.obs_key = 'depth'
+        
+        if self.observation_mode == 'points':
+            self.normalize_depth = False
+            self.obs_key = 'points'
 
         elif self.observation_mode == 'dino_cls':
             self.obs_key = 'cls_features'
@@ -95,7 +99,7 @@ class ManipulationDataset(Dataset):
             else:
                 self.depth_stats = None
 
-        if self.observation_mode in ['dino_cls', 'dino_patches', 'depth', 'sam_points']:
+        if self.observation_mode in ['dino_cls', 'dino_patches', 'depth', 'sam_points', 'points']:
             print(f"Starting preload for {self.split} split...")
             self._preload_all_data()  # Preload everything
             print(f"Preload complete for {self.split} split")

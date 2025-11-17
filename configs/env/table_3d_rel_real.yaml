@@ -6,6 +6,8 @@ on_real: false
 camera_name: cameraWrist
 env: table
 
+q0: [.0, -1.2, .0, -2.4, 0. , 1.6, -0.8]
+
 allow_book_yaw: false
 
 box_size_ranges:

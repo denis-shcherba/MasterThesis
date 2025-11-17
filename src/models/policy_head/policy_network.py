@@ -25,7 +25,18 @@ def prepare_depth_input(observation: torch.Tensor) -> Tuple[torch.Tensor, int, i
         raise ValueError(f"Unexpected depth observation shape: {observation.shape}")
     return obs_input, batch_size, seq_len
 
+def prepare_point_input(observation: torch.Tensor) -> Tuple[torch.Tensor, int, int]:
+    """
+    Ensures point input is in shape (B*S, 1, H, W)
+    Returns: obs_input, batch_size, seq_len
+    """
+    if observation.dim() == 4:  # (B, S, H, W)
+        batch_size, seq_len = observation.shape[:2]
+        obs_input = observation.view(batch_size * seq_len, *observation.shape[2:])
 
+    else:
+        raise ValueError(f"Unexpected depth observation shape: {observation.shape}")
+    return obs_input, batch_size, seq_len
 class PositionalEncoding(nn.Module):
     """Generates sinusoidal positional encodings for timesteps."""
     def __init__(self, embedding_dim, max_timesteps=1000):
@@ -206,6 +217,8 @@ class MultiModalPolicy(nn.Module):
             self.obs_encoder = FeatureAdapter(feature_dim=feature_dim)
         elif self.observation_mode == 'dino_patches':
             self.obs_encoder = FeatureAdapterCNN(feature_dim=feature_dim)
+        elif self.observation_mode == 'points':
+            self.obs_encoder = PointNet(num_points=1024, feature_dim=feature_dim)
 
         else:
             raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
@@ -327,6 +340,7 @@ class MultiModalPolicy(nn.Module):
             batch_size, seq_len = observations.shape[:2]
             obs_features = self.obs_encoder(observations) 
         elif self.observation_mode == 'points':
+            obs_input, batch_size, seq_len = prepare_point_input(observations)
             obs_features = self.obs_encoder(obs_input)  # (B*S, feature_dim)
         else:
             raise ValueError(f"Unsupported observation mode: {self.observation_mode}")
