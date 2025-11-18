@@ -196,10 +196,10 @@ class Simulator:
                     points = sample_points(points, n_samples=1024)  # subsample points to 4096
 
                     # if visualize:
-                    plt.imshow(depth)
-                    plt.show()
-                    self.config.addFrame("temp_pc").setPointCloud(points)
-                    self.config.view(True)
+                        # plt.imshow(depth)
+                        # plt.show()
+                        # self.config.addFrame("temp_pc").setPointCloud(points)
+                        # self.config.view(True)
 
                     self.points.append(points) 
 

@@ -24,7 +24,7 @@ table_offset_ranges:
 
 camera_offset_ranges:
   x: [0.0, 0.0]
-  y: [0, 0.]
+  y: [-0.25, -0.25]
   z: [0, 0.]
 
 camera_rpy_ranges:
