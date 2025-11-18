@@ -3,7 +3,7 @@ defaults:
   - model: transformer_depth
   - data: depth
   - inference: transformer_depth_table
-  - env: table_3d_abs_real
+  - env: table_3d_rel_real
 
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: points
@@ -11,7 +11,7 @@ output_subdir: null
 num_eval_episodes: 500
 simulate: True
 is_waypointPlusTimings: False
-action_execution_horizon: 8
+action_execution_horizon: 16
 seed: 42
 context_length: 8
 prediction_length: 16

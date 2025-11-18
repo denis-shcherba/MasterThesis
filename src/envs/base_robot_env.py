@@ -3,9 +3,10 @@ from gymnasium import spaces
 import numpy as np
 import robotic as ry
 from importlib.resources import files
-from envs.utils import rescale_img
+from envs.utils import point_in_box_filtering, rescale_img, sample_points
 import abc
 import matplotlib.pyplot as plt
+from utils.data_utils import get_pc_from_depth
 
 class BaseRobotEnv(gym.Env, abc.ABC):
     """
@@ -170,18 +171,9 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
                 self.camview.setCamera(self.C.getFrame(self.camera_name))
     
-                rgb, depth = self.camview.computeImageAndDepth(self.C, True)
-                # depth = depth[120:, 150:500]
-                # depth = rescale_img(depth, rescale_size=96)
+                rgb, depth = self.camview.computeImageAndDepth(self.C, False)
 
-                # Camera_view = a.getFxycxy()
-                # ry.CameraView(self.C).setCamera(self.C.getFrame(self.camera_name)).getFxycxy()
-                # print(Camera_view)
-                # print(self.C)
-                # depth = self.sim.getDepth(rescale=True, rescale_size=96)
-            # import matplotlib.pyplot as plt
-            # plt.imshow(depth)
-            # plt.show()
+
             observation["depth"] = depth
             if self.obs_type == "depth_rgb_agent_pos":
                 observation["rgb"] = rgb

@@ -6,7 +6,7 @@ import logging
 import os
 from models.policy_head.policy_network import create_model
 from data_handling.processing import pose_9d_to_7d, pose_7d_to_9d
-from utils.data_utils import normalize_depth, normalize_state, denormalize_actions, get_cls_features, get_patch_features, get_sam_pointcloud
+from utils.data_utils import get_pc_from_depth, normalize_depth, normalize_state, denormalize_actions, get_cls_features, get_patch_features, get_sam_pointcloud
 import yaml
 import json
 from hydra.core.hydra_config import HydraConfig
@@ -15,6 +15,7 @@ import gymnasium as gym
 import envs  # noqa: F401  
 import matplotlib.pyplot as plt
 from envs.high_level_methods import RobotEnviroment
+from envs.utils import point_in_box_filtering, sample_points
 
 log = logging.getLogger(__name__)
 DEBUG_DEPTH = False
@@ -95,7 +96,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_regression", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
@@ -111,7 +112,12 @@ def eval_policy(cfg: DictConfig) -> None:
 
     torch.manual_seed(cfg.seed)
     if cfg.env.get("env", None) == "table":
-        env = gym.make("TableEnv-v0", obs_type="depth_rgb_agent_pos", img_type="DEPTH", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
+        if cfg.observation_mode in ["points"]: # ...
+            img_type = "BOX_POINTS"
+        else:
+            img_type = "DEPTH"
+
+        env = gym.make("TableEnv-v0", obs_type="depth_rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), img_type=img_type, robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
     else:
         env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
     action_execution_horizon = cfg.get("action_execution_horizon")
@@ -232,6 +238,18 @@ def eval_policy(cfg: DictConfig) -> None:
                 current_state = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
                 if cfg.observation_mode == 'depth':
                     depth_obs = normalize_depth(current_depth, normalization_stats["depth_stats"])
+                elif cfg.observation_mode == 'points':
+                    center = env.unwrapped.C.getFrame("BOX_MASK").getPosition()
+                    box_size = env.unwrapped.C.getFrame("BOX_MASK").getSize()
+
+                    points = get_pc_from_depth(env.unwrapped.C, env.unwrapped.camera_name, current_depth.squeeze(0).cpu().numpy())
+
+                    points = point_in_box_filtering(points, (center, box_size), ignore_planes=[])
+                    points = sample_points(points, n_samples=1024)  
+
+                    depth_obs = torch.from_numpy(points).float().to(device).unsqueeze(0)
+
+
                 elif cfg.observation_mode == 'dino_cls':
                     depth_obs = get_cls_features(current_depth)
 

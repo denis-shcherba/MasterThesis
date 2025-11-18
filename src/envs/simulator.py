@@ -171,7 +171,7 @@ class Simulator:
 
                         points = point_cloud.reshape(-1, 3) 
                         points = points[~np.all(points == 0, axis=1)]   # remove zero points
-                        points = sample_points(points, n_samples=4096)  # subsample points to 4096
+                        points = sample_points(points, n_samples=1024)  # subsample points to 1024
 
                     self.points.append(points) 
                 
@@ -193,7 +193,7 @@ class Simulator:
                     box_size = self.config.getFrame("BOX_MASK").getSize()
 
                     points = point_in_box_filtering(points, (center, box_size), ignore_planes=[])
-                    points = sample_points(points, n_samples=1024)  # subsample points to 4096
+                    points = sample_points(points, n_samples=1024)  # subsample points to 1024
 
                     # if visualize:
                         # plt.imshow(depth)

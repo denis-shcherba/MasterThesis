@@ -4,6 +4,20 @@ from transformers import AutoModel
 import robotic as ry
 from envs.utils import sample_points, grounded_segmentation
 
+def get_pc_from_depth(C: ry.Config, camera: str, depth: np.ndarray) -> np.ndarray:
+    CameraView = ry.CameraView(C)
+    CameraView.setCamera(C.getFrame(camera))
+    fx, fy, cx, cy = CameraView.getFxycxy()
+
+    point_cloud = ry.depthImage2PointCloud(depth, [fx, fy, cx, cy])
+
+    points = point_cloud.reshape(-1, 3) 
+
+    cameraPose = C.getFrame(camera).getPose()
+    rot = ry.Quaternion().set([cameraPose[3:]]).getMatrix()
+    points = (rot @ points.T).T  + cameraPose[:3]
+    return points
+
 def get_sam_pointcloud(C: ry.Config, camera: str, rgb: np.ndarray, depth: np.ndarray) -> np.ndarray:
     labels = ["red cuboid"]
     threshold = 0.3
@@ -27,15 +41,8 @@ def get_sam_pointcloud(C: ry.Config, camera: str, rgb: np.ndarray, depth: np.nda
     masked_depth = depth.copy()
     masked_depth[~mask] = 0
 
-    CameraView = ry.CameraView(C)
-    CameraView = ry.CameraView(C)
-    CameraView.setCamera(C.getFrame(camera))
-    fx, fy, cx, cy = CameraView.getFxycxy()
-    point_cloud = ry.depthImage2PointCloud(masked_depth, [fx, fy, cx, cy])
-
-    points = point_cloud.reshape(-1, 3) 
-    points = points[~np.all(points == 0, axis=1)]
-    points = sample_points(points, n_samples=4096) 
+    points = get_pc_from_depth(C, camera, masked_depth)
+    points = sample_points(points, n_samples=1024)  
 
     return points
 

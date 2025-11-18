@@ -22,6 +22,8 @@ def sample_points(points, n_samples=4096) -> np.ndarray:
         sampled_points = points[indices]
         
         return sampled_points    
+    else:
+        return points
 
 def rescale_img(img, rescale_size: int = 96) -> np.ndarray:
     post_img = cv2.resize(img, (rescale_size, rescale_size), interpolation=cv2.INTER_LINEAR)

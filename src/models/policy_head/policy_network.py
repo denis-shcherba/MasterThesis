@@ -30,7 +30,7 @@ def prepare_point_input(observation: torch.Tensor) -> Tuple[torch.Tensor, int, i
     Ensures point input is in shape (B*S, 1, H, W)
     Returns: obs_input, batch_size, seq_len
     """
-    if observation.dim() == 4:  # (B, S, H, W)
+    if observation.dim() == 4:  # (B, S, N, 3)
         batch_size, seq_len = observation.shape[:2]
         obs_input = observation.view(batch_size * seq_len, *observation.shape[2:])
 
