@@ -7,17 +7,17 @@ from envs.high_level_methods import RobotEnviroment
 from envs.book_spawning import generate_random_box_params
 
 ROBOT_MODE = "normal" # "normal" or "floating"
-COLLECT_DATA = True
+COLLECT_DATA = False
 PATH_MODE = "SE39D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
 CAMERA = "cameraStatic"  # or "cameraWrist"
 BASE_REMOVAl = True # if true, shelf will be removed from observation
 DEBUG = False # pull debugging
-OBSERVATION_MODE = "POINTCLOUD" # "POINTCLOUD", "RGB", "DEPTH"
+OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
 NUM_SAMPLES = 1000
-VISUALIZE = False  # If true, the simulation will be visualized
+VISUALIZE = True  # If true, the simulation will be visualized
 SAVE_BOOK_PARAMS = True  # If true, the parameters of the generated books will be saved to a file
 WAYPOINTS_PLUS = True
 

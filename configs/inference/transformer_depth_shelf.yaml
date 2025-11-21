@@ -1,0 +1,2 @@
+checkpoint_path: outputs/final_outputs/shelf_env/shelf_full_panda_se39d_depth_1000_2.pth
+normalization_stats_path: outputs/final_outputs/shelf_env/shelf_full_panda_se39d_depth_1000_2.yaml

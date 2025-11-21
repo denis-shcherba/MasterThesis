@@ -35,7 +35,7 @@ C.addFrame("book_aof").setPosition(C.getFrame("shelf_extra_floor").getPosition()
 
 
 #C.addFrame("target").setShape(ry.ST.marker, [.2]).setPosition([.76, .08, 1.1])
-C.addFrame("target", "book_aof").setShape(ry.ST.marker, [.2]).setRelativePosition([0, 0, .05])
+C.addFrame("target", "book_aof").setShape(ry.ST.marker, [.2]).setRelativePosition([-.03, 0, .01])
 
 C.view(True)
 
@@ -52,7 +52,7 @@ for i, corner in enumerate(four_corners):
 q0 = C.getJointState()
 M = ry.KOMO_ManipulationHelper()
 #M.setup_motion(self.C, K=2, steps_per_phase=1, homing_scale=.1, acceleration_scale=1, accumulated_collisions=False, joint_limits=True, quaternion_norms=False)
-M.setup_inverse_kinematics(C, accumulated_collisions=True, quaternion_norms=False)
+M.setup_inverse_kinematics(C, accumulated_collisions=False, quaternion_norms=False)
 M.komo.addObjective([], ry.FS.positionDiff, ["l_gripper", "target"], ry.OT.eq, [], 0.0)
 
 M.solve()
@@ -62,37 +62,36 @@ M.komo.view(True)
 
 #(C, q0, q1) = M.komo.getSubProblem(0)
 
-rrt = ry.RRT_PathFinder()
-rrt.setProblem(C)
-rrt.setOptions(verbose=1, stepsize=.1, subsamples=4, maxIters=5000, p_connect=.5, collisionTolerance=.0001, useBroadCollisions=True)
-rrt.setStartGoal([q0], [q1])
+# rrt = ry.RRT_PathFinder()
+# rrt.setProblem(C)
+# rrt.setOptions(verbose=1, stepsize=.1, subsamples=4, maxIters=5000, p_connect=.5, collisionTolerance=.0001, useBroadCollisions=True)
+# rrt.setStartGoal([q0], [q1])
 
-ret = rrt.solve()
-print(ret.x.shape)
-rrt.view(True)
+# ret = rrt.solve()
+# print(ret.x.shape)
+# rrt.view(True)
 
 # for i in ret.x:
 #     C.setJointState(i)
 #     C.checkConsistency()
 #     C.view(True)
 
-quit()
 
 C.setJointState(q0)
 if BOTOP:
-    bot = ry.BotOp(C, False)
+    bot = ry.BotOp(C, True)
     bot.home(C)
     # while bot.getKeyPressed() != 'q':
     #     bot.hold(True, True)
     #     bot.sync(C)
 
-    # bot.moveTo(M.path[0])
-    # while(bot.getTimeToEnd() > 0):
-    #     bot.wait(C)
-    # C.view(True)
-    
-    bot.moveAutoTimed(ret.x)
+    bot.moveTo(M.path[0])
     while(bot.getTimeToEnd() > 0):
         bot.wait(C)
     C.view(True)
+    
+    # bot.moveAutoTimed(ret.x)
+    # while(bot.getTimeToEnd() > 0):
+    #     bot.wait(C)
+    # C.view(True)
     

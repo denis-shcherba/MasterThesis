@@ -1,5 +1,7 @@
 
-robot_mode: pos3d_rel         # "normal" or "floating"
+robot_mode: normal         # "normal" or "floating"
+path_mode: pos3d_rel
+
 simulate: true
 botop: false
 on_real: false

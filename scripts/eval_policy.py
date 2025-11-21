@@ -97,7 +97,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_regression", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     if cfg.env.on_real:
         matplotlib.use("Agg")   # headless backend, no X11 required
@@ -121,9 +121,12 @@ def eval_policy(cfg: DictConfig) -> None:
         else:
             img_type = "DEPTH"
 
-        env = gym.make("TableEnv-v0", obs_type="depth_rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), img_type=img_type, robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
+        env = gym.make("TableEnv-v0", obs_type="depth_rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.allow_book_yaw, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
     else:
-        env = gym.make("ShelfEnv-v0", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed)
+        env = gym.make("ShelfEnv-v1", obs_type="depth_agent_pos", robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion)
+        env.unwrapped.C.view(True)
+
+    
     action_execution_horizon = cfg.get("action_execution_horizon")
 
     # Model
@@ -312,7 +315,8 @@ def eval_policy(cfg: DictConfig) -> None:
                 #     env.unwrapped.C.addFrame(f"aaaa{i}").setShape(ry.ST.sphere, [.01]).setColor([0, 1, 1, .9]).setPosition(action_chunk[0, i, :3].cpu().numpy())
                 # env.unwrapped.C.view(True)
                 if DEBUG_STATE:
-                    show_state_input_seq(cfg, env, action_chunk.squeeze(0))
+                    pass
+                    #show_state_input_seq(cfg, env, action_chunk.squeeze(0))
 
             action_index_in_chunk = i % action_execution_horizon
             action = action_chunk[:, action_index_in_chunk, :].squeeze().cpu().numpy()

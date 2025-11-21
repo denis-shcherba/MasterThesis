@@ -56,7 +56,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         self._load_robot()
         self.q0 = self.C.getJointState()
 
-        if "rel" in self.robot_mode:
+        if "rel" in self.path_mode:
             self.last_pos = self.C.getFrame(self.gripper).getPosition()
 
         if self.simulate:
@@ -104,7 +104,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     def _load_robot(self):
         """Loads the robot model based on self.robot_mode."""
         print(f"Loading robot in mode: {self.robot_mode}")
-        if self.robot_mode == "jointspace" or self.robot_mode == "taskspace" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_rel":
+        if self.robot_mode == "normal":
             self.C.addFile(str(files("envs.scenes") / "single.g"))
             self.prefix = "l_"
             self.gripper_name = "l_gripper"
@@ -133,13 +133,13 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
     def _get_obs(self):
         """Gets an observation from the environment (common logic)."""
-        if self.robot_mode == "jointspace" or self.robot_mode == "floating":
+        if self.path_mode == "jointspace" or self.robot_mode == "floating":
             agent_pos_raw = self.C.getJointState()
-        elif self.robot_mode == "pos3d":
+        elif self.path_mode == "pos3d":
             agent_pos_raw = self.C.getFrame(self.gripper_name).getPosition()
-        elif self.robot_mode == "pos3d_rel":
+        elif self.path_mode == "pos3d_rel":
             agent_pos_raw = self.C.getFrame(self.gripper_name).getPosition()-self.last_pos
-        elif self.robot_mode == "taskspace":
+        elif self.path_mode == "taskspace":
             agent_pos_raw = np.zeros(9)
             pose = self.C.getFrame(self.gripper_name).getPose()
             q = ry.Quaternion().set(pose[3:])

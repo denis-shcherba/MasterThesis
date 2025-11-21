@@ -64,21 +64,31 @@ class RobotEnviroment:
         M1.no_collisions([.15,.85], [object_, 'l_palm'], .02)
         M1.no_collisions([], [table, 'l_finger1'], .0)
         M1.no_collisions([], [table, 'l_finger2'], .0)
-        M1.solve()
+        path1 = M1.solve()
         if not M1.ret.feasible:
             return False
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
 
-        M2.solve()
+        path2 = M2.solve()
         if not M2.ret.feasible:
             return False
 
 
-        M1.play(self.C, 1.)
-        self.C.attach(self.gripper, object_)
-        M2.play(self.C, 1.)
-        self.C.attach(table, object_)
+
+        if self.sim == True:
+            
+            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
+
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=True, visualize=True)
+            sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=True, visualize=True)
+
+
+
+        # M1.play(self.C, 1.)
+        # self.C.attach(self.gripper, object_)
+        # M2.play(self.C, 1.)
+        # self.C.attach(table, object_)
 
         return True
 

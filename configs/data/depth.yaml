@@ -21,13 +21,8 @@ is_waypointPlusTimings: ${is_waypointPlusTimings}
 random_seed: 42         # Random seed for reproducibility
 
 #normalization options
-normalize_depth: false  
+normalize_depth: true  
 normalize_actions: true
 depth_normalization_method: minmax  
 action_normalization_method: minmax
 normalize_action_indices: [0, 1, 2]
-
-#augmentation
-augment_data: false      
-depth_dropout_prob: 0.01 # Probability of dropping out depth values during augmentation
-depth_noise_scale: 0.01 # Scale of noise to add to depth values during augmentation

@@ -87,7 +87,7 @@ class TableEnv(BaseRobotEnv):
         self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
         self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
     
-        self.C.getFrame("cameraStatic") \
+        self.C.getFrame("cameraStaticTable") \
             .setPosition(self.camera_base_pos) \
             .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
 
@@ -170,11 +170,11 @@ class TableEnv(BaseRobotEnv):
         self.books = []
 
     def _define_action_space(self):
-        if self.robot_mode == "jointspace":
-            return spaces.Box(low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32)
-        elif self.robot_mode == "floating":
+        if self.robot_mode == "floating":
             return spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
-        elif self.robot_mode == "taskspace":
+        elif self.path_mode == "jointspace":
+            return spaces.Box(low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32)
+        elif self.path_mode == "taskspace":
             return spaces.Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
         else:
             return spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
@@ -194,6 +194,10 @@ class TableEnv(BaseRobotEnv):
         success = distance < 0.05 # Tighter tolerance for reaching
         
         return {"distance_to_target": distance, "success": success}
+
+    def push_block(self):
+        success = self.roboenv.push_frame_to("target_book_0", [0.2, .3, 0])
+
 
     def collect_data(self):
 
