@@ -54,7 +54,6 @@ class Simulator:
         CameraView = ry.CameraView(self.config)
         CameraView.setCamera(self.config.getFrame(self.camera))
         fx, fy, cx, cy = CameraView.getFxycxy()
-        print([fx, fy, cx, cy])
         point_cloud = self._sim.depthData2pointCloud(depth, [fx, fy, cx, cy])
         
         points = point_cloud.reshape(-1, 3) 
@@ -80,8 +79,19 @@ class Simulator:
             
             return sampled_points
         else:
-            self.config.view(True)
-            return points  
+            print(f"Warning: only {len(points)} points available, less than requested {n_samples}.")
+            num_points = len(points)
+            if num_points == 0:
+                return None
+            missing = n_samples - num_points
+            
+            duplicate_indices = np.random.choice(num_points, missing, replace=True)
+            
+            duplicated_points = points[duplicate_indices]
+            
+            final_points = np.concatenate([points, duplicated_points], axis=0)
+            
+            return final_points
 
     def getRGB(self, rescale: bool = True, crop: bool = False, crop_size: int = 96, rescale_size: int = 96) -> np.ndarray:
         rgb, _ = self._sim.getImageAndDepth()
@@ -128,12 +138,16 @@ class Simulator:
         for i, control_point in enumerate(path):
             if capture_obs:
                 if self.observation_mode == "DEPTH":
-                    depth = self.getDepth(crop=False, rescale=False)
+                    depth = self.getDepth(crop=False, rescale=True)
                     self.depth.append(depth)
                 elif self.observation_mode == "RGB":
                     rgb = self.getRGB(rescale=False)
                     self.rgb.append(rgb)
                 
+                elif self.observation_mode == "POINTCLOUD":
+                    points = self.getPoints(n_samples=4096, vis=visualize)
+                    self.points.append(points)
+
                 elif self.observation_mode == "SAM_POINTS":
                     rgb = self.getRGB(crop=False, rescale=False)
                     depth = self.getDepth(crop=False, rescale=False)
@@ -195,11 +209,11 @@ class Simulator:
                     points = point_in_box_filtering(points, (center, box_size), ignore_planes=[])
                     points = sample_points(points, n_samples=1024)  # subsample points to 1024
 
-                    # if visualize:
-                        # plt.imshow(depth)
-                        # plt.show()
-                        # self.config.addFrame("temp_pc").setPointCloud(points)
-                        # self.config.view(True)
+                    if visualize:
+                        plt.imshow(depth)
+                        plt.show()
+                        self.config.addFrame("temp_pc").setPointCloud(points)
+                        self.config.view(True)
 
                     self.points.append(points) 
 

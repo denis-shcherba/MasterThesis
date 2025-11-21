@@ -13,6 +13,7 @@ from hydra.core.hydra_config import HydraConfig
 import robotic as ry
 import gymnasium as gym
 import envs  # noqa: F401  
+import matplotlib
 import matplotlib.pyplot as plt
 from envs.high_level_methods import RobotEnviroment
 from envs.utils import point_in_box_filtering, sample_points
@@ -98,6 +99,9 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
 info_dicts =[]
 @hydra.main(config_path="../configs", config_name="inference_regression", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
+    if cfg.env.on_real:
+        matplotlib.use("Agg")   # headless backend, no X11 required
+    
     log.info("Starting policy evaluation/inference...")
     log.info(f"Using experiment config: {cfg.experiment_name}")
 
@@ -157,15 +161,17 @@ def eval_policy(cfg: DictConfig) -> None:
         log.info("Model is set for regression.")
         for i in range(cfg.num_eval_episodes):
             obs, info = env.reset()
-            # plt.imshow(obs["depth"], cmap='gray')
-            # plt.show()
-            current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
 
+            current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
+    
             if cfg.observation_mode == 'dino_cls':
                 depth_obs = get_cls_features(current_depth)
             elif cfg.observation_mode == 'dino_patches':
                 depth_obs = get_patch_features(current_depth)
             elif cfg.observation_mode == 'sam_points':
+                if i == 0:
+                    plt.imshow(current_depth.squeeze(0).cpu().numpy(), cmap='gray')
+                    plt.show()
                 current_rgb = torch.from_numpy(obs["rgb"]).float().cpu().numpy()
                 current_rgb = (current_rgb * 255).astype(np.uint8)
                 sam_pc = get_sam_pointcloud(env.unwrapped.C, cfg.env.camera_name, current_rgb, current_depth.squeeze(0).cpu().numpy())

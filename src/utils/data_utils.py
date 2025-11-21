@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from transformers import AutoModel
 import robotic as ry
-from envs.utils import sample_points, grounded_segmentation
+from envs.utils import save_annotated_image, sample_points, grounded_segmentation
 
 def get_pc_from_depth(C: ry.Config, camera: str, depth: np.ndarray) -> np.ndarray:
     CameraView = ry.CameraView(C)
@@ -19,13 +19,13 @@ def get_pc_from_depth(C: ry.Config, camera: str, depth: np.ndarray) -> np.ndarra
     return points
 
 def get_sam_pointcloud(C: ry.Config, camera: str, rgb: np.ndarray, depth: np.ndarray) -> np.ndarray:
-    labels = ["red cuboid"]
+    labels = ["book"]
     threshold = 0.3
 
     detector_id = "IDEA-Research/grounding-dino-tiny"
     segmenter_id = "facebook/sam-vit-base"
 
-    _, detections = grounded_segmentation(
+    image_array, detections = grounded_segmentation(
         image=rgb,
         labels=labels,
         threshold=threshold,
@@ -33,6 +33,8 @@ def get_sam_pointcloud(C: ry.Config, camera: str, rgb: np.ndarray, depth: np.nda
         detector_id=detector_id,
         segmenter_id=segmenter_id
     )
+
+    save_annotated_image(image_array, detections)
 
     print("Detections:", len(detections))
 

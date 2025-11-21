@@ -322,15 +322,16 @@ class RobotEnviroment:
     def pull_real(self, object_, placePosition, accumulated_collisions=True, get_observation=False, base="big_xy_bottom_0_1") -> bool:
         self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
 
-        # self.C.addFrame("to_push_point").setPosition([self.C.getFrame(object_).getPosition()[0], self.C.getFrame(object_).getPosition()[1], self.C.getFrame(object_).getSize()[2]/2+self.C.getFrame(object_).getPosition()[2]]).setShape(ry.ST.marker, [.1]).setColor([1,0,0])
-        # self.C.view(True)
-        # quit()
+        #q0 = self.C.getJointState()
+
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=accumulated_collisions)
         
         M.add_stable_frame(ry.JT.transXYPhi, base, '_pull_end', object_)
-        M.komo.addObjective([1], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
-        M.komo.addObjective([2], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
+
+
+        # M.komo.addObjective([1], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
+        # M.komo.addObjective([2], ry.FS.vectorZ, [self.gripper], ry.OT.eq, [1e1], np.array([0,0,1]))
 
         M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
         print(self.C.getFrame(object_).getSize()[2])
@@ -351,23 +352,26 @@ class RobotEnviroment:
             print("INFEASIBLE AT M1")
             self.C.delFrame("tmp")
             return False
+        
+            # print("INFEASIBLE AT M1 with KOMO, trying RRT")
 
-        # M1.komo.view(True)
+            # rrt = ry.RRT_PathFinder()
+            # rrt.setProblem(self.C)
+            # rrt.setOptions(verbose=1, stepsize=.1, subsamples=4, maxIters=5000, p_connect=.5, collisionTolerance=.0001, useBroadCollisions=True)
+            # rrt.setStartGoal([q0], [M1.komo.getPath()[-1]])
+
+            # ret = rrt.solve()
+            # path1 = ret.x
+            # #rrt.view(True)
+            # if not ret.feasible:
+            #     print("INFEASIBLE AT M1 with RRT")
+            #     self.C.delFrame("tmp")
+            #     return False
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
         M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e3], [], 1)   
         
-
-        #target = self.C.getFrame("target").getPosition()
-        # delta = np.array(target) - self.C.getFrame(object_).getPosition()
-        # delta /= np.linalg.norm(delta)
-        # projection_matrix = np.eye(3) - np.outer(delta, delta)
-        # M2.komo.addObjective([1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * projection_matrix)
-        # M2.komo.addObjective([.5,1], ry.FS.positionDiff, [object_, "tmp"], ry.OT.eq, 1e1 * np.array([0, 0, 1]))
-
         path2 = M2.solve()
-        # M2.komo.view(True)
-
 
         if not M2.feasible:
             print("INFEASIBLE AT M2")
@@ -401,11 +405,14 @@ class RobotEnviroment:
                 sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=self.visualize)
 
 
-            if self.observation_mode == "POINTCLOUD" or "SAM_POINTS":
+            if self.observation_mode == "POINTCLOUD" or self.observation_mode =="SAM_POINTS":
                 self.points = sim.points
                 if self.points[0] is None:
                     return False
-                
+                for pc in self.points:
+                    if pc is None:
+                        return False
+
             elif self.observation_mode == "RGB":
                 self.rgb_image = sim.rgb
             elif self.observation_mode == "DEPTH":
@@ -430,6 +437,15 @@ class RobotEnviroment:
                         self.rgb_image = sim.getRGB()
 
         self.C.delFrame("tmp")
+
+        self.waypoints = []
+        C2 = ry.Config()
+        C2.addConfigurationCopy(self.C)
+        
+        C2.setJointState(path1[-1])
+        self.waypoints.append(C2.getFrame(self.gripper).getPosition())
+        
+        del C2
 
         if self.path_mode == "WAYplusTIMING":
             

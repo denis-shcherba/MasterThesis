@@ -52,7 +52,7 @@ class ManipulationDataset(Dataset):
         if self.observation_mode == 'depth':
             self.obs_key = 'depth'
         
-        if self.observation_mode == 'points':
+        elif self.observation_mode == 'points':
             self.normalize_depth = False
             self.obs_key = 'points'
 

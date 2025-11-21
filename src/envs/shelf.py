@@ -116,7 +116,7 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
             p = w*.25
             p *= 1. if s == 0 else -1.
             
-            floor_offsets = [.35, .43, .51, .18, .15, .2, .15, .15, .15, .12]  # Last 2 entries TODO
+            floor_offsets = [.35, .43, .30, .18, .15, .2, .15, .15, .15, .12]  # Last 2 entries TODO
 
 
             opening_pos = np.array([
@@ -172,8 +172,8 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                     if i==2:
                         C.addFrame(f"big_box_inside_{s}_{i}", f"big_xy_bottom_{s}_{i}") \
                             .setRelativePosition([0., inner_wall_width, -floor_offsets[i]/2]) \
-                            .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5-inner_wall_width, floor_offsets[i]-base_height/2, 0.005]) \
-                            .setColor([0., 1., 1., 0]) \
+                            .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., w*.5-4*inner_wall_width, floor_offsets[i]-base_height/2, 0.005]) \
+                            .setColor([0., 1., 1., .0]) \
                             .setContact(0)
                     
                     
@@ -194,10 +194,10 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
                 pass
             
     C.addFrame("cameraStatic").setShape(ry.ST.camera, size=[.1]) \
-        .setPosition(C.getFrame("big_xy_bottom_0_1").getPosition()+np.array([-.22*w, 0, 0]) + np.array([-.25, 0, floor_offsets[2]])) \
+        .setPosition(C.getFrame("big_xy_bottom_0_1").getPosition()+np.array([-.22*w, 0, .1]) + np.array([-.25, 0, floor_offsets[2]])) \
         .setQuaternion([np.cos(np.deg2rad(125/2)), 0, np.sin(np.deg2rad(125/2)), 0]) \
-        .setAttributes({"focalLength": 1.5, "width": 360, "height": 360}) \
-    
+        .setAttributes({"focalLength": .895})
+
     # if "l_gripper" in C.getFrameNames():
     #     C.delFrame("camerwaWrist")
     #     C.addFrame("cameraWrist", "l_panda_joint7").setShape(ry.ST.camera, size=[.1]) \

@@ -1,3 +1,4 @@
+from importlib.resources import files
 import numpy as np
 import robotic as ry
 import h5py
@@ -9,15 +10,16 @@ ROBOT_MODE = "normal" # "normal" or "floating"
 COLLECT_DATA = True
 PATH_MODE = "SE39D" # "JOINT7DSPLINE", "SE39DSPLINE", "POS3DSPLINE", "DELTA3DSPLINE", "RegressPC2Pos", WAYplusTIMING
 SIMULATE = True 
-CAMERA = "cameraWrist"  # or "cameraWrist"
-BASE_REMOVAl = False # if true, shelf will be removed from observation
+CAMERA = "cameraStatic"  # or "cameraWrist"
+BASE_REMOVAl = True # if true, shelf will be removed from observation
 DEBUG = False # pull debugging
-OBSERVATION_MODE = "DEPTH" # "POINTCLOUD", "RGB", "DEPTH"
+OBSERVATION_MODE = "POINTCLOUD" # "POINTCLOUD", "RGB", "DEPTH"
 COMPRESS = True
 RANDOM_COLOR = False
-NUM_SAMPLES = 1_000
+NUM_SAMPLES = 1000
 VISUALIZE = False  # If true, the simulation will be visualized
-SAVE_BOOK_PARAMS = False  # If true, the parameters of the generated books will be saved to a file
+SAVE_BOOK_PARAMS = True  # If true, the parameters of the generated books will be saved to a file
+WAYPOINTS_PLUS = True
 
 noise_dict = {
     # "stateNoise": {
@@ -38,12 +40,12 @@ gripper = "l_gripper"
 palm = "l_palm"
 
 if ROBOT_MODE == "normal":
-    C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaSingleThesis.g'))
+    C.addFile(str(files("envs.scenes") / "single.g"))
     C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)   # Real size [1.1, 1.2, .02, .005]
     C.delFrame("panda_collCameraWrist")
 
 elif ROBOT_MODE == "floating":
-    C.addFile(ry.raiPath('../rai-robotModels/scenarios/pandaFloatingFixGripper.g'))
+    C.addFile(str(files("envs.scenes") / "floating.g"))
     gripper = "gripper"
     palm = "palm"
     C.setJointState(C.getJointState() + np.array([.0, 0, .2]))
@@ -57,8 +59,8 @@ q0 = C.getJointState()
 
 # World Camera pose
 camera_quat = ry.Quaternion().setRollPitchYaw([-np.pi/2, np.pi/2, 0]) * ry.Quaternion().setRollPitchYaw([-.1, 0, 0])
-C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setAttribute("focalLength", .895).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
-C.view_setCamera(C.getFrame("worldCamera"))
+C.addFrame("worldCamera").setShape(ry.ST.camera, [.1]).setAttributes({"focalLength": .895}).setPosition([-.5, 0, 1.5]).setQuaternion(camera_quat.asArr())
+C.viewer().setCamera(C.getFrame("worldCamera"))
 
 # Shelf
 pos = np.array([.8, 0., .3])
@@ -91,7 +93,6 @@ shelf_corner = np.array([
 demo_id = 0
 err = []
 
-
 if COLLECT_DATA:
     h5file = h5py.File("variable_demo.h5", "w")
 
@@ -111,7 +112,7 @@ while demo_id < NUM_SAMPLES:
                     .setColor(np.random.rand(3) if RANDOM_COLOR else [1, 0, 0]) \
                     .setContact(0) \
                     .setMass(.1) \
-                    .setAttribute("friction", .01) 
+                    .setAttributes({"friction": .01}) 
             C.view(False)
 
             
@@ -127,11 +128,12 @@ while demo_id < NUM_SAMPLES:
             roboenv = RobotEnviroment(C, sim=SIMULATE, gripper=gripper, base_removal=BASE_REMOVAl, observation_mode=OBSERVATION_MODE, visualize=VISUALIZE, path_mode=PATH_MODE, noise_dict=noise_dict, camera=CAMERA)
 
             success = roboenv.pull_real("target_book_0", target, accumulated_collisions=True, get_observation=COLLECT_DATA)
-            
 
-            if success and COLLECT_DATA:
+            book2target_error = np.linalg.norm(C.getFrame("target_book_0").getPosition() - target)   
+            print(f"Demo {demo_id}: Success: {success}, Book to target error: {book2target_error:.4f}")
+            if success and COLLECT_DATA and book2target_error < 0.05:
                 #np.save("pc.npy", roboenv.points[0])
-
+                
                 demo_group = h5file.create_group(f"demo_{demo_id}")
 
                 if SAVE_BOOK_PARAMS:
@@ -191,6 +193,9 @@ while demo_id < NUM_SAMPLES:
                     demo_group.create_dataset("ways", data=roboenv.ways) 
                     demo_group.create_dataset("timings", data=roboenv.timings) 
 
+                if WAYPOINTS_PLUS:
+                    demo_group.create_dataset("waypoints", data=roboenv.waypoints) 
+
                 if OBSERVATION_MODE == "POINTCLOUD":
                     demo_group.create_dataset("points", data=roboenv.points)
                 elif OBSERVATION_MODE == "RGB":
@@ -216,9 +221,8 @@ while demo_id < NUM_SAMPLES:
                         demo_group.create_dataset("depth", data=roboenv.depth_image)
 
                 demo_id += 1
-
             elif success and DEBUG:
-                err.append(np.linalg.norm(C.getFrame("target_book_0").getPosition() - target))
+                err.append(book2target_error)
 
             C.delFrame(f"target_book_0")
             C.view(False)

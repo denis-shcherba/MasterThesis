@@ -412,6 +412,15 @@ def plot_detections(
         plt.savefig(save_name, bbox_inches='tight')
     plt.show()
 
+def save_annotated_image(
+    image: Union[Image.Image, np.ndarray],
+    detections: List[DetectionResult],
+) -> None:
+    annotated_image = annotate(image, detections)
+    plt.imsave("annotated.png", annotated_image)
+
+
+
 def random_named_css_colors(num_colors: int) -> List[str]:
     """
     Returns a list of randomly selected named CSS colors.
