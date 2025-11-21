@@ -104,7 +104,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     def _load_robot(self):
         """Loads the robot model based on self.robot_mode."""
         print(f"Loading robot in mode: {self.robot_mode}")
-        if self.robot_mode == "normal":
+        if self.robot_mode == "normal" or self.robot_mode == "hook":
             self.C.addFile(str(files("envs.scenes") / "single.g"))
             self.prefix = "l_"
             self.gripper_name = "l_gripper"
@@ -116,6 +116,15 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             coll_camera_wrist = self.C.getFrame("panda_collCameraWrist")
             if coll_camera_wrist:
                  self.C.delFrame("panda_collCameraWrist")
+            
+            if self.robot_mode == "hook":
+                hook_base_length = 0.15
+                hook_tip_length = 0.04
+                hook_width = 0.02
+                gripper_depth = 0.02
+
+                self.C.addFrame("hook_base", "l_gripper").setRelativePosition([0, 0, -(hook_base_length/2-gripper_depth/2)]).setShape(ry.ST.box, [hook_width, hook_width, hook_base_length]).setColor([0.7, 0.7, 0.7])
+                self.C.addFrame("hook_tip", "hook_base").setRelativePosition([0, hook_tip_length/2-hook_width/2, -hook_base_length/2 ]).setShape(ry.ST.box, [hook_width, hook_tip_length, hook_width]).setColor([0.7, 0.7, 0.7])
 
         elif self.robot_mode == "floating":
             self.C.addFile(str(files("envs.scenes") / "floating.g"))

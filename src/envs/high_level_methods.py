@@ -38,6 +38,61 @@ class RobotEnviroment:
             self.state_noise = self.noise_dict.get("stateNoise")
             self.depth_noise = self.noise_dict.get("depthNoise")
 
+    def hook_book(self, object_: str, placePosition, base) -> bool:
+        #TODO
+        self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
+
+       
+        M = manip.ManipulationModelling()
+        M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=False)
+        
+        M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
+        print(self.C.getFrame(object_).getSize()[2])
+        M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([0, 0, .5*self.C.getFrame(object_).getSize()[2]+.01]))
+        M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
+
+        M.solve()
+        if not M.feasible:
+            print("INFEASIBLE AT M")
+            self.C.delFrame("tmp")
+            return False
+
+        M1 = M.sub_motion(0, accumulated_collisions=True)
+        M1.retractPush([.0, .15], self.gripper, .03)
+        M1.approachPush([.85, 1.], self.gripper, .03)
+        path1 = M1.solve()
+        if not M1.feasible:
+            print("INFEASIBLE AT M1")
+            self.C.delFrame("tmp")
+            return False
+    
+
+        M2 = M.sub_motion(1, accumulated_collisions=False)
+        M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e3], [], 1)   
+        
+        path2 = M2.solve()
+
+        if not M2.feasible:
+            print("INFEASIBLE AT M2")
+            self.C.delFrame("tmp")
+
+            return False
+    
+
+        if self.visuals:
+            M1.play(self.C, 1.)
+            self.C.view(True)
+
+            self.C.attach(self.gripper, object_)
+
+            M2.play(self.C, 1.)
+
+            self.C.attach(base, object_)
+
+        self.C.delFrame("tmp")
+
+        return True
+
 
     def push_frame_to(self, object_: str, placePosition) -> bool:
         table = "table"

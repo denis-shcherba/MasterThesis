@@ -1,0 +1,30 @@
+path_mode: pos3d
+robot_mode: normal         # "normal" or "floating"
+simulate: true
+botop: false
+on_real: false
+camera_name: cameraShelf    # or "cameraWrist"
+env: shelf
+
+allow_book_yaw: false
+
+shelf_pos_xyz: [.8, 0., .3]
+shelf_quaternion: [1, 0, 0, 1]
+
+box_size_ranges:
+  x: [0.1, 0.15]
+  y: [0.14, 0.23]
+  z: [0.009, 0.045]
+
+# camera_offset_ranges:
+#   x: [-0.1, 0.1]
+#   y: [-0.1, 0.1]
+#   z: [-0.1, 0.1]
+
+# camera_rpy_ranges:
+#   roll: [-5, 5]
+#   pitch: [-10, 10]
+#   yaw: [-15, 15]
+
+
+focal_length_range: [0.895, 0.895]

@@ -107,10 +107,11 @@ class ShelfEnv(BaseRobotEnv):
                 .setColor([1, 0, 0, .2]) \
                 .setPosition(self.C.getFrame("table").getPosition()+np.array([pos_offset_x, pos_offset_y, pos_offset_z+self.C.getFrame("table").getSize()[2]/2+box_mask_height/2])) \
                 
-        # if collect_data:  
-        #     self.h5file = h5py.File("table_demo.h5", "w")
-        #     self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
-        #     self.demo_id = 0
+                
+        if collect_data:  
+            self.h5file = h5py.File("table_demo.h5", "w")
+            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
+            self.demo_id = 0
             
         self._setup_scene()
 
@@ -262,71 +263,12 @@ class ShelfEnv(BaseRobotEnv):
         
         return {"distance_to_target": distance, "success": success}
 
+    def pull_block(self):
+        success = self.roboenv.push_frame_to("target_book_0", [0.2, .3, 0])
+
     def collect_data(self):
-
-        success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=True, base="table")
-        if success:
-            demo_group = self.h5file.create_group(f"demo_{self.demo_id}")
-
-            se3_path = np.zeros((self.roboenv.path.shape[0], 9))
-
-            C2 = ry.Config()
-            C2.addConfigurationCopy(self.C)
-            for i in range(self.roboenv.path.shape[0]):
-                C2.setJointState(self.roboenv.path[i])
-                ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
-
-                q = ry.Quaternion().set(ee_pose[3:])
-                R = q.getMatrix()
-                if "delta" in self.robot_mode:
-                    se3_path[i, :3] = ee_pose[:3] - self.last_pos
-                    self.last_pos = ee_pose[:3]
-
-                else:
-                    se3_path[i, :3] = ee_pose[:3]  # Position
-                    se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
- 
-            if self.robot_mode == "taskspace":
-                demo_group.create_dataset("path", data=se3_path)
-            elif self.robot_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
-                demo_group.create_dataset("path", data=se3_path[:, :3])
-            if self.img_type.upper() == "DEPTH":
-                demo_group.create_dataset(
-                "depth", 
-                data=self.roboenv.depth_image,
-                compression="gzip",
-                compression_opts=4
-                )
-
-            elif self.img_type.upper() == "RGB":
-                demo_group.create_dataset(
-                "rgb", 
-                data=self.roboenv.rgb_image,
-                compression="gzip",
-                compression_opts=4
-                )
-
-            elif self.img_type.upper() == "SAM_POINTS":
-                demo_group.create_dataset(
-                "points", 
-                data=self.roboenv.points[0],
-                compression="gzip",
-                compression_opts=4
-                )
-            elif self.img_type.upper() == "BOX_POINTS":
-                demo_group.create_dataset(
-                "points", 
-                data=self.roboenv.points,
-                compression="gzip",
-                compression_opts=4
-                )
+        pass
         
-            if "WAYPOINTS" in self.extras.upper():
-                demo_group.create_dataset("waypoints", data=self.waypoint_pos)
-            
-            print(f"Collected Demo: {self.demo_id}")
-            self.demo_id += 1
-
     def save_data(self):
         pass
 
