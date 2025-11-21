@@ -165,7 +165,7 @@ class ManipulationDataset(Dataset):
                 
                 # Check 1: path data is 2D and action_dim matches
                 # Check 2: observation (time) steps match action (time) steps
-                if len(path_shape) != 2 or path_shape[1] != self.action_dim or (obs_shape[0] != path_shape[0] and self.obs_key != 'points'):
+                if len(path_shape) != 2 or (obs_shape[0] != path_shape[0] and self.obs_key != 'points'):
                     self.logger.warning(f"Skipping demo {demo_key}: Shape mismatch. Path: {path_shape}, Obs: {obs_shape}")
                     continue
                 
@@ -318,7 +318,7 @@ class ManipulationDataset(Dataset):
         
         # === ALL FROM CACHE - NO DISK I/O ===
         future_end_t = future_start_t + self.future_sequence_length
-        future_actions_sequence = self.action_cache[demo_key][future_start_t:future_end_t].copy()
+        future_actions_sequence = self.action_cache[demo_key][future_start_t:future_end_t][:, :self.action_dim].copy()
 
         history_end_t = future_start_t + 1
         history_start_t = history_end_t - self.sequence_length
@@ -332,7 +332,7 @@ class ManipulationDataset(Dataset):
         
         # Load from CACHE (not HDF5!)
         real_obs = self.feature_cache[demo_key][real_data_start_t:history_end_t]
-        real_actions = self.action_cache[demo_key][real_data_start_t:history_end_t]
+        real_actions = self.action_cache[demo_key][real_data_start_t:history_end_t][:, :self.action_dim]
         
         obs_sequence[num_to_pad:] = real_obs
         past_actions_sequence[num_to_pad:] = real_actions

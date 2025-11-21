@@ -115,8 +115,8 @@ def train_policy(cfg: DictConfig) -> None:
         log.info(f"Batch shapes:")
         for key, value in batch.items():
             log.info(f"  {key}: {value.shape}")
-        #test_pos_sequence(batch['previous_actions_sequence'], batch['target_actions_sequence'])  # Visualize pos sequence from the first batch
-        test_depth_sequence(batch['observation_sequence'])  # Visualize depth sequence from the first batch
+        test_pos_sequence(batch['previous_actions_sequence'], batch['target_actions_sequence'])  # Visualize pos sequence from the first batch
+        #test_depth_sequence(batch['observation_sequence'])  # Visualize depth sequence from the first batch
         break
 
 if __name__ == "__main__":
