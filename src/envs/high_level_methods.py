@@ -40,16 +40,35 @@ class RobotEnviroment:
 
     def hook_book(self, object_: str, placePosition, base) -> bool:
         #TODO
-        self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
+        
+        direction_vec = self.C.getFrame(object_).getPosition() - self.C.getFrame("target").getPosition()
+        direction_vec /= np.linalg.norm(direction_vec) 
+
+        theta = np.arccos(np.dot(direction_vec, np.array([0, 1, 0])))
+        theta_acute = min(theta, np.pi - theta)
+        high_on_potenuse = self.C.getFrame(object_).getSize()[0]/(2 * np.sin(theta_acute))
+        
+        self.C.addFrame("hook_point").setPosition(self.C.getFrame(object_).getPosition() + (high_on_potenuse+.03) * direction_vec).setShape(ry.ST.marker, [.05])
+
+
+        # self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
+        mat = np.eye(3) - np.outer(direction_vec, direction_vec)
 
        
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=False)
         
-        M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
-        print(self.C.getFrame(object_).getSize()[2])
-        M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([0, 0, .5*self.C.getFrame(object_).getSize()[2]+.01]))
-        M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
+        M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', "hook_point"], ry.OT.eq)
+
+        # M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', object_], ry.OT.eq, 1e3*mat)
+        # M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', object_], ry.OT.ineq, [-1, 0, 0])
+        # M.komo.addObjective([1], ry.FS.negDistance, ['hook_tip', object_], ry.OT.ineq, [1], [-0.02])
+
+        # print(self.C.getFrame(object_).getSize()[2])
+        # M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([0, 0, .5*self.C.getFrame(object_).getSize()[2]+.01]))
+        # M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
+        
+        M.komo.addObjective([2.], ry.FS.positionDiff, ["hook_tip", "target"], ry.OT.eq, 1e1)
 
         M.solve()
         if not M.feasible:
@@ -57,7 +76,7 @@ class RobotEnviroment:
             self.C.delFrame("tmp")
             return False
 
-        M1 = M.sub_motion(0, accumulated_collisions=True)
+        M1 = M.sub_motion(0, accumulated_collisions=False)
         M1.retractPush([.0, .15], self.gripper, .03)
         M1.approachPush([.85, 1.], self.gripper, .03)
         path1 = M1.solve()
@@ -77,19 +96,21 @@ class RobotEnviroment:
             self.C.delFrame("tmp")
 
             return False
-    
 
-        if self.visuals:
-            M1.play(self.C, 1.)
-            self.C.view(True)
+        if self.sim == True:
+            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
 
-            self.C.attach(self.gripper, object_)
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=True, visualize=True)
+            sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=True, visualize=True)
 
-            M2.play(self.C, 1.)
+        else:
+            if self.visuals:
+                M1.play(self.C, 1.)
+                self.C.attach(self.gripper, object_)
+                M2.play(self.C, 1.)
 
-            self.C.attach(base, object_)
+                self.C.attach(base, object_)
 
-        self.C.delFrame("tmp")
 
         return True
 
@@ -129,21 +150,6 @@ class RobotEnviroment:
         if not M2.ret.feasible:
             return False
 
-
-
-        if self.sim == True:
-            
-            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
-
-            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=True, visualize=True)
-            sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=True, visualize=True)
-
-
-
-        # M1.play(self.C, 1.)
-        # self.C.attach(self.gripper, object_)
-        # M2.play(self.C, 1.)
-        # self.C.attach(table, object_)
 
         return True
 

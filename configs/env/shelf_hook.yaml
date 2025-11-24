@@ -1,5 +1,6 @@
 path_mode: pos3d
-robot_mode: normal         # "normal" or "floating"
+robot_mode: floating         # "normal" or "floating"
+end_effector: hook        # "hook" or null
 simulate: true
 botop: false
 on_real: false
@@ -8,8 +9,9 @@ env: shelf
 
 allow_book_yaw: false
 
-shelf_pos_xyz: [.8, 0., .3]
+shelf_pos_xyz: [.9, -0.1, .3]
 shelf_quaternion: [1, 0, 0, 1]
+shelf_floor_offsets: [0.35, 0.43, 0.50, 0.18, 0.15, 0.2, 0.15, 0.15, 0.15, 0.12]  # Last 2 entries TODO
 
 box_size_ranges:
   x: [0.1, 0.15]

@@ -30,8 +30,9 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                  botop=False,
                  on_real=False,
                  camera_name="cameraStatic",
-                 gripper="l_gripper",
-                 seed=42):
+                 seed=42,
+                 end_effector=None
+                 ):
         super().__init__()
         
         print(f"BaseRobotEnv __init__ for {self.__class__.__name__}")
@@ -44,7 +45,12 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         self.camera_name = camera_name
         self.C = ry.Config()
         self.seed = seed
-        self.gripper = gripper
+        if self.robot_mode == "floating":
+            self.gripper = "gripper"
+        elif self.robot_mode == "normal":
+            self.gripper = "l_gripper"
+
+        self.end_effector = end_effector
 
         np.random.seed(self.seed)
 
@@ -104,7 +110,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     def _load_robot(self):
         """Loads the robot model based on self.robot_mode."""
         print(f"Loading robot in mode: {self.robot_mode}")
-        if self.robot_mode == "normal" or self.robot_mode == "hook":
+        if self.robot_mode == "normal":
             self.C.addFile(str(files("envs.scenes") / "single.g"))
             self.prefix = "l_"
             self.gripper_name = "l_gripper"
@@ -117,15 +123,6 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             if coll_camera_wrist:
                  self.C.delFrame("panda_collCameraWrist")
             
-            if self.robot_mode == "hook":
-                hook_base_length = 0.15
-                hook_tip_length = 0.04
-                hook_width = 0.02
-                gripper_depth = 0.02
-
-                self.C.addFrame("hook_base", "l_gripper").setRelativePosition([0, 0, -(hook_base_length/2-gripper_depth/2)]).setShape(ry.ST.box, [hook_width, hook_width, hook_base_length]).setColor([0.7, 0.7, 0.7])
-                self.C.addFrame("hook_tip", "hook_base").setRelativePosition([0, hook_tip_length/2-hook_width/2, -hook_base_length/2 ]).setShape(ry.ST.box, [hook_width, hook_tip_length, hook_width]).setColor([0.7, 0.7, 0.7])
-
         elif self.robot_mode == "floating":
             self.C.addFile(str(files("envs.scenes") / "floating.g"))
             self.gripper_name = "gripper"
@@ -139,6 +136,25 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         
         else:
             raise ValueError(f"Unknown ROBOT_MODE: {self.robot_mode}")
+        
+        if self.end_effector == "hook":
+
+            if self.robot_mode == "floating":
+                #self.C.setJointState(np.concat([self.C.getJointState()[:3], np.array([1, 0, 0, 0])]))
+                #gripper_base(floatZ): { Q:"t(0 0 .1035) d(180 1 0 0) d(-90 0 0 1)", shape: marker, size: [.03] }
+                self.C.getFrame("gripper_base").setQuaternion(ry.Quaternion().setRollPitchYaw([0, 3*np.pi/4, 0]).asArr())
+
+            hook_base_length = 0.15
+            hook_tip_length = 0.04
+            hook_width = 0.02
+            gripper_depth = 0.02
+
+            self.C.addFrame("hook_base", self.gripper).setRelativePosition([0, 0, -(hook_base_length/2-gripper_depth/2)]).setShape(ry.ST.box, [hook_width, hook_width, hook_base_length]).setColor([0.7, 0.7, 0.7]).setContact(1)
+            self.C.addFrame("hook_second", "hook_base").setRelativePosition([0, hook_tip_length/2-hook_width/2, -hook_base_length/2 ]).setShape(ry.ST.box, [hook_width, hook_tip_length, hook_width]).setColor([0.7, 0.7, 0.7]).setContact(1)
+            self.C.addFrame("hook_tip", "hook_second").setRelativePosition([0, hook_tip_length/2, 0])
+
+
+
 
     def _get_obs(self):
         """Gets an observation from the environment (common logic)."""

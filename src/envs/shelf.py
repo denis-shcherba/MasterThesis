@@ -1,7 +1,7 @@
 import numpy as np
 import robotic as ry
 
-def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 6], small_opening_dims: list[float]=[.21, .21, .21],  just_front: bool=False, base_quaternion: list[float]=[1,0,0,0], shelf_lip: bool=False, equidistant=True):
+def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 6], small_opening_dims: list[float]=[.21, .21, .21],  just_front: bool=False, base_quaternion: list[float]=[1,0,0,0], shelf_lip: bool=False, equidistant=True, floor_offsets: list[float]=[0.35, 0.43, 0.30, 0.18, 0.15, 0.2, 0.15, 0.15, 0.15, 0.12]):
     # TODO: More efficient piece building, don't repeat pieces!
     inner_wall_width = .02
 
@@ -116,8 +116,6 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
             p = w*.25
             p *= 1. if s == 0 else -1.
             
-            floor_offsets = [.35, .43, .30, .18, .15, .2, .15, .15, .15, .12]  # Last 2 entries TODO
-
 
             opening_pos = np.array([
                         p,

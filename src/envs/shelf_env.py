@@ -33,7 +33,7 @@ class ShelfEnv(BaseRobotEnv):
                 camera_name="wristCamera",
                 extras="",
                 collect_data=False,
-                q0=[0. , -0.5,  0., -2.,  0.,  2., -0.5],
+                q0=None, #[0. , -0.5,  0., -2.,  0.,  2., -0.5]
                 #domain randomization parameters
                 camera_offset_ranges = None,
                 camera_rpy_ranges = None,
@@ -44,7 +44,8 @@ class ShelfEnv(BaseRobotEnv):
                 shelf_quaternion=None, # e.g. [1, 0, 0, 1] (w,x,y,z) or as expected by generate_shelf
                 shelf_openings_small=None, # e.g. [4, 11]
                 shelf_equidistant=False,
-
+                shelf_floor_offsets=None,
+                
                 num_boxes_per_sample=1,
                  **kwargs):
         super().__init__(**kwargs)
@@ -58,15 +59,19 @@ class ShelfEnv(BaseRobotEnv):
         self.path_type = path_type
         self.img_type = img_type
         self.extras = extras
-        self.q0 = np.array(q0)
 
         self.camera_name = camera_name
         self.last_pos = np.array([0., 0., 0.])
 
+        if self.q0 is None:
+            self.q0 = self.C.getJointState()
+        
+        self.q0 = np.asarray(self.q0)
+
         if not self.on_real:
             self.C.setJointState(self.q0)
 
-        self._create_shelf_scene(shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant)
+        self._create_shelf_scene(shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant, shelf_floor_offsets)
 
         self.camera_base_pos = self.C.getFrame(self.camera_name).getPosition()
         self.camera_base_rpy = ry.Quaternion().set(self.C.getFrame(self.camera_name).getQuaternion()).getRollPitchYaw()
@@ -91,8 +96,9 @@ class ShelfEnv(BaseRobotEnv):
         else:
             self.depth_noise_active = False
 
-        self.C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)
-        self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
+        if self.robot_mode == "normal":
+            self.C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)
+            self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
     
         if self.img_type.upper() == "BOX_POINTS":
             box_mask_height = 1
@@ -110,24 +116,24 @@ class ShelfEnv(BaseRobotEnv):
                 
         if collect_data:  
             self.h5file = h5py.File("table_demo.h5", "w")
-            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
+            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=True, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
             self.demo_id = 0
             
         self._setup_scene()
 
-
-    def _create_shelf_scene(self, shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant):
+    def _create_shelf_scene(self, shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant, shelf_floor_offsets):
         # Placeholder for your simulator connection logic
         print("Connecting to custom simulator...")
         # Shelf setup
         self.shelf_pos = np.array(shelf_pos_xyz) if shelf_pos_xyz is not None else np.array([.8, 0., .3])
         _shelf_quaternion = shelf_quaternion if shelf_quaternion is not None else [1, 0, 0, 1]
         _shelf_openings_small = shelf_openings_small if shelf_openings_small is not None else [4, 11]
-        
-        generate_shelf(self.C, self.shelf_pos, base_quaternion=_shelf_quaternion,
-                       openings_small=_shelf_openings_small, equidistant=shelf_equidistant)
+        _shelf_floor_offsets = shelf_floor_offsets if shelf_floor_offsets is not None else [0.35, 0.43, 0.30, 0.18, 0.15, 0.2, 0.15, 0.15, 0.15, 0.12]
 
-        self.C.addFrame("cameraWP", self.camera_name).setShape(ry.ST.marker, [1])
+        generate_shelf(self.C, self.shelf_pos, base_quaternion=_shelf_quaternion,
+                       openings_small=_shelf_openings_small, equidistant=shelf_equidistant, floor_offsets=_shelf_floor_offsets)
+
+        self.C.addFrame("cameraWP", self.camera_name).setShape(ry.ST.marker, [.1])
 
         # Shelf frame for book manipulations (consistent naming from generate_shelf is assumed)
         self.shelf_bottom_frame_name = "big_xy_bottom_0_1" 
@@ -263,8 +269,11 @@ class ShelfEnv(BaseRobotEnv):
         
         return {"distance_to_target": distance, "success": success}
 
+    def hook_block(self):
+        success = self.roboenv.hook_book("target_book_0", 0, 0)
+
     def pull_block(self):
-        success = self.roboenv.push_frame_to("target_book_0", [0.2, .3, 0])
+        success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=False)
 
     def collect_data(self):
         pass
