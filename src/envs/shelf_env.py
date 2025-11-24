@@ -114,9 +114,9 @@ class ShelfEnv(BaseRobotEnv):
                 .setPosition(self.C.getFrame("table").getPosition()+np.array([pos_offset_x, pos_offset_y, pos_offset_z+self.C.getFrame("table").getSize()[2]/2+box_mask_height/2])) \
                 
                 
-        if collect_data:  
-            self.h5file = h5py.File("table_demo.h5", "w")
-            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=True, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
+        if collect_data: 
+            self.h5file = h5py.File("shelf_demo.h5", "w")
+            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
             self.demo_id = 0
             
         self._setup_scene()
@@ -176,7 +176,7 @@ class ShelfEnv(BaseRobotEnv):
             .setColor([1, 0, 0]) \
             .setContact(1) \
             .setMass(.1) \
-            .setAttributes({"friction": .01}) 
+            .setAttributes({"friction": .1}) 
         
         if self.extras.upper() == "WAYPOINTS":
             self.C.addFrame("waypoint_marker").setPosition(self.C.getFrame(self.books[0]).getPosition()+np.array([0, 0, b_size_z/2])).setShape(ry.ST.marker, [.1]).setColor([0, 0, 1, .5])
@@ -212,7 +212,7 @@ class ShelfEnv(BaseRobotEnv):
             .setColor([1, 0, 0]) \
             .setContact(1) \
             .setMass(.1) \
-            .setAttributes({"friction": .01}) 
+            .setAttributes({"friction": 1}) 
         
         self.C.view(False)
         
@@ -270,13 +270,10 @@ class ShelfEnv(BaseRobotEnv):
         return {"distance_to_target": distance, "success": success}
 
     def hook_block(self):
-        success = self.roboenv.hook_book("target_book_0", 0, 0)
+        success = self.roboenv.hook_book("target_book_0")
 
     def pull_block(self):
         success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=False)
-
-    def collect_data(self):
-        pass
         
     def save_data(self):
         pass
@@ -315,6 +312,16 @@ class ShelfEnv(BaseRobotEnv):
         info = self._get_info()
         
         return observation, info
+
+    def collect_data(self):
+        if self.task == "hook":
+            success = self.roboenv.hook_book("target_book_0")
+            
+        elif self.task == "pull":
+            pass
+
+        if success:
+            self.save_data()
 
     def step(self, action):
         # Your logic to apply an action to the environment

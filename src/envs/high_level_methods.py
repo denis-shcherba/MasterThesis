@@ -38,9 +38,7 @@ class RobotEnviroment:
             self.state_noise = self.noise_dict.get("stateNoise")
             self.depth_noise = self.noise_dict.get("depthNoise")
 
-    def hook_book(self, object_: str, placePosition, base) -> bool:
-        #TODO
-        
+    def hook_book(self, object_: str, base="big_xy_bottom_0_1") -> bool:
         direction_vec = self.C.getFrame(object_).getPosition() - self.C.getFrame("target").getPosition()
         direction_vec /= np.linalg.norm(direction_vec) 
 
@@ -48,7 +46,7 @@ class RobotEnviroment:
         theta_acute = min(theta, np.pi - theta)
         high_on_potenuse = self.C.getFrame(object_).getSize()[0]/(2 * np.sin(theta_acute))
         
-        self.C.addFrame("hook_point").setPosition(self.C.getFrame(object_).getPosition() + (high_on_potenuse+.03) * direction_vec).setShape(ry.ST.marker, [.05])
+        self.C.addFrame("hook_point").setPosition(self.C.getFrame(object_).getPosition() + (high_on_potenuse+.03) * direction_vec).setShape(ry.ST.marker, [.05]).setQuaternion(ry.Quaternion().setEuler([0, 0, -theta]).asArr())
 
 
         # self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
@@ -56,44 +54,40 @@ class RobotEnviroment:
 
        
         M = manip.ManipulationModelling()
-        M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=False)
-        
-        M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', "hook_point"], ry.OT.eq)
+        M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=True)
+        M.add_stable_frame(ry.JT.transXYPhi, "big_xy_bottom_0_1", '_pull_end', object_)
 
-        # M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', object_], ry.OT.eq, 1e3*mat)
-        # M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', object_], ry.OT.ineq, [-1, 0, 0])
-        # M.komo.addObjective([1], ry.FS.negDistance, ['hook_tip', object_], ry.OT.ineq, [1], [-0.02])
+        M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', "hook_point"], ry.OT.eq, [1e2])
+        M.komo.addObjective([1], ry.FS.scalarProductYX, ['gripper', "hook_point"], ry.OT.eq)
 
-        # print(self.C.getFrame(object_).getSize()[2])
-        # M.komo.addObjective([1], ry.FS.positionRel, [self.gripper, object_], ry.OT.eq, 1e2, np.array([0, 0, .5*self.C.getFrame(object_).getSize()[2]+.01]))
-        # M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1, placePosition)
-        
-        M.komo.addObjective([2.], ry.FS.positionDiff, ["hook_tip", "target"], ry.OT.eq, 1e1)
+        # M.komo.addObjective([2.], ry.FS.positionDiff, ["hook_tip", "target"], ry.OT.eq, 1e1)
+        # M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
+        M.komo.addObjective([2.], ry.FS.positionDiff, [object_, "target"], ry.OT.eq, 1e1)
 
         M.solve()
         if not M.feasible:
             print("INFEASIBLE AT M")
-            self.C.delFrame("tmp")
+            self.C.delFrame("hook_point")
             return False
 
-        M1 = M.sub_motion(0, accumulated_collisions=False)
+        M1 = M.sub_motion(0, accumulated_collisions=True)
         M1.retractPush([.0, .15], self.gripper, .03)
         M1.approachPush([.85, 1.], self.gripper, .03)
         path1 = M1.solve()
         if not M1.feasible:
             print("INFEASIBLE AT M1")
-            self.C.delFrame("tmp")
+            self.C.delFrame("hook_point")
             return False
     
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
-        M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e3], [], 1)   
+        M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e1], [], 1)   
         
         path2 = M2.solve()
 
         if not M2.feasible:
             print("INFEASIBLE AT M2")
-            self.C.delFrame("tmp")
+            self.C.delFrame("hook_point")
 
             return False
 
@@ -115,13 +109,15 @@ class RobotEnviroment:
         return True
 
 
-    def push_frame_to(self, object_: str, placePosition) -> bool:
+    def push_frame_to(self, object_: str, placePosition, get_observation) -> bool:
         table = "table"
 
         info = f'push 1'
         print('===', info)
 
         M = ry.KOMO_ManipulationHelper(info)
+        # M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=True)
+
         M.setup_sequence(self.C, 2, 1e-1, accumulated_collisions=False)
         M.komo.addFrameDof('obj_trans', table, ry.JT.transXY, False, object_) #a permanent moving(!) transXY joint table->trans, and a snap trans->obj
         M.komo.addRigidSwitch(1., ['obj_trans', object_])
@@ -140,15 +136,57 @@ class RobotEnviroment:
         M1.no_collisions([.15,.85], [object_, 'l_palm'], .02)
         M1.no_collisions([], [table, 'l_finger1'], .0)
         M1.no_collisions([], [table, 'l_finger2'], .0)
-        path1 = M1.solve()
+        M1.solve()
+        path1 = M1.path
         if not M1.ret.feasible:
             return False
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
+        #M2.komo.addObjective([2], ry.FS.position, [object_], ry.OT.eq, [1e1], placePosition)
 
-        path2 = M2.solve()
+        M2.solve()
+        path2 = M2.path
         if not M2.ret.feasible:
             return False
+
+
+        if self.sim == True:
+            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
+
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=False)
+            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=False)
+
+        else:
+            if self.visuals:
+                M1.play(self.C, 1.)
+                self.C.attach(self.gripper, object_)
+                M2.play(self.C, 1.)
+
+
+        if self.observation_mode == "POINTCLOUD" or self.observation_mode =="SAM_POINTS" or self.observation_mode =="BOX_POINTS":
+            self.points = sim.points[0]
+            if self.points[0] is None:
+                return False
+            for pc in self.points:
+                if pc is None:
+                    return False
+
+        elif self.observation_mode == "RGB":
+            self.rgb_image = sim.rgb
+        elif self.observation_mode == "DEPTH":
+            self.depth_image = sim.depth
+
+
+        self.ways = []
+        C2 = ry.Config()
+        C2.addConfigurationCopy(self.C)
+        
+        C2.setJointState(path1[-1])
+        self.ways.append(C2.getFrame(self.gripper).getPosition())
+        
+        C2.setJointState(path2[-1, :7])
+        self.ways.append(C2.getFrame(self.gripper).getPosition())
+        del C2
 
 
         return True

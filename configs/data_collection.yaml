@@ -1,7 +1,9 @@
 defaults:
-  - env: table_3d_abs
+  - env: table_3d_abs_push
 
 num_samples: 1_000
 output_subdir: null
 seed: 42
+task: push
+obj: cylinder
 extras: WAYPOINTS

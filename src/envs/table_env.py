@@ -31,6 +31,8 @@ class TableEnv(BaseRobotEnv):
                 camera_rpy_ranges = None,
                 focal_length_range = (1.5, 1.5),
                 depth_noise_ranges = None,
+                obj = "book",
+                task = "pull",
 
                  **kwargs):
         super().__init__(**kwargs)
@@ -44,6 +46,8 @@ class TableEnv(BaseRobotEnv):
         self.img_type = img_type
         self.extras = extras
         self.q0 = np.array(q0)
+        self.obj = obj
+        self.task = task
 
         self.camera_name = camera_name
         self.last_pos = np.array([0., 0., 0.])
@@ -97,7 +101,7 @@ class TableEnv(BaseRobotEnv):
             box_mask_depth = 1.75
             pos_offset_x = 0
             pos_offset_y = 0
-            pos_offset_z = .03
+            pos_offset_z = .01
 
             self.C.addFrame("BOX_MASK") \
                 .setShape(ry.ST.box, size=[box_mask_width, box_mask_depth, box_mask_height]) \
@@ -138,17 +142,35 @@ class TableEnv(BaseRobotEnv):
         if self.extras.upper() == "WAYPOINTS":
             self.C.addFrame("waypoint_marker").setPosition(self.C.getFrame(self.books[0]).getPosition()+np.array([0, 0, b_size_z/2])).setShape(ry.ST.marker, [.1]).setColor([0, 0, 1, .5])
 
-            #self.waypoint_pos = self.C.eval(ry.FS.positionRel, [self.camera_name, "waypoint_marker"])[0]
             self.waypoint_pos = self.C.getFrame("waypoint_marker").getPosition()
 
-        self.C.addFrame("target_p").setPose(self.C.getFrame(frame_name).getPose())
-
-        self.C.addFrame("target").setParent(self.C.getFrame("target_p"))
-        self.C.getFrame("target").setRelativePosition([.2, 0, 0]).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
+        self.C.addFrame("target").setPosition([.2, .3, .7]).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
 
         self.C.view(False)
 
         
+    def _spawn_cylinder_scene(self):
+        radius, height = 0.04, 0.03
+        
+        book_center_position = self.C.getFrame("table").getPosition() + np.array([0, .4,  height/2 + self.C.getFrame("table").getSize()[2]/2]) + np.array([ 
+            np.random.uniform(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1]),
+            np.random.uniform(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1]), 
+            0])
+            
+
+        self.books.append("cylinder")
+        self.C.addFrame("cylinder") \
+            .setPosition(book_center_position) \
+            .setShape(ry.ST.cylinder, size=[height, radius]) \
+            .setColor([0, 0, 0]) \
+            .setContact(1) \
+            .setMass(.1) \
+            .setAttributes({"friction": .01}) 
+        
+        self.C.addFrame("target").setPosition([.0, .3, .7]).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
+
+        self.C.view(False)
+
     def _spawn_books_scene(self):
         sample = generate_random_box_sizes(
             box_size_ranges=self.box_size_ranges,
@@ -181,8 +203,12 @@ class TableEnv(BaseRobotEnv):
 
     def _setup_scene(self):
         # target_pos = np.array([.5, 0.1, .7]) 
+        
         self._delete_books()
-        self._spawn_books_scene()
+        if self.obj == "book":
+            self._spawn_books_scene()
+        elif self.obj == "cylinder":
+            self._spawn_cylinder_scene()
         # self.C.getFrame("reach_target").setPosition(target_pos)
 
 
@@ -197,11 +223,20 @@ class TableEnv(BaseRobotEnv):
 
     def push_block(self):
         success = self.roboenv.push_frame_to("target_book_0", [0.2, .3, 0])
-
+    
+    def push_cylinder(self):
+        success = self.roboenv.push_frame_to("cylinder", self.C.getFrame("target").getPosition(), get_observation=True)
+        if success:
+            self.waypoint_pos = self.roboenv.ways
+        return success
 
     def collect_data(self):
 
-        success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=True, base="table")
+        if self.task == "pull":
+            success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=True, base="table")
+        elif self.task == "push":
+            success = self.push_cylinder()
+
         if success:
             demo_group = self.h5file.create_group(f"demo_{self.demo_id}")
 

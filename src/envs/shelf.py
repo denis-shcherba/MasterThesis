@@ -22,7 +22,8 @@ def generate_shelf(C: ry.Config, pos: np.ndarray, openings_small: list[int]=[4, 
         C.addFrame("shelf_middle", "shelf_base") \
             .setRelativePosition([0, 0, base_height*.5+h*.5]) \
             .setShape(ry.ST.ssBox, size=[d - small_opening_dims[2]*2., inner_wall_width, h, 0.005]) \
-            .setColor([1., 1., 0.])
+            .setColor([1., 1., 0.]) \
+            .setContact(1)
 
     sides_count = 1 if just_front else 2
     for s in range(sides_count):
