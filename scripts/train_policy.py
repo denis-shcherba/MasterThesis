@@ -69,14 +69,16 @@ def train_policy(cfg: DictConfig) -> None:
         
         # --- Access normalization stats from the train dataset ---
         train_dataset = train_loader.dataset
-        action_stats = train_dataset.action_stats
-        depth_stats = train_dataset.depth_stats
 
-        # Convert to clean dicts
+        # safely get attributes; default to None if missing
+        action_stats = getattr(train_dataset, "action_stats", None)
+        depth_stats  = getattr(train_dataset, "depth_stats", None)
+
         normalization_stats = {
-            "action_stats": action_stats if action_stats else None,
-            "depth_stats": depth_stats if depth_stats else None,
+            "action_stats": action_stats,
+            "depth_stats": depth_stats,
         }
+
 
         output_dir = Path(cfg.get('output_dir', 'outputs'))
         output_dir.mkdir(parents=True, exist_ok=True)

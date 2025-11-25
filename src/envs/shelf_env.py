@@ -33,7 +33,6 @@ class ShelfEnv(BaseRobotEnv):
                 camera_name="wristCamera",
                 extras="",
                 collect_data=False,
-                q0=None, #[0. , -0.5,  0., -2.,  0.,  2., -0.5]
                 #domain randomization parameters
                 camera_offset_ranges = None,
                 camera_rpy_ranges = None,
@@ -46,6 +45,8 @@ class ShelfEnv(BaseRobotEnv):
                 shelf_equidistant=False,
                 shelf_floor_offsets=None,
                 
+                task = "pull",
+
                 num_boxes_per_sample=1,
                  **kwargs):
         super().__init__(**kwargs)
@@ -55,7 +56,7 @@ class ShelfEnv(BaseRobotEnv):
         self.allow_book_yaw = allow_book_yaw
         self.num_boxes_per_sample = num_boxes_per_sample
         self.books = []
-        
+        self.task = task
         self.path_type = path_type
         self.img_type = img_type
         self.extras = extras
@@ -274,9 +275,6 @@ class ShelfEnv(BaseRobotEnv):
 
     def pull_block(self):
         success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=False)
-        
-    def save_data(self):
-        pass
 
     def getImageDepth(self):
         if self.botop:
@@ -316,7 +314,7 @@ class ShelfEnv(BaseRobotEnv):
     def collect_data(self):
         if self.task == "hook":
             success = self.roboenv.hook_book("target_book_0")
-            
+
         elif self.task == "pull":
             pass
 
@@ -330,7 +328,10 @@ class ShelfEnv(BaseRobotEnv):
         
         if self.robot_mode == "floating":
             for _ in range(100):  # Simulate for 100 steps
-                self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
+                if len(self.C.getJointState()) == 4:
+                    self.sim._sim.step([action[0], action[1], action[2], action[3]], 0.01, ry.ControlMode.position)
+                elif len(self.C.getJointState()) == 3:
+                    self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
                 self.C.view()
         elif self.robot_mode == "normal":
             if self.path_mode == "jointspace":

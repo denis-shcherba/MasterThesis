@@ -18,7 +18,8 @@ def run_data_collection(cfg: dict):
     print(f"Running with config: {cfg}")
 
     collector = None  # Initialize for finally block
-    env = gym.make("TableEnv-v0", img_type="BOX_POINTS", robot_mode=cfg.env.robot_mode, task=cfg.task, obj=cfg.obj, path_mode=cfg.env.path_mode, q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), camera_name=cfg.env.camera_name, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges = cfg.env.depth_noise_ranges, extras=cfg.get("extras", ""), collect_data=True)
+    env = gym.make(cfg.env.env, img_type="DEPTH", robot_mode=cfg.env.robot_mode, end_effector=cfg.env.get("end_effector", None), task=cfg.env.task, obj=cfg.env.obj, path_mode=cfg.env.path_mode, q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), camera_name=cfg.env.camera_name, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.get("box_offset_ranges", None), table_offset_ranges=cfg.env.get("table_offset_ranges", None), camera_offset_ranges=cfg.env.get("camera_offset_ranges", None), camera_rpy_ranges=cfg.env.get("camera_rpy_ranges", None), focal_length_range=cfg.env.get("focal_length_range", None), depth_noise_ranges = cfg.env.get("depth_noise_ranges", None), extras=cfg.get("extras", ""), shelf_pos_xyz=cfg.env.get("shelf_pos_xyz", None), shelf_quaternion=cfg.env.get("shelf_quaternion", None), shelf_floor_offsets=cfg.env.get("shelf_floor_offsets", None), collect_data=True)
+
 
     while env.unwrapped.demo_id < cfg.num_samples:
         env.reset()

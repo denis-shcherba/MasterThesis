@@ -354,13 +354,13 @@ class TableEnv(BaseRobotEnv):
             for _ in range(100):  # Simulate for 100 steps
                 self.sim._sim.step([action[0], action[1], action[2]], 0.01, ry.ControlMode.position)
                 self.C.view()
-        elif self.robot_mode == "jointspace":
+        elif self.path_mode == "jointspace":
             for _ in range(100):
                 self.sim._sim.step(action, 0.01, ry.ControlMode.position)
-        elif self.robot_mode == "taskspace" or self.robot_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
+        elif self.path_mode == "taskspace" or self.path_mode == "pos3d" or self.path_mode == "pos3d_delta" or self.path_mode == "pos3d_rel":
             
             # clip minimum height for z to avoid collisions with table
-            if "_delta" in self.robot_mode:
+            if "_delta" in self.path_mode:
                 pass
             else:
                 if action[2] < 0.67:

@@ -5,6 +5,8 @@ from torch.utils.data import Dataset, DataLoader
 from typing import Dict, List, Optional, Tuple
 import logging
 
+from data_handling.waypoint_dataset import create_wp_dataloaders
+
 class ManipulationDataset(Dataset):
     """
     Streaming HDF5 dataset for imitation learning.
@@ -484,25 +486,34 @@ def create_dataloaders(
 
 def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
     data_cfg = cfg.data
-    return create_dataloaders(
+    if cfg.is_regression:
+        return create_wp_dataloaders(
         h5_file_path=data_cfg.h5_file_path,
         batch_size=data_cfg.batch_size,
         sequence_length=data_cfg.sequence_length,
-        future_sequence_length=data_cfg.get('future_sequence_length', None),
-        action_dim=data_cfg.action_dim,
-        num_points=data_cfg.get('num_points', 0),
-        train_split=data_cfg.train_split,
-        normalize_depth=data_cfg.get('normalize_depth', True),
-        normalize_actions=data_cfg.get('normalize_actions', True),
-        depth_dropout_prob=data_cfg.get('depth_dropout_prob', 0.05),
-        depth_noise_scale=data_cfg.get('depth_noise_scale', 0.0001),
-        num_workers=data_cfg.num_workers,
-        subsample_demos=data_cfg.get('subsample_demos', None),
-        random_seed=data_cfg.random_seed,
-        is_regression=data_cfg.get('is_regression', False),
-        is_waypointPlusTimings=data_cfg.get('is_waypointPlusTimings', False),
         observation_mode=cfg.get('observation_mode', 'points'), 
-        depth_normalization_method=data_cfg.get('depth_normalization_method', 'minmax'),
-        action_normalization_method=data_cfg.get('action_normalization_method', 'zscore'),
-        normalize_action_indices=data_cfg.get('normalize_action_indices', None),
+        num_workers=data_cfg.num_workers,
     )
+    else:
+        return create_dataloaders(
+            h5_file_path=data_cfg.h5_file_path,
+            batch_size=data_cfg.batch_size,
+            sequence_length=data_cfg.sequence_length,
+            future_sequence_length=data_cfg.get('future_sequence_length', None),
+            action_dim=data_cfg.action_dim,
+            num_points=data_cfg.get('num_points', 0),
+            train_split=data_cfg.train_split,
+            normalize_depth=data_cfg.get('normalize_depth', True),
+            normalize_actions=data_cfg.get('normalize_actions', True),
+            depth_dropout_prob=data_cfg.get('depth_dropout_prob', 0.05),
+            depth_noise_scale=data_cfg.get('depth_noise_scale', 0.0001),
+            num_workers=data_cfg.num_workers,
+            subsample_demos=data_cfg.get('subsample_demos', None),
+            random_seed=data_cfg.random_seed,
+            is_regression=data_cfg.get('is_regression', False),
+            is_waypointPlusTimings=data_cfg.get('is_waypointPlusTimings', False),
+            observation_mode=cfg.get('observation_mode', 'points'), 
+            depth_normalization_method=data_cfg.get('depth_normalization_method', 'minmax'),
+            action_normalization_method=data_cfg.get('action_normalization_method', 'zscore'),
+            normalize_action_indices=data_cfg.get('normalize_action_indices', None),
+        )

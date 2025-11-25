@@ -31,8 +31,9 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                  on_real=False,
                  camera_name="cameraStatic",
                  seed=42,
-                 end_effector=None
-                 ):
+                 end_effector=None,
+                 **kwargs
+                ):
         super().__init__()
         
         print(f"BaseRobotEnv __init__ for {self.__class__.__name__}")
@@ -197,6 +198,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 self.camview.setCamera(self.C.getFrame(self.camera_name))
     
                 rgb, depth = self.camview.computeImageAndDepth(self.C, False)
+                depth = rescale_img(depth, rescale_size=96)
 
 
             observation["depth"] = depth
@@ -284,28 +286,26 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     def save_data(self):
         demo_group = self.h5file.create_group(f"demo_{self.demo_id}")
 
-        se3_path = np.zeros((self.roboenv.path.shape[0], 9))
 
-        C2 = ry.Config()
-        C2.addConfigurationCopy(self.C)
-        for i in range(self.roboenv.path.shape[0]):
-            C2.setJointState(self.roboenv.path[i])
-            ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
+        if self.path_mode == "taskspace":
 
-            q = ry.Quaternion().set(ee_pose[3:])
-            R = q.getMatrix()
-            if "delta" in self.robot_mode:
-                se3_path[i, :3] = ee_pose[:3] - self.last_pos
-                self.last_pos = ee_pose[:3]
+            se3_path = np.zeros((self.roboenv.path.shape[0], 9))
 
-            else:
+            C2 = ry.Config()
+            C2.addConfigurationCopy(self.C)
+            for i in range(self.roboenv.path.shape[0]):
+                C2.setJointState(self.roboenv.path[i])
+                ee_pose = C2.eval(ry.FS.pose, [self.gripper])[0]
+
+                q = ry.Quaternion().set(ee_pose[3:])
+                R = q.getMatrix()
+
                 se3_path[i, :3] = ee_pose[:3]  # Position
                 se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
 
-        if self.robot_mode == "taskspace":
             demo_group.create_dataset("path", data=se3_path)
-        elif self.robot_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
-            demo_group.create_dataset("path", data=se3_path[:, :3])
+        elif self.path_mode == "pos3d" or self.path_mode == "pos3d_rel":
+            demo_group.create_dataset("path", data=self.roboenv.path)
         if self.img_type.upper() == "DEPTH":
             demo_group.create_dataset(
             "depth", 

@@ -3,7 +3,7 @@ defaults:
   - model: transformer_depth
   - data: depth
   - inference: transformer_depth_shelf
-  - env: shelf_3d_abs
+  - env: shelf_hook
 
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: depth
@@ -14,7 +14,7 @@ is_waypointPlusTimings: False
 action_execution_horizon: 8
 seed: 42
 context_length: 8
-prediction_length: 16
+prediction_length: 8
 
 hydra:
   run:

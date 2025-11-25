@@ -1,5 +1,5 @@
 # Path to the HDF5 file containing demonstrations
-h5_file_path: demos/shelf_full_panda_se39d_depth_1000.h5
+h5_file_path: demos/push_cylinder_demo_1000_box_points.h5
 
 # Data loading parameters
 batch_size: ${train.batch_size}  

@@ -6,7 +6,10 @@ simulate: true
 botop: false
 on_real: false
 camera_name: cameraWrist    # or "cameraWrist"
-env: table
+env: TableEnv-v0
+
+task: push
+obj: cylinder
 
 box_size_ranges:
   x: [0.05905, 0.0605]

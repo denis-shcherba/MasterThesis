@@ -5,7 +5,10 @@ simulate: true
 botop: false
 on_real: false
 camera_name: cameraShelf    # or "cameraWrist"
-env: shelf
+env: ShelfEnv-v1
+
+task: hook
+obj: book
 
 allow_book_yaw: false
 

@@ -394,7 +394,8 @@ class RegressionPolicyTrainer(BaseTrainer):
     def _compute_loss(self, batch):
 
         initial_obs = batch["initial_observation"].to(self.device).unsqueeze(1)
-        target_action = batch["waypoint"].to(self.device)   
+        #TODO without squeeze and so on
+        target_action = batch["waypoints"].to(self.device)[:, 0, :].squeeze(1) # .to(self.device)[:, 0, :].squeeze(1) to test 2 waypoints but first just regressing to first waypoint
 
         pred_actions = self.model(initial_obs) 
 

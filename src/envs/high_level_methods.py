@@ -58,7 +58,8 @@ class RobotEnviroment:
         M.add_stable_frame(ry.JT.transXYPhi, "big_xy_bottom_0_1", '_pull_end', object_)
 
         M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', "hook_point"], ry.OT.eq, [1e2])
-        M.komo.addObjective([1], ry.FS.scalarProductYX, ['gripper', "hook_point"], ry.OT.eq)
+        if self.C.getJointDimension() > 3:
+            M.komo.addObjective([1], ry.FS.scalarProductYX, ['gripper', "hook_point"], ry.OT.eq)
 
         # M.komo.addObjective([2.], ry.FS.positionDiff, ["hook_tip", "target"], ry.OT.eq, 1e1)
         # M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
@@ -94,8 +95,8 @@ class RobotEnviroment:
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
 
-            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=True, visualize=True)
-            sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=True, visualize=True)
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=True, visualize=self.visualize)
+            sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=True, visualize=self.visualize)
 
         else:
             if self.visuals:
@@ -105,6 +106,20 @@ class RobotEnviroment:
 
                 self.C.attach(base, object_)
 
+        if self.observation_mode == "POINTCLOUD" or self.observation_mode =="SAM_POINTS" or self.observation_mode =="BOX_POINTS":
+            self.points = sim.points[0]
+            if self.points[0] is None:
+                return False
+            for pc in self.points:
+                if pc is None:
+                    return False
+
+        elif self.observation_mode == "RGB":
+            self.rgb_image = sim.rgb
+        elif self.observation_mode == "DEPTH":
+            self.depth_image = sim.depth
+
+        self.path = np.concatenate((path1, path2), axis=0)
 
         return True
 

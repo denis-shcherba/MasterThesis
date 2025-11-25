@@ -1,6 +1,6 @@
 defaults:
   - _self_  
-  - model: transformer_depth
+  - model: regression
   - loss: default_mse
   - optimizer: adam
   - data: depth
@@ -25,4 +25,4 @@ is_waypointPlusTimings: false # whether to use a separate network for waypoint a
 
 
 wandb:
-  enabled: true
+  enabled: false

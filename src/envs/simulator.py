@@ -138,7 +138,7 @@ class Simulator:
         for i, control_point in enumerate(path):
             if capture_obs:
                 if self.observation_mode == "DEPTH":
-                    depth = self.getDepth(crop=False, rescale=True)
+                    depth = self.getDepth(crop=False, rescale=False)
                     self.depth.append(depth)
                 elif self.observation_mode == "RGB":
                     rgb = self.getRGB(rescale=False)
