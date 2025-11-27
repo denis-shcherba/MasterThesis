@@ -3,10 +3,10 @@ defaults:
   - model: regression
   - data: depth
   - inference: sam_regression
-  - env: table_3d_rel_real
+  - env: table_3d_abs_push
 
 experiment_name: "Transformer 10 step input Inference"
-observation_mode: sam_points
+observation_mode: points
 output_subdir: null
 num_eval_episodes: 50
 simulate: True
