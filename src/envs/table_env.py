@@ -258,9 +258,9 @@ class TableEnv(BaseRobotEnv):
                     se3_path[i, :3] = ee_pose[:3]  # Position
                     se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
  
-            if self.robot_mode == "taskspace":
+            if self.path_mode == "taskspace":
                 demo_group.create_dataset("path", data=se3_path)
-            elif self.robot_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
+            elif self.path_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
                 demo_group.create_dataset("path", data=se3_path[:, :3])
             if self.img_type.upper() == "DEPTH":
                 demo_group.create_dataset(

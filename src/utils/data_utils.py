@@ -19,7 +19,7 @@ def get_pc_from_depth(C: ry.Config, camera: str, depth: np.ndarray) -> np.ndarra
     return points
 
 def get_sam_pointcloud(C: ry.Config, camera: str, rgb: np.ndarray, depth: np.ndarray) -> np.ndarray:
-    labels = ["book"]
+    labels = ["black circle"]
     threshold = 0.3
 
     detector_id = "IDEA-Research/grounding-dino-tiny"

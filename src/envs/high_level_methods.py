@@ -168,8 +168,8 @@ class RobotEnviroment:
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
 
-            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=False)
-            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=False)
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=True)
+            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=True)
 
         else:
             if self.visuals:
@@ -204,6 +204,7 @@ class RobotEnviroment:
         del C2
 
 
+        self.path = np.concatenate((path1, path2[:, :7]), axis=0)
         return True
 
 

@@ -198,7 +198,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 self.camview.setCamera(self.C.getFrame(self.camera_name))
     
                 rgb, depth = self.camview.computeImageAndDepth(self.C, False)
-                depth = rescale_img(depth, rescale_size=96)
+                # if self.rescale:
+                #   depth = rescale_img(depth, rescale_size=96)
 
 
             observation["depth"] = depth

@@ -1,7 +1,7 @@
 defaults:
   - env: table_3d_abs_push
 
-num_samples: 10
+num_samples: 1_000
 output_subdir: null
 seed: 42
 

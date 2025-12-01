@@ -169,7 +169,7 @@ class WaypointDataset(Dataset):
                     self.book_params_cache[k] = np.zeros((1,), dtype=np.float32)
 
                 # initial observation
-                self.initial_obs_cache[k] = self.obs_cache[k][0]
+                self.initial_obs_cache[k] = self.obs_cache[k]#[0]
 
     # ----------------------------------------------------------
     # Get item

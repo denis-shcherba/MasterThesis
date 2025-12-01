@@ -177,11 +177,16 @@ def eval_policy(cfg: DictConfig) -> None:
                     plt.show()
                 current_rgb = torch.from_numpy(obs["rgb"]).float().cpu().numpy()
                 current_rgb = (current_rgb * 255).astype(np.uint8)
+
+
                 sam_pc = get_sam_pointcloud(env.unwrapped.C, cfg.env.camera_name, current_rgb, current_depth.squeeze(0).cpu().numpy())
                 if sam_pc is None:
                     log.error("SAM point cloud is None, skipping this episode.")
                     continue
                 else:
+                    env.unwrapped.C.delFrame("cylinder")
+                    env.unwrapped.C.addFrame("temp_pc").setPointCloud(sam_pc)
+                    env.unwrapped.C.view(True)
                     depth_obs = torch.from_numpy(sam_pc).to(device).float()
             elif cfg.observation_mode == 'points':
                 center = env.unwrapped.C.getFrame("BOX_MASK").getPosition()
@@ -191,8 +196,6 @@ def eval_policy(cfg: DictConfig) -> None:
 
                 plt.imshow(current_depth.squeeze(0).cpu().numpy(), cmap='gray')
                 plt.show()
-                env.unwrapped.C.addFrame("temp_pc").setPointCloud(points)
-                env.unwrapped.C.view(True)
 
                 if img_type == "BOX_POINTS":
 
@@ -200,6 +203,8 @@ def eval_policy(cfg: DictConfig) -> None:
                 points = sample_points(points, n_samples=1024)  
 
 
+                env.unwrapped.C.addFrame("temp_pc").setPointCloud(points)
+                env.unwrapped.C.view(True)
 
                 depth_obs = torch.from_numpy(points).float().to(device).unsqueeze(0)
 
@@ -222,7 +227,55 @@ def eval_policy(cfg: DictConfig) -> None:
 
             roboenv = RobotEnviroment(env.unwrapped.C, sim=True)
 
+            if cfg.env.get("task", None) == "push":
+                komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
+                komo.addObjective(
+                times=[], 
+                feature=ry.FS.jointState, 
+                frames=[],
+                type=ry.OT.sos, 
+                scale=[1e-1], 
+                target=env.unwrapped.q0
+                )
+                komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .02])
 
+                ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
+                #print(ret)
+
+                komo.view(True, "IK solution")
+                path = komo.getPath()
+                bot = ry.BotOp(env.unwrapped.C, True)
+                bot.moveTo(path[0])
+                while bot.getTimeToEnd() > 0:
+                    bot.wait(env.unwrapped.C, 0.1)
+
+                delta = env.unwrapped.C.getFrame("target").getPosition() - env.unwrapped.C.getFrame("predicted_waypoint").getPosition()
+                delta_length = np.linalg.norm(delta)
+                delta /= delta_length
+                env.unwrapped.C.getFrame("target").setPosition(env.unwrapped.C.getFrame("predicted_waypoint").getPosition() + delta * (delta_length + 0.05))
+
+                #komo.addObjective([], ry.FS.positionDiff, ['l_gripper', 'target'], ry.OT.eq, np.eye(3)-np.outer(delta, delta))
+
+
+                komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=16, kOrder=2, enableCollisions=False)
+                komo.addControlObjective([], 0, .1)
+                komo.addControlObjective([], 1, 10)
+                komo.addControlObjective([], 2, 1)
+
+                komo.addObjective([1], ry.FS.positionDiff, ['l_gripper', 'target'], ry.OT.eq, [1, 1, 0])
+                
+
+                ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
+                #print(ret)
+
+                komo.view(True, "IK solution")
+                path = komo.getPath()
+                bot.moveAutoTimed(path)
+                while bot.getTimeToEnd() > 0:
+                    bot.wait(env.unwrapped.C, 0.1)
+
+                quit()
+                    
             # roboenv.pull_way2way("predicted_waypoint", None, False)
 
             # bot = ry.BotOp(env.unwrapped.C, False)

@@ -516,56 +516,47 @@ class DepthToKeypoint(nn.Module):
         return end_position
 
 class SimplePCToPosRegressor(nn.Module):
-    """
-    A much simpler policy network that regresses a point cloud directly
-    to a 3-element key EE-position.
-    
-    It uses a PointNet to extract features from the point cloud and
-    then a simple linear layer for regression.
-    """
-    
-    def __init__(self, num_points: int = 4096, feature_dim: int = 256):
+    def __init__(self, num_points: int = 4096, feature_dim: int = 256, num_waypoints: int = 2):
         """
-        Initialize the SimplifiedPolicy network.
-        
         Args:
-            num_points (int): Number of points expected in the input point cloud.
-            feature_dim (int): Dimensionality of the features extracted by PointNet.
+            num_points (int): Number of input points.
+            feature_dim (int): PointNet feature dimension.
+            num_waypoints (int): Number of waypoints to regress (e.g., 2).
         """
         super(SimplePCToPosRegressor, self).__init__()
         
         self.num_points = num_points
         self.feature_dim = feature_dim
-        self.output_dim = 3 # Fixed output for end position (x, y, z)
+        self.num_waypoints = num_waypoints
         
-        # PointNet feature extractor
+        # Calculate total output dimension (e.g., 2 * 3 = 6)
+        self.output_dim = 3 * self.num_waypoints 
+        
+        # PointNet feature extractor (assuming this class exists)
         self.pointnet = PointNet(num_points=num_points, feature_dim=feature_dim)
         
-        # Regression head: maps the global point cloud features to the 3D end position
+        # Regression head: maps features to flattened waypoints
         self.regressor_head = nn.Linear(feature_dim, self.output_dim)
 
     def forward(self, point_cloud: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass through the simplified policy.
-        
-        Args:
-            point_cloud (torch.Tensor): Input point cloud tensor of shape
-                                        (batch_size, num_points, 3).
-        
         Returns:
-            torch.Tensor: Predicted end position tensor of shape (batch_size, 3).
+            torch.Tensor: Predicted waypoints of shape (batch_size, num_waypoints, 3).
         """
-        # 1. Extract global features from the point cloud using PointNet
-        # pc_features will have shape (batch_size, feature_dim)
         if point_cloud.dim() == 4:
             point_cloud = point_cloud.squeeze(1)
+            
+        # 1. Extract features -> (batch_size, feature_dim)
         pc_features = self.pointnet(point_cloud)
         
-        # 2. Regress the features to the 3D end position
-        # end_position will have shape (batch_size, 3)
-        end_position = self.regressor_head(pc_features)
+        # 2. Regress flat vector -> (batch_size, num_waypoints * 3)
+        flat_waypoints = self.regressor_head(pc_features)
         
-        return end_position
+        # 3. Reshape to structured waypoints -> (batch_size, num_waypoints, 3)
+        # We use -1 for batch_size to keep it flexible
+        waypoints = flat_waypoints.view(-1, self.num_waypoints, 3)
+        
+        return waypoints
 
 def filter_kwargs(func, kwargs):
     sig = inspect.signature(func)

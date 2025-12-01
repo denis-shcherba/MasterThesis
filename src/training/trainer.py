@@ -389,15 +389,20 @@ class ActionPolicyTrainer(BaseTrainer):
         return loss
 
 class RegressionPolicyTrainer(BaseTrainer):
-    """
-    """
     def _compute_loss(self, batch):
+        # Shape: (batch_size, num_points, 3)
+        initial_obs = batch["initial_observation"].to(self.device)
+        if initial_obs.dim() == 3: 
+             # Ensure correct dimensions if your dataloader squeezes/unsqueezes differently
+             pass 
 
-        initial_obs = batch["initial_observation"].to(self.device).unsqueeze(1)
-        #TODO without squeeze and so on
-        target_action = batch["waypoints"].to(self.device)[:, 0, :].squeeze(1) # .to(self.device)[:, 0, :].squeeze(1) to test 2 waypoints but first just regressing to first waypoint
-
+        target_action = batch["waypoints"].to(self.device)[:, :, :]
+        
+        # Check shapes: target_action should be (batch_size, 2, 3)
+        
+        # Forward pass
         pred_actions = self.model(initial_obs) 
+        # pred_actions shape is now also (batch_size, 2, 3) thanks to the model update
 
         loss = self.criterion(pred_actions, target_action)
         return loss
