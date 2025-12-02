@@ -124,6 +124,65 @@ class RobotEnviroment:
         return True
 
 
+    def push_point_to_point(self, startPoint, endPoint, pcl = None, bot=False) -> bool:
+        # same as pushFrame to but for predicted start and end points
+        table = "table"
+
+        info = f'push 1'
+        print('===', info)
+
+        M = ry.KOMO_ManipulationHelper(info)
+        # M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=True)
+
+        M.setup_sequence(self.C, 2, 1e-1, accumulated_collisions=False)
+
+        M.komo.addObjective([1.], ry.FS.positionDiff, [self.gripper, startPoint], ry.OT.eq, 1e1, [0, 0, .02])
+        M.komo.addObjective([2.], ry.FS.positionDiff, [self.gripper, endPoint], ry.OT.eq, 1e1, [0, 0, .02])
+        M.solve()
+        if not M.ret.feasible:
+            return False
+        M1 = M.sub_motion(0, accumulated_collisions=False)
+        M1.retractPush([.0, .15], self.gripper, .03)
+        M1.approachPush([.85, 1.], self.gripper, .03)
+        # TODO
+        #M1.komo.addObjective([.15, .85], ry.FS.pairCollision_negScalar, [self.gripper, pcl], ry.OT.ineq, 1e1)
+        # M1.no_collisions([.15,.85], [pcl, 'l_finger1'], .02)
+        # M1.no_collisions([.15,.85], [pcl, 'l_finger2'], .02)
+        # M1.no_collisions([.15,.85], [pcl, 'l_palm'], .02)
+        M1.no_collisions([], [table, 'l_finger1'], .0)
+        M1.no_collisions([], [table, 'l_finger2'], .0)
+        M1.solve()
+        path1 = M1.path
+        if not M1.ret.feasible:
+            return False
+
+        M2 = M.sub_motion(1, accumulated_collisions=False)
+        #M2.komo.addObjective([2], ry.FS.position, [object_], ry.OT.eq, [1e1], placePosition)
+
+        M2.solve()
+        path2 = M2.path
+        if not M2.ret.feasible:
+            return False
+
+
+        if bot:
+            bot.moveAutoTimed(path1)
+            while(bot.getTimeToEnd() > 0):
+                bot.wait(self.C, .1)
+            bot.moveAutoTimed(path2)
+            while(bot.getTimeToEnd() > 0):
+                bot.wait(self.C, .1)
+        else:
+            sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
+
+            sim.run_trajectory_position_control(np.array(path1), n_steps=.2, tau=0.01, capture_obs=False, visualize=True)
+            sim.run_trajectory_position_control(np.array(path2), n_steps=.2,  tau=0.01, capture_obs=False, visualize=True)
+
+
+
+
+        return True
+
     def push_frame_to(self, object_: str, placePosition, get_observation) -> bool:
         table = "table"
 
@@ -646,3 +705,5 @@ class RobotEnviroment:
         else:
             #TODO? maybe, maybe not
             self.C.view(True)
+
+

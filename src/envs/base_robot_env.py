@@ -1,3 +1,4 @@
+import cv2
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -25,7 +26,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     def __init__(self, 
                  obs_type="depth_agent_pos",
                  robot_mode="floating",
-                 path_mode="SE39D",
+                 path_mode="taskspace",
                  simulate=True,
                  botop=False,
                  on_real=False,
@@ -69,8 +70,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         if self.simulate:
             self.sim = None 
 
-        if self.botop:
-            self.bot=None
+
+        self.bot=False
 
         if self.obs_type == "pixels_agent_pos":
             self.observation_space = spaces.Dict(
@@ -340,6 +341,29 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     
         if "WAYPOINTS" in self.extras.upper():
             demo_group.create_dataset("waypoints", data=self.waypoint_pos)
+
+        # if ...  if save obj_params or so
+
         
         print(f"Collected Demo: {self.demo_id}")
         self.demo_id += 1
+
+    def stream_rgb(self):
+        while True:
+            if self.botop:
+                rgb, _ = self.bot.getImageAndDepth(self.camera_name)
+            elif self.simulate:
+                self.camview = ry.CameraView(self.C)
+                self.camview.setCamera(self.C.getFrame(self.camera_name))
+
+                rgb, _ = self.camview.computeImageAndDepth(self.C)
+            # Convert from RGB (ry outputs RGB) → BGR (OpenCV expects BGR)
+            frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+            cv2.imshow("Camera Stream", frame)
+
+            # quit on 'q'
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        cv2.destroyAllWindows()

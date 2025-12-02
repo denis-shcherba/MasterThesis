@@ -167,6 +167,10 @@ def eval_policy(cfg: DictConfig) -> None:
 
             current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
     
+            if cfg.env.on_real:
+                env.unwrapped.C.delFrame("cylinder")
+
+
             if cfg.observation_mode == 'dino_cls':
                 depth_obs = get_cls_features(current_depth)
             elif cfg.observation_mode == 'dino_patches':
@@ -184,9 +188,13 @@ def eval_policy(cfg: DictConfig) -> None:
                     log.error("SAM point cloud is None, skipping this episode.")
                     continue
                 else:
-                    env.unwrapped.C.delFrame("cylinder")
                     env.unwrapped.C.addFrame("temp_pc").setPointCloud(sam_pc)
-                    env.unwrapped.C.view(True)
+                    print(sam_pc.shape)
+                    for i in range(sam_pc.shape[0]):
+                        env.unwrapped.C.addFrame(f"pc_point_{i}").setPosition(sam_pc[i]).setShape(ry.ST.sphere, [.05]).setColor([0, 1, 1, .9])
+                        print(sam_pc[i])
+                        env.unwrapped.C.view(True)
+                    #env.unwrapped.C.view(True)
                     depth_obs = torch.from_numpy(sam_pc).to(device).float()
             elif cfg.observation_mode == 'points':
                 center = env.unwrapped.C.getFrame("BOX_MASK").getPosition()
@@ -194,17 +202,21 @@ def eval_policy(cfg: DictConfig) -> None:
 
                 points = get_pc_from_depth(env.unwrapped.C, env.unwrapped.camera_name, current_depth.squeeze(0).cpu().numpy())
 
-                plt.imshow(current_depth.squeeze(0).cpu().numpy(), cmap='gray')
-                plt.show()
+                # plt.imshow(current_depth.squeeze(0).cpu().numpy(), cmap='gray')
+                # plt.show()
 
                 if img_type == "BOX_POINTS":
 
                     points = point_in_box_filtering(points, (center, box_size), ignore_planes=[])
                 points = sample_points(points, n_samples=1024)  
 
+                # for i in range(points.shape[0]):
+                #     env.unwrapped.C.addFrame(f"pc_point_{i}").setPosition(points[i]).setShape(ry.ST.sphere, [.05]).setColor([0, 1, 1, .9])
+                #     print(points[i])
+                #     env.unwrapped.C.view(True)
 
                 env.unwrapped.C.addFrame("temp_pc").setPointCloud(points)
-                env.unwrapped.C.view(True)
+                #env.unwrapped.C.view(True)
 
                 depth_obs = torch.from_numpy(points).float().to(device).unsqueeze(0)
 
@@ -212,7 +224,7 @@ def eval_policy(cfg: DictConfig) -> None:
                 depth_obs = current_depth # No normalization bc of droput (-1 depth)
 
             depth_obs = depth_obs.unsqueeze(1)  
-
+ 
             if cfg.observation_mode == 'sam_points':
                 depth_obs = depth_obs.transpose(1, 0)
 
@@ -222,59 +234,15 @@ def eval_policy(cfg: DictConfig) -> None:
             #cm_err = np.linalg.norm(waypoint.cpu().numpy() - env.unwrapped.waypoint_pos)
             #cm_errs.append(cm_err)
             #print("Predicted waypoint:", cm_err)
-            env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
-            env.unwrapped.C.view(True)
+            for j in range(waypoint.shape[1]):
+                env.unwrapped.C.addFrame(f"predicted_waypoint_{j}").setPosition(waypoint[:, j, :].cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
+            #env.unwrapped.C.view(True)
 
-            roboenv = RobotEnviroment(env.unwrapped.C, sim=True)
+            roboenv = RobotEnviroment(env.unwrapped.C, sim=True, camera=cfg.env.camera_name)
 
             if cfg.env.get("task", None) == "push":
-                komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
-                komo.addObjective(
-                times=[], 
-                feature=ry.FS.jointState, 
-                frames=[],
-                type=ry.OT.sos, 
-                scale=[1e-1], 
-                target=env.unwrapped.q0
-                )
-                komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .02])
-
-                ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
-                #print(ret)
-
-                komo.view(True, "IK solution")
-                path = komo.getPath()
-                bot = ry.BotOp(env.unwrapped.C, True)
-                bot.moveTo(path[0])
-                while bot.getTimeToEnd() > 0:
-                    bot.wait(env.unwrapped.C, 0.1)
-
-                delta = env.unwrapped.C.getFrame("target").getPosition() - env.unwrapped.C.getFrame("predicted_waypoint").getPosition()
-                delta_length = np.linalg.norm(delta)
-                delta /= delta_length
-                env.unwrapped.C.getFrame("target").setPosition(env.unwrapped.C.getFrame("predicted_waypoint").getPosition() + delta * (delta_length + 0.05))
-
-                #komo.addObjective([], ry.FS.positionDiff, ['l_gripper', 'target'], ry.OT.eq, np.eye(3)-np.outer(delta, delta))
-
-
-                komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=16, kOrder=2, enableCollisions=False)
-                komo.addControlObjective([], 0, .1)
-                komo.addControlObjective([], 1, 10)
-                komo.addControlObjective([], 2, 1)
-
-                komo.addObjective([1], ry.FS.positionDiff, ['l_gripper', 'target'], ry.OT.eq, [1, 1, 0])
-                
-
-                ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
-                #print(ret)
-
-                komo.view(True, "IK solution")
-                path = komo.getPath()
-                bot.moveAutoTimed(path)
-                while bot.getTimeToEnd() > 0:
-                    bot.wait(env.unwrapped.C, 0.1)
-
-                quit()
+                #roboenv.push_point_to_point("predicted_waypoint_0", "predicted_waypoint_1", pcl="temp_pc", bot=env.unwrapped.bot)
+                pass
                     
             # roboenv.pull_way2way("predicted_waypoint", None, False)
 

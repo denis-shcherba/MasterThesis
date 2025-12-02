@@ -96,16 +96,16 @@ class TableEnv(BaseRobotEnv):
             .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
 
         if self.img_type.upper() == "BOX_POINTS":
-            box_mask_height = 1
+            box_mask_height = .2
             box_mask_width = 1.2
             box_mask_depth = 1.75
             pos_offset_x = 0
             pos_offset_y = 0
-            pos_offset_z = .01
+            pos_offset_z = .03
 
             self.C.addFrame("BOX_MASK") \
                 .setShape(ry.ST.box, size=[box_mask_width, box_mask_depth, box_mask_height]) \
-                .setColor([1, 0, 0, .2]) \
+                .setColor([1, 0, 0, .1]) \
                 .setPosition(self.C.getFrame("table").getPosition()+np.array([pos_offset_x, pos_offset_y, pos_offset_z+self.C.getFrame("table").getSize()[2]/2+box_mask_height/2])) \
                 
         if collect_data:    # TODO parameters
@@ -296,11 +296,16 @@ class TableEnv(BaseRobotEnv):
             if "WAYPOINTS" in self.extras.upper():
                 demo_group.create_dataset("waypoints", data=self.waypoint_pos)
             
+            if self.obj == "cylinder":
+                demo_group.create_dataset("cylinder", data=self.C.getFrame("cylinder").getPosition())
+                
             print(f"Collected Demo: {self.demo_id}")
             self.demo_id += 1
 
     def save_data(self):
         pass
+
+
 
     def getImageDepth(self):
         if self.botop:
