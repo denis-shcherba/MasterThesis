@@ -18,11 +18,13 @@ class RobotEnviroment:
                  path_mode: str="",
                  noise_dict: dict={},
                  camera: str="cameraStatic",
-                 depth_noise = False) -> None:
+                 depth_noise = False,
+                 on_real = False) -> None:
         self.C = C
         self.visuals = visuals
         self.verbose = verbose
         self.sim = sim
+        self.on_real = on_real
         self.grabbed_frame = ""
         self.path = np.array([])
         self.compute_collisions = compute_collisions
@@ -183,6 +185,34 @@ class RobotEnviroment:
 
         return True
 
+    def straight_push(self, M, time_interval, obj, gripper, table):
+        """ Alternative to Manip.py straight_push with less objectives for more general use cases"""
+
+        #start & end helper frames
+        helperStart = f'_straight_pushStart_{gripper}_{obj}_{time_interval[0]}'
+        #helperEnd = f'_straight_pushEnd_{gripper}_{obj}_{time_interval[1]}'
+        if not M.komo.getConfig().getFrame(helperStart, False):
+            # self.add_stable_frame(ry.JT.hingeZ, table, helperStart, obj, .3)
+            helper_frame = M.komo.addFrameDof(helperStart, obj, ry.JT.hingeZ, True)
+            # helper_frame.setAutoLimits()
+            # helper_frame.joint.sampleUniform=1.
+
+        #x-axis of A aligns with diff-pos of B AT END TIMEnot  (always backward diff)
+        M.komo.addObjective([time_interval[1]], ry.FS.AlignYWithDiff, [helperStart, obj], ry.OT.eq, [1e0], [], 1)
+
+        #gripper touch
+        M.komo.addObjective([time_interval[0]], ry.FS.negDistance, [gripper, obj], ry.OT.eq, [1e1], [-.025])
+        #gripper start position
+        M.komo.addObjective([time_interval[0]], ry.FS.positionRel, [gripper, helperStart], ry.OT.eq, 1e1*np.array([[1., 0., 0.], [0., 0., 1.]]))
+        M.komo.addObjective([time_interval[0]], ry.FS.positionRel, [gripper, helperStart], ry.OT.ineq, 1e1*np.array([[0., 1., 0.]]), [.0, -.02, .0])
+        #gripper start orientation
+        M.komo.addObjective([time_interval[0]], ry.FS.scalarProductYY, [gripper, helperStart], ry.OT.ineq, [-1e0], [.2])
+        M.komo.addObjective([time_interval[0]], ry.FS.scalarProductYZ, [gripper, helperStart], ry.OT.ineq, [-1e0], [.2])
+        M.komo.addObjective([time_interval[0]], ry.FS.vectorXDiff, [gripper, helperStart], ry.OT.eq, [1e0])
+        M.freeze_relativePose([time_interval[1]], gripper, obj)
+    
+        return helperStart
+
     def push_frame_to(self, object_: str, placePosition, get_observation) -> bool:
         table = "table"
 
@@ -195,11 +225,14 @@ class RobotEnviroment:
         M.setup_sequence(self.C, 2, 1e-1, accumulated_collisions=False)
         M.komo.addFrameDof('obj_trans', table, ry.JT.transXY, False, object_) #a permanent moving(!) transXY joint table->trans, and a snap trans->obj
         M.komo.addRigidSwitch(1., ['obj_trans', object_])
-        pushStart = M.straight_push([1.,2.], object_, self.gripper, table)
+        pushStart = self.straight_push(M, [1.,2.], object_, self.gripper, table)
 
         M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1*np.array([[1,0,0],[0,1,0]]), placePosition)
         M.solve()
         if not M.ret.feasible:
+            print("infeasible at M")
+            M.komo.view(True)
+            M.komo.report(True, True, True)
             return False
 
         M1 = M.sub_motion(0, accumulated_collisions=False)
@@ -213,6 +246,8 @@ class RobotEnviroment:
         M1.solve()
         path1 = M1.path
         if not M1.ret.feasible:
+            print("infeasible at M1")
+            M1.komo.view(True)
             return False
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
@@ -221,6 +256,8 @@ class RobotEnviroment:
         M2.solve()
         path2 = M2.path
         if not M2.ret.feasible:
+            print("infeasible at M2")
+            M2.komo.view(True)
             return False
 
 
@@ -267,7 +304,7 @@ class RobotEnviroment:
         return True
 
 
-    def move_to_point_path(self, point, minDistance=None, straight_line = False, useRRT = False, accumulated_collisions = True) -> bool:
+    def move_to_point_path(self, point, minDistance=None, straight_line = False, useRRT = False, straight_gripper=False, accumulated_collisions = True) -> bool:
 
         if self.C.getFrame("_tmp_way") is None:
             self.C.addFrame('_tmp_way') \
@@ -298,6 +335,10 @@ class RobotEnviroment:
             delta = point-self.C.getFrame(self.gripper).getPosition()
             delta /= np.linalg.norm(delta)
             man.komo.addObjective([], ry.FS.positionDiff, [self.gripper, '_tmp_way'], ry.OT.eq, [3e1*(np.eye(3)-np.outer(delta,delta))])
+
+        if straight_gripper:
+            man.komo.addObjective([1], ry.FS.vectorZ, [self.gripper], ry.OT.eq, 1, [0, 0, 1])
+
 
         ret = man.solve()
 
@@ -334,14 +375,16 @@ class RobotEnviroment:
                 time.sleep(.05)
         
 
-    def move_to_point(self, point, minDistance=None, straight_line = False, useRRT = False, accumulated_collisions=True, book_point_line = False) -> bool:
+    def move_to_point(self, point, minDistance=None, straight_gripper=False, straight_line = False, useRRT = False, accumulated_collisions=True, book_point_line = False) -> bool:
         
-        feasible, path = self.move_to_point_path(point, minDistance, straight_line, useRRT, accumulated_collisions) 
+        feasible, path = self.move_to_point_path(point, minDistance, straight_line, useRRT, straight_gripper, accumulated_collisions) 
         if feasible:
             if self.sim == True:
-                sim = Simulator(self.C, verbose=self.verbose)
+                sim = Simulator(self.C, verbose=self.verbose, camera=self.camera)
                 sim.run_trajectory_spline(path, 2)
-            
+            elif self.on_real:
+                # TODO
+                pass
             else:
                 for t in range(path.shape[0]):
                     self.C.setJointState(path[t])

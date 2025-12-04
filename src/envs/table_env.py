@@ -33,7 +33,7 @@ class TableEnv(BaseRobotEnv):
                 depth_noise_ranges = None,
                 obj = "book",
                 task = "pull",
-
+                save_obj_pos=False,
                  **kwargs):
         super().__init__(**kwargs)
         
@@ -47,7 +47,9 @@ class TableEnv(BaseRobotEnv):
         self.extras = extras
         self.q0 = np.array(q0)
         self.obj = obj
+        self.obj_center = np.array([0., .34])
         self.task = task
+        self.save_obj_pos = save_obj_pos
 
         self.camera_name = camera_name
         self.last_pos = np.array([0., 0., 0.])
@@ -94,6 +96,9 @@ class TableEnv(BaseRobotEnv):
         self.C.getFrame("cameraStaticTable") \
             .setPosition(self.camera_base_pos) \
             .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
+
+        self.table_base_height = self.C.getFrame("table").getPosition()[2] + self.C.getFrame("table").getSize()[2]/2
+
 
         if self.img_type.upper() == "BOX_POINTS":
             box_mask_height = .2
@@ -148,26 +153,46 @@ class TableEnv(BaseRobotEnv):
 
         self.C.view(False)
 
+    def _draw_arena(self):
+        radius, height = 0.04, 0.03
+
+        center = np.array([0, 0, self.table_base_height]) + np.concatenate((self.obj_center, np.array([0])))
+
+        corners = [
+            (self.box_offset_ranges['x'][0], self.box_offset_ranges['y'][0]),  # (-y, +x)
+            (self.box_offset_ranges['x'][0], self.box_offset_ranges['y'][1]),  # (+y, +x)
+            (self.box_offset_ranges['x'][1], self.box_offset_ranges['y'][0]),  # (-y, -x)
+            (self.box_offset_ranges['x'][1], self.box_offset_ranges['y'][1])   # (+y, -x)
+        ]
+
+        for i, (dx, dy) in enumerate(corners):
+            self.C.addFrame(f"arena_corner_{i}") \
+                .setShape(ry.ST.marker, size=[.1]) \
+                .setPosition(center + np.array([dx, dy, 0]))
+
         
-    def _spawn_cylinder_scene(self):
+    def _spawn_cylinder_scene(self, center=None):
         radius, height = 0.04, 0.03
         
-        book_center_position = self.C.getFrame("table").getPosition() + np.array([0, .4,  height/2 + self.C.getFrame("table").getSize()[2]/2]) + np.array([ 
-            np.random.uniform(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1]),
-            np.random.uniform(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1]), 
-            0])
-            
+        if center is  None:
+            center = np.array([0, 0, self.table_base_height]) + np.concatenate((self.obj_center, np.array([height/2]))) + np.array([ 
+                np.random.uniform(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1]),
+                np.random.uniform(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1]), 
+                0])
 
         self.books.append("cylinder")
         self.C.addFrame("cylinder") \
-            .setPosition(book_center_position) \
+            .setPosition(center) \
             .setShape(ry.ST.cylinder, size=[height, radius]) \
             .setColor([0, 0, 0]) \
             .setContact(1) \
             .setMass(.1) \
             .setAttributes({"friction": .01}) 
         
-        self.C.addFrame("target").setPosition([.0, .3, .7]).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
+        if self.save_obj_pos:
+            self.cylinder_pos = self.C.getFrame("cylinder").getPosition()
+
+        self.C.addFrame("target").setPosition(np.concatenate((self.obj_center, np.array([.7])))).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
 
         self.C.view(False)
 
@@ -296,9 +321,10 @@ class TableEnv(BaseRobotEnv):
             if "WAYPOINTS" in self.extras.upper():
                 demo_group.create_dataset("waypoints", data=self.waypoint_pos)
             
-            if self.obj == "cylinder":
-                demo_group.create_dataset("cylinder", data=self.C.getFrame("cylinder").getPosition())
-                
+            if self.save_obj_pos:
+                if self.obj == "cylinder":
+                    demo_group.create_dataset("cylinder", data=self.cylinder_pos)
+                    
             print(f"Collected Demo: {self.demo_id}")
             self.demo_id += 1
 
