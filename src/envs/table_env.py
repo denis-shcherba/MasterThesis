@@ -173,7 +173,35 @@ class TableEnv(BaseRobotEnv):
                 .setShape(ry.ST.marker, size=[.1]) \
                 .setPosition(center + np.array([dx, dy, 0]))
 
+
+    def _draw_arena_grid(self):
+        # 1. Define the number of points you want along each axis
+        num_x = 8   # Adjust as needed
+        num_y = 12  # Adjust as needed
+
+        center = np.array([0, 0, self.table_base_height]) + np.concatenate((self.obj_center, np.array([0])))
+
+        # 2. Generate the ranges using linspace
+        # This creates arrays of evenly spaced numbers from min to max
+        x_range = np.linspace(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1], num_x)
+        y_range = np.linspace(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1], num_y)
+
+        # 3. Create the grid
+        # xx and yy will be matrices containing all coordinate pairs
+        xx, yy = np.meshgrid(x_range, y_range)
+
+        # Flatten them to iterate easily
+        grid_points = np.column_stack((xx.ravel(), yy.ravel()))
+
         
+
+        # 4. Iterate and draw
+        for i, (dx, dy) in enumerate(grid_points):
+            # We add 'arena_grid_' prefix to keep names unique
+            self.C.addFrame(f"arena_grid_{i}") \
+                .setShape(ry.ST.marker, size=[.05]) \
+            .setPosition(center + np.array([dx, dy, 0])) 
+
     def _spawn_cylinder_scene(self, center=None):
         radius, height = 0.04, 0.03
         
@@ -229,14 +257,14 @@ class TableEnv(BaseRobotEnv):
         else:
             return spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
 
-    def _setup_scene(self):
+    def _setup_scene(self, obj_pos=None):
         # target_pos = np.array([.5, 0.1, .7]) 
         
         self._delete_books()
         if self.obj == "book":
             self._spawn_books_scene()
         elif self.obj == "cylinder":
-            self._spawn_cylinder_scene()
+            self._spawn_cylinder_scene(center=obj_pos)
         # self.C.getFrame("reach_target").setPosition(target_pos)
 
 
@@ -361,8 +389,12 @@ class TableEnv(BaseRobotEnv):
             self.C.setJointState(self.q0)
             pass
         
-        self._setup_scene()    
+        obj_pos = None
+        if options is not None:
+            obj_pos = options.get("obj_pos", None)
+            get_obs = options.get("get_obs", True)
 
+        self._setup_scene(obj_pos=obj_pos)    
         if self.botop:
             self.bot = ry.BotOp(self.C, self.on_real)
             if self.on_real:
@@ -374,7 +406,14 @@ class TableEnv(BaseRobotEnv):
             self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0, camera=self.camera_name)
 
         self.last_pos = self.C.getFrame(self.gripper_name).getPosition()
-        observation = self._get_obs()
+        if get_obs:
+            observation = self._get_obs()
+        else:
+            #TODO
+            observation = {}
+            observation["depth"] = None
+            observation["agent_pos"] = None
+
         info = self._get_info()
         
         return observation, info

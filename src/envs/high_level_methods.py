@@ -42,6 +42,9 @@ class RobotEnviroment:
 
         if self.on_real:
             self.bot = ry.BotOp(self.C, True)
+            self.bot.gripperMove(ry._left, 0)
+            while not self.bot.gripperDone(ry._left):
+                self.bot.wait(self.C)
 
 
     def hook_book(self, object_: str, base="big_xy_bottom_0_1") -> bool:
@@ -226,6 +229,10 @@ class RobotEnviroment:
         info = f'push 1'
         print('===', info)
 
+        if self.on_real:
+            self.C.getFrame(object_).setPosition(self.C.getFrame(object_).getPosition() + np.array([0,0,.03]))
+            self.C.view(False)
+
         M = ry.KOMO_ManipulationHelper(info)
         # M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=True)
 
@@ -271,8 +278,50 @@ class RobotEnviroment:
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
 
-            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=False)
-            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=False)
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=True)
+            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=True)
+
+        elif self.on_real:
+            #TODO opencv?
+            path = np.concatenate((path1, path2[:, :7]), axis=0)
+
+            _, __ = self.bot.getImageAndDepth("cameraWrist")
+            imgs, depths = [], []
+            timings = np.linspace(.1, 10, 100)
+            self.bot.move(path, timings)
+            i = 0
+            t_start = self.bot.get_t()
+            while self.bot.getTimeToEnd() > 0:
+                img, depth = self.bot.getImageAndDepth("cameraWrist")
+                imgs.append(img)
+                depths.append(depth)
+                print(i, self.bot.get_t()-t_start)
+                i +=1
+                self.bot.sync(self.C, .1)
+
+            print(timings)
+
+            self.rgb_image = np.array(imgs)
+            self.depth_image = np.array(depths)
+            return True
+            # for i in range(path1.shape[0]):
+            #     # TODO smooth with overwrite after overshooting?
+            #     self.bot.move([path1[i, :]], [.3])
+            #     while self.bot.getTimeToEnd() > 0:
+            #         self.bot.wait(self.C)
+
+            # for i in range(path2.shape[0]):
+            #     self.bot.move([path2[i, :7]], [.3])
+            #     while self.bot.getTimeToEnd() > 0:
+            #         self.bot.wait(self.C)
+
+
+            # self.bot.moveAutoTimed(path1)
+            # while(self.bot.getTimeToEnd() > 0):
+            #     self.bot.wait(self.C, .1)
+            # self.bot.moveAutoTimed(path2[:, :7])
+            # while(self.bot.getTimeToEnd() > 0):
+            #     self.bot.wait(self.C, .1)
 
         else:
             if self.visuals:
@@ -290,9 +339,11 @@ class RobotEnviroment:
                     return False
 
         elif self.observation_mode == "RGB":
-            self.rgb_image = sim.rgb
+            if self.sim == True:
+                self.rgb_image = sim.rgb
         elif self.observation_mode == "DEPTH":
-            self.depth_image = sim.depth
+            if self.sim == True:
+                self.depth_image = sim.depth
 
 
         self.ways = []
@@ -390,7 +441,7 @@ class RobotEnviroment:
                 sim = Simulator(self.C, verbose=self.verbose, camera=self.camera)
                 sim.run_trajectory_spline(path, 2)
             elif self.on_real:
-                self.bot.moveAutoTimed(path)
+                self.bot.moveTo(path[-1, :])
                 while(self.bot.getTimeToEnd() > 0):
                     self.bot.wait(self.C, .1)
             else:
