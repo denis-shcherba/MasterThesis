@@ -106,7 +106,10 @@ class TableEnv(BaseRobotEnv):
             box_mask_depth = 1.75
             pos_offset_x = 0
             pos_offset_y = 0
-            pos_offset_z = .03
+            if self.on_real:
+                pos_offset_z = .03
+            else:
+                pos_offset_z = .01
 
             self.C.addFrame("BOX_MASK") \
                 .setShape(ry.ST.box, size=[box_mask_width, box_mask_depth, box_mask_height]) \

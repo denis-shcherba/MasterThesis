@@ -7,6 +7,7 @@ import robotic as ry
 import matplotlib.pyplot as plt
 import h5py
 from envs.high_level_methods import RobotEnviroment
+import numpy as np
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ def main(cfg: DictConfig):
 
     env.unwrapped._draw_arena()
 
-    #visit_arena_corners(env.unwrapped.C)    
+    #visit_arena_corners(env.unwrapped.C, on_real=True)    
     #test_env_puck_positions(env)
     run_puck_from_h5(env)
 
@@ -46,14 +47,14 @@ def test_env_puck_positions(env, iterations=50, view_in_between=False):
     env.unwrapped.C.view(False, "All Puck Positions, to close press q in the viewer")
 
 
-def visit_arena_corners(C, straight_line=False):
-    RoboEnv = RobotEnviroment(C, sim=True, camera="cameraWrist")
+def visit_arena_corners(C, straight_line=False, on_real=False):
+    RoboEnv = RobotEnviroment(C, sim=(not on_real), camera="cameraWrist", on_real=on_real)
 
     for i in range(4):    
         if i>=2:
             i = -i + 5 # swap index 2 and 3
         
-        RoboEnv.move_to_point(C.getFrame(f"arena_corner_{i}").getPosition(), straight_line=True, straight_gripper=True, accumulated_collisions = False)
+        RoboEnv.move_to_point(C.getFrame(f"arena_corner_{i}").getPosition()+np.array([0, 0, .05]), straight_line=True, straight_gripper=True, accumulated_collisions = False)
 
 
 def run_puck_from_h5(env, view_in_between=False):

@@ -40,6 +40,10 @@ class RobotEnviroment:
             self.state_noise = self.noise_dict.get("stateNoise")
             self.depth_noise = self.noise_dict.get("depthNoise")
 
+        if self.on_real:
+            self.bot = ry.BotOp(self.C, True)
+
+
     def hook_book(self, object_: str, base="big_xy_bottom_0_1") -> bool:
         direction_vec = self.C.getFrame(object_).getPosition() - self.C.getFrame("target").getPosition()
         direction_vec /= np.linalg.norm(direction_vec) 
@@ -204,10 +208,13 @@ class RobotEnviroment:
         M.komo.addObjective([time_interval[0]], ry.FS.negDistance, [gripper, obj], ry.OT.eq, [1e1], [-.025])
         #gripper start position
         M.komo.addObjective([time_interval[0]], ry.FS.positionRel, [gripper, helperStart], ry.OT.eq, 1e1*np.array([[1., 0., 0.], [0., 0., 1.]]))
-        M.komo.addObjective([time_interval[0]], ry.FS.positionRel, [gripper, helperStart], ry.OT.ineq, 1e1*np.array([[0., 1., 0.]]), [.0, -.02, .0])
+        M.komo.addObjective([time_interval[0]], ry.FS.positionRel, [gripper, helperStart], ry.OT.ineq, 1e1*np.array([[0., 1., 0.]]), [.0, -.04, .0])
         #gripper start orientation
-        M.komo.addObjective([time_interval[0]], ry.FS.scalarProductYY, [gripper, helperStart], ry.OT.ineq, [-1e0], [.2])
-        M.komo.addObjective([time_interval[0]], ry.FS.scalarProductYZ, [gripper, helperStart], ry.OT.ineq, [-1e0], [.2])
+        #M.komo.addObjective([time_interval[0]], ry.FS.scalarProductYY, [gripper, helperStart], ry.OT.ineq, [-1e0], [.2])
+        #M.komo.addObjective([time_interval[0]], ry.FS.scalarProductYZ, [gripper, helperStart], ry.OT.ineq, [-1e0], [.2])
+        M.komo.addObjective([time_interval[0]], ry.FS.scalarProductYZ, [gripper, helperStart], ry.OT.eq, [1e0])   # Deno
+
+
         M.komo.addObjective([time_interval[0]], ry.FS.vectorXDiff, [gripper, helperStart], ry.OT.eq, [1e0])
         M.freeze_relativePose([time_interval[1]], gripper, obj)
     
@@ -264,8 +271,8 @@ class RobotEnviroment:
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
 
-            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=True)
-            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=True)
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=False)
+            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=False)
 
         else:
             if self.visuals:
@@ -383,8 +390,9 @@ class RobotEnviroment:
                 sim = Simulator(self.C, verbose=self.verbose, camera=self.camera)
                 sim.run_trajectory_spline(path, 2)
             elif self.on_real:
-                # TODO
-                pass
+                self.bot.moveAutoTimed(path)
+                while(self.bot.getTimeToEnd() > 0):
+                    self.bot.wait(self.C, .1)
             else:
                 for t in range(path.shape[0]):
                     self.C.setJointState(path[t])
