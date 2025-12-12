@@ -33,7 +33,8 @@ dependencies = [
     "tqdm",
     "gymnasium",
     "transformers",
-    "diffusers"
+    "diffusers",
+    "pyrealsense2"
 ]
 
 [project.urls]

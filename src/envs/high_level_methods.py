@@ -3,6 +3,7 @@ import envs.manipulation as manip
 import numpy as np
 import robotic as ry
 import time
+import pyrealsense2 as rs
 
 class RobotEnviroment:
     def __init__(self,
@@ -46,6 +47,59 @@ class RobotEnviroment:
             while not self.bot.gripperDone(ry._left):
                 self.bot.wait(self.C)
 
+            # Initialize RealSense color-only pipeline (not aligned to depth)
+            self._rs_pipeline = rs.pipeline()
+            self._rs_config = rs.config()
+            # Enable ONLY color stream to avoid implicit alignment
+            self._rs_config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+            self._rs_profile = self._rs_pipeline.start(self._rs_config)
+            # Warm-up frames
+            for _ in range(5):
+                self._rs_pipeline.wait_for_frames()
+        
+        else:
+            self._rs_pipeline = None
+            self._rs_config = None
+            self._rs_profile = None
+
+    def _rs_get_color(self):
+        """Grab a color frame from RealSense and return RGB uint8 (H, W, 3)."""
+        if self._rs_pipeline is None:
+            return None
+        frames = self._rs_pipeline.wait_for_frames()
+        color_frame = frames.get_color_frame()
+        if not color_frame:
+            return None
+        import numpy as np
+        import cv2
+        bgr = np.asanyarray(color_frame.get_data())
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        return rgb
+
+    def _rs_shutdown(self):
+            if self._rs_pipeline is not None:
+                try:
+                    self._rs_pipeline.stop()
+                except Exception:
+                    pass
+                self._rs_pipeline = None
+
+    def move(self, q):
+        if self.sim == True:
+            self.C.setJointState(q)
+            if self.visuals:
+                self.C.view(False)
+                time.sleep(.05)
+        elif self.on_real:
+            self.bot.moveTo(q)
+            while(self.bot.getTimeToEnd() > 0):
+                self.bot.sync(self.C, .1)
+
+        else:
+            self.C.setJointState(q)
+            if self.visuals:
+                self.C.view(False)
+                time.sleep(.05)
 
     def hook_book(self, object_: str, base="big_xy_bottom_0_1") -> bool:
         direction_vec = self.C.getFrame(object_).getPosition() - self.C.getFrame("target").getPosition()
@@ -208,7 +262,7 @@ class RobotEnviroment:
         M.komo.addObjective([time_interval[1]], ry.FS.AlignYWithDiff, [helperStart, obj], ry.OT.eq, [1e0], [], 1)
 
         #gripper touch
-        M.komo.addObjective([time_interval[0]], ry.FS.negDistance, [gripper, obj], ry.OT.eq, [1e1], [-.025])
+        M.komo.addObjective([time_interval[0]], ry.FS.negDistance, [gripper, obj], ry.OT.eq, [1e1], [-.0175])
         #gripper start position
         M.komo.addObjective([time_interval[0]], ry.FS.positionRel, [gripper, helperStart], ry.OT.eq, 1e1*np.array([[1., 0., 0.], [0., 0., 1.]]))
         M.komo.addObjective([time_interval[0]], ry.FS.positionRel, [gripper, helperStart], ry.OT.ineq, 1e1*np.array([[0., 1., 0.]]), [.0, -.04, .0])
@@ -230,7 +284,7 @@ class RobotEnviroment:
         print('===', info)
 
         if self.on_real:
-            self.C.getFrame(object_).setPosition(self.C.getFrame(object_).getPosition() + np.array([0,0,.03]))
+            self.C.getFrame(object_).setPosition(self.C.getFrame(object_).getPosition() + np.array([0,0,.027]))
             self.C.view(False)
 
         M = ry.KOMO_ManipulationHelper(info)
@@ -243,6 +297,7 @@ class RobotEnviroment:
 
         M.komo.addObjective([2.], ry.FS.position, [object_], ry.OT.eq, 1e1*np.array([[1,0,0],[0,1,0]]), placePosition)
         M.solve()
+        #M.komo.view(True)
         if not M.ret.feasible:
             print("infeasible at M")
             M.komo.view(True)
@@ -282,28 +337,29 @@ class RobotEnviroment:
             sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=True)
 
         elif self.on_real:
-            #TODO opencv?
+            # Use RealSense color-only for raw RGB capture (no depth alignment)
             path = np.concatenate((path1, path2[:, :7]), axis=0)
 
-            _, __ = self.bot.getImageAndDepth("cameraWrist")
-            imgs, depths = [], []
+            imgs = []
             timings = np.linspace(.1, 10, 100)
             self.bot.move(path, timings)
             i = 0
             t_start = self.bot.get_t()
             while self.bot.getTimeToEnd() > 0:
-                img, depth = self.bot.getImageAndDepth("cameraWrist")
-                imgs.append(img)
-                depths.append(depth)
-                print(i, self.bot.get_t()-t_start)
-                i +=1
+                rgb = self._rs_get_color()
+                if rgb is not None:
+                    imgs.append(rgb)
+                print(i, self.bot.get_t() - t_start)
+                i += 1
                 self.bot.sync(self.C, .1)
 
             print(timings)
 
-            self.rgb_image = np.array(imgs)
-            self.depth_image = np.array(depths)
-            return True
+
+            self.rgb_image = np.array(imgs, dtype=np.uint8)
+
+            # Cleanly stop the RealSense pipeline
+
             # for i in range(path1.shape[0]):
             #     # TODO smooth with overwrite after overshooting?
             #     self.bot.move([path1[i, :]], [.3])

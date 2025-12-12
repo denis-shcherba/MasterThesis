@@ -18,8 +18,8 @@ box_size_ranges:
 
 
 box_offset_ranges:
-  x: [-0.2, 0.2]
-  y: [-0.17, 0.1] 
+  x: [-0.16, 0.16]
+  y: [-0.13, 0.06] 
 
 table_offset_ranges:
   width: [0.0, 0.0]
