@@ -21,6 +21,7 @@ def main(cfg: DictConfig):
     env.unwrapped._draw_arena()
 
     env.unwrapped.C.view(True, "Initial Environment View, to close press q in the viewer")
+    #test_visit_arena_corner_points(env, on_real=True)
     visit_arena_grid(env, on_real=True)    
 
 
@@ -45,24 +46,38 @@ def test_visit_arena_corner_points(env, on_real=False):
         if success:
             demo_group = env.unwrapped.h5file.create_group(f"demo_{i}")
 
-            se3_path = np.zeros((RoboEnv.path.shape[0], 9))
+            num_steps = RoboEnv.path.shape[0]
+            se3_path = np.zeros((num_steps, 9))
+            yaw_path = np.zeros((num_steps, 1))  # <--- 1. Initialize array to store Yaws
 
             C2 = ry.Config()
             C2.addConfigurationCopy(env.unwrapped.C)
-            for i in range(RoboEnv.path.shape[0]):
-                C2.setJointState(RoboEnv.path[i])
+            
+            # NOTE: Variable 'i' was being used for both loop and group naming.
+            # Changed loop variable to 'step' to avoid conflict.
+            for step in range(num_steps):
+                C2.setJointState(RoboEnv.path[step])
                 ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
 
                 q = ry.Quaternion().set(ee_pose[3:])
                 R = q.getMatrix()
 
-                se3_path[i, :3] = ee_pose[:3]  # Position
-                se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
- 
+                se3_path[step, :3] = ee_pose[:3]
+                se3_path[step, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()
+
+                sin_comp = C2.eval(ry.FS.scalarProductXY, ["l_gripper", "table"])[0]
+                cos_comp = C2.eval(ry.FS.scalarProductXX, ["l_gripper", "table"])[0]
+                
+                yaw_path[step] = np.arctan2(sin_comp, cos_comp)
+
+            del C2
+
             if env.unwrapped.path_mode == "taskspace":
                 demo_group.create_dataset("path", data=se3_path)
             elif env.unwrapped.path_mode == "pos3d" or env.unwrapped.robot_mode == "pos3d_delta" or env.unwrapped.robot_mode == "pos3d_rel":
                 demo_group.create_dataset("path", data=se3_path[:, :3])
+            elif env.unwrapped.path_mode == "posyaw":
+                demo_group.create_dataset("path", data=np.hstack((se3_path[:, :3], yaw_path)))
             if env.unwrapped.img_type.upper() == "DEPTHRGB":
                 demo_group.create_dataset(
                 "depth", 
@@ -112,24 +127,37 @@ def visit_arena_grid(env, on_real=False):
         if success:
             demo_group = env.unwrapped.h5file.create_group(f"demo_{i}")
 
-            se3_path = np.zeros((RoboEnv.path.shape[0], 9))
+            num_steps = RoboEnv.path.shape[0]
+            se3_path = np.zeros((num_steps, 9))
+            yaw_path = np.zeros((num_steps, 1))  # <--- 1. Initialize array to store Yaws
 
             C2 = ry.Config()
             C2.addConfigurationCopy(env.unwrapped.C)
-            for i in range(RoboEnv.path.shape[0]):
-                C2.setJointState(RoboEnv.path[i])
+
+            for step in range(num_steps):
+                C2.setJointState(RoboEnv.path[step])
                 ee_pose = C2.eval(ry.FS.pose, ["l_gripper"])[0]
 
                 q = ry.Quaternion().set(ee_pose[3:])
                 R = q.getMatrix()
 
-                se3_path[i, :3] = ee_pose[:3]  # Position
-                se3_path[i, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()  # Rotation
+                se3_path[step, :3] = ee_pose[:3]
+                se3_path[step, 3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()
+
+                sin_comp = C2.eval(ry.FS.scalarProductXY, ["l_gripper", "table"])[0]
+                cos_comp = C2.eval(ry.FS.scalarProductXX, ["l_gripper", "table"])[0]
+                
+                yaw_path[step] = np.arctan2(sin_comp, cos_comp)
+
+            del C2
+
  
             if env.unwrapped.path_mode == "taskspace":
                 demo_group.create_dataset("path", data=se3_path)
             elif env.unwrapped.path_mode == "pos3d" or env.unwrapped.robot_mode == "pos3d_delta" or env.unwrapped.robot_mode == "pos3d_rel":
                 demo_group.create_dataset("path", data=se3_path[:, :3])
+            elif env.unwrapped.path_mode == "posyaw":
+                demo_group.create_dataset("path", data=np.hstack((se3_path[:, :3], yaw_path)))
             if env.unwrapped.img_type.upper() == "DEPTHRGB":
                 demo_group.create_dataset(
                 "depth", 

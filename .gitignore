@@ -23,3 +23,5 @@ checkpoints/
 test_outputs/
 thesis/
 .venv
+
+*.png

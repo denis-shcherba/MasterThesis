@@ -305,6 +305,7 @@ class RobotEnviroment:
             return False
 
         M1 = M.sub_motion(0, accumulated_collisions=False)
+        M1.komo.addObjective([], ry.FS.vectorZ, [self.gripper], ry.OT.eq, 1, [0, 0, 1])
         M1.retractPush([.0, .15], self.gripper, .03)
         M1.approachPush([.85, 1.], self.gripper, .03)
         M1.no_collisions([.15,.85], [object_, 'l_finger1'], .02)
@@ -321,6 +322,8 @@ class RobotEnviroment:
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
         #M2.komo.addObjective([2], ry.FS.position, [object_], ry.OT.eq, [1e1], placePosition)
+        M2.komo.addObjective([], ry.FS.vectorZ, [self.gripper], ry.OT.eq, 1, [0, 0, 1])
+
 
         M2.solve()
         path2 = M2.path
@@ -350,6 +353,12 @@ class RobotEnviroment:
                 if rgb is not None:
                     imgs.append(rgb)
                 print(i, self.bot.get_t() - t_start)
+                
+                sin_comp = self.C.eval(ry.FS.scalarProductXY, [self.gripper, "table"])[0]
+                cos_comp = self.C.eval(ry.FS.scalarProductXX, [self.gripper, "table"])[0]
+
+                yaw = np.arctan2(sin_comp, cos_comp) 
+                print("Yaw angle (rad):", yaw)
                 i += 1
                 self.bot.sync(self.C, .1)
 

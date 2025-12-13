@@ -176,8 +176,8 @@ class TableEnv(BaseRobotEnv):
 
     def _draw_arena_grid(self):
         # 1. Define the number of points you want along each axis
-        num_x = 8   # Adjust as needed
-        num_y = 12  # Adjust as needed
+        num_x = 12   # Adjust as needed
+        num_y = 8  # Adjust as needed
 
         center = np.array([0, 0, self.table_base_height]) + np.concatenate((self.obj_center, np.array([0])))
 
@@ -390,6 +390,7 @@ class TableEnv(BaseRobotEnv):
             pass
         
         obj_pos = None
+        get_obs = True
         if options is not None:
             obj_pos = options.get("obj_pos", None)
             get_obs = options.get("get_obs", True)
@@ -401,6 +402,9 @@ class TableEnv(BaseRobotEnv):
                 self.bot.home(self.C)
                 self.bot.moveTo(self.q0)
                 while self.bot.getTimeToEnd() > 0:
+                    self.bot.wait(self.C)
+                self.bot.gripperMove(ry._left, 0)
+                while not self.bot.gripperDone(ry._left):
                     self.bot.wait(self.C)
         elif self.simulate:
             self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0, camera=self.camera_name)
@@ -430,7 +434,7 @@ class TableEnv(BaseRobotEnv):
         elif self.path_mode == "jointspace":
             for _ in range(100):
                 self.sim._sim.step(action, 0.01, ry.ControlMode.position)
-        elif self.path_mode == "taskspace" or self.path_mode == "pos3d" or self.path_mode == "pos3d_delta" or self.path_mode == "pos3d_rel":
+        elif self.path_mode == "taskspace" or self.path_mode == "pos3d" or self.path_mode == "pos3d_delta" or self.path_mode == "pos3d_rel" or self.path_mode == "posyaw":
             
             # clip minimum height for z to avoid collisions with table
             if "_delta" in self.path_mode:
@@ -446,16 +450,27 @@ class TableEnv(BaseRobotEnv):
             komo.clearObjectives()
             komo.addControlObjective([], 0, 1e-1)
 
-            if self.robot_mode == "pos3d_delta":
+            if self.path_mode == "pos3d_delta":
                 komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3] + self.last_pos)
             else:
                 komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3])
             
-            if self.robot_mode == "taskspace":
+            if self.path_mode == "taskspace":
                 rot_matrix = gram_schmidt_orthonormalize(action[3:])
                 quat = ry.Quaternion().setMatrix(rot_matrix).asArr()
 
                 komo.addObjective([], ry.FS.quaternion, [self.gripper_name], ry.OT.sos, [1e2], quat)
+            elif self.path_mode == "posyaw":
+                komo.addObjective([], ry.FS.vectorZ, [self.gripper_name], ry.OT.eq, [1], [0, 0, 1])
+                target_yaw = action[3]
+
+                # 2. Calculate the target scalar products
+                target_cos = np.cos(target_yaw)
+                target_sin = np.sin(target_yaw)
+
+                komo.addObjective([], ry.FS.scalarProductXX, [self.gripper_name, "table"], ry.OT.sos, [1e1], [target_cos])
+                komo.addObjective([], ry.FS.scalarProductXY, [self.gripper_name, "table"], ry.OT.sos, [1e1], [target_sin])
+            
             sol = ry.NLP_Solver(komo.nlp())
             sol.setOptions(stopInners=1, damping=1e-4, verbose=0)
             ret = sol.solve()
