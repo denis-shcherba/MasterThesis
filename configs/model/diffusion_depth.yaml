@@ -1,11 +1,11 @@
 # Base policy configuration
 type: multimodal
-action_dim: 3
+action_dim: 4
 dropout_rate: 0.2        # Still used by obs_encoder (PointNet), which is good!
 policy_head_type: diffusion
 
 # Multimodal policy specific settings
-state_dim: 3
+state_dim: 4
 fusion_method: concat
 
 time_encoding: none

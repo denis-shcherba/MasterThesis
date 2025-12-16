@@ -1,134 +1,111 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+class SpatialSoftmax(nn.Module):
+    """
+    Converts feature maps into (x, y) coordinates (keypoints).
+    Input: (B, C, H, W)
+    Output: (B, C * 2) -> A set of x,y coords for each channel.
+    """
+    def __init__(self, height, width):
+        super().__init__()
+        self.height = height
+        self.width = width
+        
+        # Create a meshgrid of pixel coordinates [-1, 1]
+        pos_x, pos_y = torch.meshgrid(
+            torch.linspace(-1, 1, height),
+            torch.linspace(-1, 1, width),
+            indexing='ij'
+        )
+        # Register them as buffers so they move to GPU automatically
+        self.register_buffer("pos_x", pos_x.reshape((height * width)))
+        self.register_buffer("pos_y", pos_y.reshape((height * width)))
+
+    def forward(self, x):
+        # x shape: (B, C, H, W)
+        b, c, h, w = x.shape
+        
+        # Flatten spatial dims: (B, C, H*W)
+        x_flat = x.view(b, c, -1)
+        
+        # Apply Softmax over the spatial dimension to get attention maps
+        # This makes the map sum to 1, treating it like a probability distribution
+        attention = F.softmax(x_flat, dim=-1)
+        
+        # Calculate expected value (weighted average) of coordinates
+        expected_x = torch.sum(self.pos_x * attention, dim=-1, keepdim=True)
+        expected_y = torch.sum(self.pos_y * attention, dim=-1, keepdim=True)
+        
+        # Concatenate x and y to get (B, C, 2) then flatten to (B, C*2)
+        keypoints = torch.cat([expected_x, expected_y], dim=-1)
+        return keypoints.reshape(b, -1)
 
 class FeatureAdapter(nn.Module):
-    """
-    MLP Adapter to map pre-extracted DINO CLS features to the Transformer's embedding dimension.
-    
-    Input shape: (Batch_size, Seq_len, D_dino) 
-    Output shape: (Batch_size * Seq_len, D_policy)
-    """
-    def __init__(self, dino_feature_dim=768, feature_dim=256, dropout_prob=0.2): # Added dropout_prob
-        super(FeatureAdapter, self).__init__()
-        self.feature_dim = feature_dim
-        self.dino_feature_dim = dino_feature_dim
-
-        self.mlp_adapter = nn.Sequential(
-            nn.Linear(self.dino_feature_dim, self.dino_feature_dim // 2),  # Hidden layer
-            nn.GELU(),
-            nn.Dropout(p=dropout_prob),                                  
-            nn.Linear(self.dino_feature_dim // 2, self.feature_dim)       # Projection layer
+    def __init__(self, dino_feature_dim=768, feature_dim=256, dropout_prob=0.5):
+        super().__init__()
+        # SINGLE linear layer - no hidden layer
+        self.adapter = nn.Sequential(
+            nn.Dropout(p=dropout_prob),
+            nn.Linear(dino_feature_dim, feature_dim)
         )
-        print(f"Initialized trainable FeatureAdapter: {self.dino_feature_dim} -> {self.feature_dim} with dropout {dropout_prob}")
-
-    def forward(self, x: torch.Tensor):
-        """
-        Args:
-            x: Pre-calculated DINO CLS feature tensor of shape (B, S, D_dino).
-        Returns:
-            Adapted feature vector of shape (B*S, D_policy).
-        """
-        # 1. Store Batch (B) and Sequence (S) dimensions for later reshaping.
-        # x.shape is (B, S, D_dino)
+    
+    def forward(self, x):
         batch_size, seq_len, _ = x.shape
-        
-        # 2. Reshape the input to (B * S, D_dino). 
-        # The MLP is a standard linear layer, which only operates on the last dimension.
-        # We treat all time steps and all batch items as independent samples temporarily.
-        x_flat = x.view(batch_size * seq_len, self.dino_feature_dim)
-        
-        # 3. Pass flattened data through the MLP adapter.
-        # Output shape: (B * S, D_policy)
-        feature_vector_flat = self.mlp_adapter(x_flat) 
-        
-        # NOTE: If your Transformer head expects the output to be (B, S, D_policy), 
-        # you would uncomment the line below to reshape it back.
-        # feature_vector_reshaped = feature_vector_flat.view(batch_size, seq_len, self.feature_dim)
-        
-        # Since your target output is (batch_size * seq_len, feature_dim), we return the flattened vector.
-        return feature_vector_flat
+        x_flat = x.view(batch_size * seq_len, -1)
+        return self.adapter(x_flat)
     
-class FeatureAdapterCNN(nn.Module):
-    """
-    CNN Adapter to map pre-extracted DINO Patch features 
-    to the policy's embedding dimension with dropout regularization.
     
-    Input shape: (Batch_size, Seq_len, Num_Patches, D_dino) -> (B, S, 36, 768)
-    Output shape: (Batch_size * Seq_len, D_policy)
-    """
+class FeatureAdapterSpatial(nn.Module):
     def __init__(self, 
                  dino_feature_dim=768, 
-                 feature_dim=256, 
-                 num_patches=36,
-                 dropout_prob=0.2): 
-        super(FeatureAdapterCNN, self).__init__()
-        self.feature_dim = feature_dim
-        self.dino_feature_dim = dino_feature_dim
-        self.num_patches = num_patches
-        self.dropout_prob = dropout_prob
-
-        # Calculate the grid size (e.g., 36 patches -> 6x6 grid)
-        self.patch_grid_size = int(self.num_patches**0.5)
-        if self.patch_grid_size * self.patch_grid_size != self.num_patches:
-            raise ValueError(
-                f"num_patches ({self.num_patches}) must be a perfect square."
-            )
-
-        # CNN adapter with dropout after each activation
-        self.cnn_adapter = nn.Sequential(
-            nn.Conv2d(
-                in_channels=self.dino_feature_dim, 
-                out_channels=self.dino_feature_dim // 2, 
-                kernel_size=3, 
-                stride=1, 
-                padding=1
-            ),
-            nn.GELU(),
-            nn.Dropout2d(self.dropout_prob),  # <- spatial dropout
-            
-            nn.Conv2d(
-                in_channels=self.dino_feature_dim // 2, 
-                out_channels=self.feature_dim, 
-                kernel_size=3, 
-                stride=1, 
-                padding=1
-            ),
-            nn.GELU(),
-            nn.Dropout2d(self.dropout_prob),  # <- another dropout
-            
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten()
-        )
+                 feature_dim=256,   # Matches your old output dim
+                 num_patches=64,    # Matches your old 6x6 grid
+                 num_keypoints=32,  # Internal bottleneck (can be 32 or 64)
+                 dropout_prob=0.3): 
+        super().__init__()
         
-        print(f"Initialized CNN FeatureAdapter with dropout={self.dropout_prob}: "
-              f"({self.num_patches}, {self.dino_feature_dim}) -> {self.feature_dim}")
+        self.patch_grid_size = int(num_patches**0.5)
+        # 1. Compress Channels (768 -> 32)
+        # We reduce channels first to force the model to pick only the 32 most 
+        # important "types" of features to track spatially.
+        self.conv1x1 = nn.Sequential(
+            nn.Conv2d(dino_feature_dim, 256, kernel_size=1),
+            nn.GELU(),
+            nn.Dropout2d(dropout_prob), # Dropout on features, not pixels
+            nn.Conv2d(256, num_keypoints, kernel_size=1) 
+        )
+        # 2. Extract Coordinates (32 maps -> 32 x,y pairs)
+        self.spatial_softmax = SpatialSoftmax(self.patch_grid_size, self.patch_grid_size)
+        
+        # 3. Project to Policy Dim (64 -> 256)
+        # We linearly project the 64 coords back up to 256 to match your 
+        # original policy input size.
+        self.out_projection = nn.Linear(num_keypoints * 2, feature_dim) 
+        
+        self.temperature = nn.Parameter(torch.ones(1) * 1.0)
 
-    def forward(self, x: torch.Tensor):
-        """
-        Args:
-            x: Pre-calculated DINO patch feature tensor.
-               Expected shape: (B, S, Num_Patches, D_dino)
-        Returns:
-            Adapted feature vector of shape (B*S, D_policy)
-        """
+        print(f"Spatial Adapter Initialized: Output shape (Batch, {feature_dim})")
+
+    def forward(self, x):
+        # Input x: (B, S, Num_Patches, D_dino)
         batch_size, seq_len, num_patches, dino_dim = x.shape
         
-        if num_patches != self.num_patches or dino_dim != self.dino_feature_dim:
-            raise ValueError(
-                f"Input shape mismatch. Expected (B, S, {self.num_patches}, "
-                f"{self.dino_feature_dim}), but got {x.shape}"
-            )
-            
-        # (B, S, 36, 768) -> (B*S, 36, 768)
-        x_flat_batch = x.view(batch_size * seq_len, self.num_patches, self.dino_feature_dim)
+        # Flatten time: (B*S, Num_Patches, D_dino)
+        x = x.view(batch_size * seq_len, num_patches, dino_dim)
         
-        # (B*S, 36, 768) -> (B*S, 768, 6, 6)
-        x_conv_input = x_flat_batch.permute(0, 2, 1).view(
-            batch_size * seq_len, 
-            self.dino_feature_dim, 
-            self.patch_grid_size, 
-            self.patch_grid_size
-        )
+        # Reshape to grid: (B*S, 768, 6, 6)
+        x = x.permute(0, 2, 1).view(batch_size * seq_len, dino_dim, self.patch_grid_size, self.patch_grid_size)
         
-        feature_vector_flat = self.cnn_adapter(x_conv_input)
-        return feature_vector_flat
+        # 1. Convolution: (B*S, 32, 6, 6)
+        x = self.conv1x1(x)
+        
+        # 2. Spatial Softmax: (B*S, 64) 
+        # This contains the raw (x,y) coords of the 32 keypoints
+        x = x * self.temperature
+        x = self.spatial_softmax(x)
+        
+        # 3. Linear Projection: (B*S, 256)
+        x = self.out_projection(x)
+        
+        return x

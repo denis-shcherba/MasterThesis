@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from models.perception.pointnet import PointNet
-from models.perception.dinoencoder import FeatureAdapter, FeatureAdapterCNN
+from models.perception.dinoencoder import FeatureAdapter, FeatureAdapterSpatial
 from models.perception.depthimageencoder import DepthImageEncoder
 from models.policy_head.policy_head import MLPHead, ResidualMLPHead, TransformerHead, DiffusionHead
 import math
@@ -216,7 +216,7 @@ class MultiModalPolicy(nn.Module):
         elif self.observation_mode == 'dino_cls':
             self.obs_encoder = FeatureAdapter(feature_dim=feature_dim)
         elif self.observation_mode == 'dino_patches':
-            self.obs_encoder = FeatureAdapterCNN(feature_dim=feature_dim)
+            self.obs_encoder = FeatureAdapterSpatial(feature_dim=feature_dim)
         elif self.observation_mode == 'points':
             self.obs_encoder = PointNet(num_points=1024, feature_dim=feature_dim)
 
