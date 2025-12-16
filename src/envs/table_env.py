@@ -33,7 +33,7 @@ class TableEnv(BaseRobotEnv):
                 depth_noise_ranges = None,
                 obj = "book",
                 task = "pull",
-
+                save_obj_pos=False,
                  **kwargs):
         super().__init__(**kwargs)
         
@@ -47,7 +47,9 @@ class TableEnv(BaseRobotEnv):
         self.extras = extras
         self.q0 = np.array(q0)
         self.obj = obj
+        self.obj_center = np.array([0., .34])
         self.task = task
+        self.save_obj_pos = save_obj_pos
 
         self.camera_name = camera_name
         self.last_pos = np.array([0., 0., 0.])
@@ -95,17 +97,23 @@ class TableEnv(BaseRobotEnv):
             .setPosition(self.camera_base_pos) \
             .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
 
+        self.table_base_height = self.C.getFrame("table").getPosition()[2] + self.C.getFrame("table").getSize()[2]/2
+
+
         if self.img_type.upper() == "BOX_POINTS":
-            box_mask_height = 1
+            box_mask_height = .2
             box_mask_width = 1.2
             box_mask_depth = 1.75
             pos_offset_x = 0
             pos_offset_y = 0
-            pos_offset_z = .01
+            if self.on_real:
+                pos_offset_z = .03
+            else:
+                pos_offset_z = .01
 
             self.C.addFrame("BOX_MASK") \
                 .setShape(ry.ST.box, size=[box_mask_width, box_mask_depth, box_mask_height]) \
-                .setColor([1, 0, 0, .2]) \
+                .setColor([1, 0, 0, .1]) \
                 .setPosition(self.C.getFrame("table").getPosition()+np.array([pos_offset_x, pos_offset_y, pos_offset_z+self.C.getFrame("table").getSize()[2]/2+box_mask_height/2])) \
                 
         if collect_data:    # TODO parameters
@@ -148,26 +156,74 @@ class TableEnv(BaseRobotEnv):
 
         self.C.view(False)
 
+    def _draw_arena(self):
+        radius, height = 0.04, 0.03
+
+        center = np.array([0, 0, self.table_base_height]) + np.concatenate((self.obj_center, np.array([0])))
+
+        corners = [
+            (self.box_offset_ranges['x'][0], self.box_offset_ranges['y'][0]),  # (-y, +x)
+            (self.box_offset_ranges['x'][0], self.box_offset_ranges['y'][1]),  # (+y, +x)
+            (self.box_offset_ranges['x'][1], self.box_offset_ranges['y'][0]),  # (-y, -x)
+            (self.box_offset_ranges['x'][1], self.box_offset_ranges['y'][1])   # (+y, -x)
+        ]
+
+        for i, (dx, dy) in enumerate(corners):
+            self.C.addFrame(f"arena_corner_{i}") \
+                .setShape(ry.ST.marker, size=[.1]) \
+                .setPosition(center + np.array([dx, dy, 0]))
+
+
+    def _draw_arena_grid(self):
+        # 1. Define the number of points you want along each axis
+        num_x = 12   # Adjust as needed
+        num_y = 8  # Adjust as needed
+
+        center = np.array([0, 0, self.table_base_height]) + np.concatenate((self.obj_center, np.array([0])))
+
+        # 2. Generate the ranges using linspace
+        # This creates arrays of evenly spaced numbers from min to max
+        x_range = np.linspace(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1], num_x)
+        y_range = np.linspace(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1], num_y)
+
+        # 3. Create the grid
+        # xx and yy will be matrices containing all coordinate pairs
+        xx, yy = np.meshgrid(x_range, y_range)
+
+        # Flatten them to iterate easily
+        grid_points = np.column_stack((xx.ravel(), yy.ravel()))
+
         
-    def _spawn_cylinder_scene(self):
+
+        # 4. Iterate and draw
+        for i, (dx, dy) in enumerate(grid_points):
+            # We add 'arena_grid_' prefix to keep names unique
+            self.C.addFrame(f"arena_grid_{i}") \
+                .setShape(ry.ST.marker, size=[.05]) \
+            .setPosition(center + np.array([dx, dy, 0])) 
+
+    def _spawn_cylinder_scene(self, center=None):
         radius, height = 0.04, 0.03
         
-        book_center_position = self.C.getFrame("table").getPosition() + np.array([0, .4,  height/2 + self.C.getFrame("table").getSize()[2]/2]) + np.array([ 
-            np.random.uniform(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1]),
-            np.random.uniform(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1]), 
-            0])
-            
+        if center is  None:
+            center = np.array([0, 0, self.table_base_height]) + np.concatenate((self.obj_center, np.array([height/2]))) + np.array([ 
+                np.random.uniform(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1]),
+                np.random.uniform(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1]), 
+                0])
 
         self.books.append("cylinder")
         self.C.addFrame("cylinder") \
-            .setPosition(book_center_position) \
+            .setPosition(center) \
             .setShape(ry.ST.cylinder, size=[height, radius]) \
             .setColor([0, 0, 0]) \
             .setContact(1) \
             .setMass(.1) \
             .setAttributes({"friction": .01}) 
         
-        self.C.addFrame("target").setPosition([.0, .3, .7]).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
+        if self.save_obj_pos:
+            self.cylinder_pos = self.C.getFrame("cylinder").getPosition()
+
+        self.C.addFrame("target").setPosition(np.concatenate((self.obj_center, np.array([.7])))).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
 
         self.C.view(False)
 
@@ -201,14 +257,14 @@ class TableEnv(BaseRobotEnv):
         else:
             return spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
 
-    def _setup_scene(self):
+    def _setup_scene(self, obj_pos=None):
         # target_pos = np.array([.5, 0.1, .7]) 
         
         self._delete_books()
         if self.obj == "book":
             self._spawn_books_scene()
         elif self.obj == "cylinder":
-            self._spawn_cylinder_scene()
+            self._spawn_cylinder_scene(center=obj_pos)
         # self.C.getFrame("reach_target").setPosition(target_pos)
 
 
@@ -296,11 +352,17 @@ class TableEnv(BaseRobotEnv):
             if "WAYPOINTS" in self.extras.upper():
                 demo_group.create_dataset("waypoints", data=self.waypoint_pos)
             
+            if self.save_obj_pos:
+                if self.obj == "cylinder":
+                    demo_group.create_dataset("cylinder", data=self.cylinder_pos)
+                    
             print(f"Collected Demo: {self.demo_id}")
             self.demo_id += 1
 
     def save_data(self):
         pass
+
+
 
     def getImageDepth(self):
         if self.botop:
@@ -327,8 +389,13 @@ class TableEnv(BaseRobotEnv):
             self.C.setJointState(self.q0)
             pass
         
-        self._setup_scene()    
+        obj_pos = None
+        get_obs = True
+        if options is not None:
+            obj_pos = options.get("obj_pos", None)
+            get_obs = options.get("get_obs", True)
 
+        self._setup_scene(obj_pos=obj_pos)    
         if self.botop:
             self.bot = ry.BotOp(self.C, self.on_real)
             if self.on_real:
@@ -336,11 +403,21 @@ class TableEnv(BaseRobotEnv):
                 self.bot.moveTo(self.q0)
                 while self.bot.getTimeToEnd() > 0:
                     self.bot.wait(self.C)
+                self.bot.gripperMove(ry._left, 0)
+                while not self.bot.gripperDone(ry._left):
+                    self.bot.wait(self.C)
         elif self.simulate:
             self.sim = Simulator(self.C, engine=ry.SimulationEngine.physx, verbose=0, camera=self.camera_name)
 
         self.last_pos = self.C.getFrame(self.gripper_name).getPosition()
-        observation = self._get_obs()
+        if get_obs:
+            observation = self._get_obs()
+        else:
+            #TODO
+            observation = {}
+            observation["depth"] = None
+            observation["agent_pos"] = None
+
         info = self._get_info()
         
         return observation, info
@@ -357,7 +434,7 @@ class TableEnv(BaseRobotEnv):
         elif self.path_mode == "jointspace":
             for _ in range(100):
                 self.sim._sim.step(action, 0.01, ry.ControlMode.position)
-        elif self.path_mode == "taskspace" or self.path_mode == "pos3d" or self.path_mode == "pos3d_delta" or self.path_mode == "pos3d_rel":
+        elif self.path_mode == "taskspace" or self.path_mode == "pos3d" or self.path_mode == "pos3d_delta" or self.path_mode == "pos3d_rel" or self.path_mode == "posyaw":
             
             # clip minimum height for z to avoid collisions with table
             if "_delta" in self.path_mode:
@@ -373,16 +450,27 @@ class TableEnv(BaseRobotEnv):
             komo.clearObjectives()
             komo.addControlObjective([], 0, 1e-1)
 
-            if self.robot_mode == "pos3d_delta":
+            if self.path_mode == "pos3d_delta":
                 komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3] + self.last_pos)
             else:
                 komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3])
             
-            if self.robot_mode == "taskspace":
+            if self.path_mode == "taskspace":
                 rot_matrix = gram_schmidt_orthonormalize(action[3:])
                 quat = ry.Quaternion().setMatrix(rot_matrix).asArr()
 
                 komo.addObjective([], ry.FS.quaternion, [self.gripper_name], ry.OT.sos, [1e2], quat)
+            elif self.path_mode == "posyaw":
+                komo.addObjective([], ry.FS.vectorZ, [self.gripper_name], ry.OT.eq, [1], [0, 0, 1])
+                target_yaw = action[3]
+
+                # 2. Calculate the target scalar products
+                target_cos = np.cos(target_yaw)
+                target_sin = np.sin(target_yaw)
+
+                komo.addObjective([], ry.FS.scalarProductXX, [self.gripper_name, "table"], ry.OT.sos, [1e1], [target_cos])
+                komo.addObjective([], ry.FS.scalarProductXY, [self.gripper_name, "table"], ry.OT.sos, [1e1], [target_sin])
+            
             sol = ry.NLP_Solver(komo.nlp())
             sol.setOptions(stopInners=1, damping=1e-4, verbose=0)
             ret = sol.solve()

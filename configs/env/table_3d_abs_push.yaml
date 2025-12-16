@@ -1,13 +1,13 @@
 
 robot_mode: normal         # "normal" or "floating"
-path_mode: taskspace
+path_mode: posyaw
 
 simulate: false
 botop: true
 on_real: true
 camera_name: cameraWrist    # or "cameraWrist"
 env: TableEnv-v0
-
+q0: [0.02460767, 0.28028935, -0.03155226, -1.1576008,  -0.01385739,  1.4093496, 0.76464119]
 task: push
 obj: cylinder
 
@@ -18,8 +18,8 @@ box_size_ranges:
 
 
 box_offset_ranges:
-  x: [-0.05, 0.25]
-  y: [-0.2, 0.0] 
+  x: [-0.16, 0.16]
+  y: [-0.13, 0.06] 
 
 table_offset_ranges:
   width: [0.0, 0.0]

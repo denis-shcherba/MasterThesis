@@ -149,38 +149,75 @@ def denormalize_actions(normalized_actions, stats):
     else:
         raise ValueError(f"Unknown normalization mode: {stats['method']}.")
     
-def get_cls_features(depth_array_1x96x96: np.ndarray) -> np.ndarray:
+def get_cls_features(image_batch) -> np.ndarray:
     """
-    Converts a batch of depth numpy arrays to DINO CLS feature vectors.
+    Converts a batch of images to DINO CLS feature vectors.
     
     Args:
-        depth_array_64x96x96: (64, 96, 96) numpy array of depth images (already scaled/normalized).
+        image_batch: np.ndarray OR torch.Tensor.
+                     Supported shapes:
+                     - (B, H, W)       -> Depth/Grayscale (repeated to 3 channels)
+                     - (B, C, H, W)    -> PyTorch Standard (C=1, 3, or 4)
+                     - (B, H, W, C)    -> Numpy Standard (C=1, 3, or 4)
         
     Returns:
-        (64, 768) numpy array of DINO CLS features.
+        (B, 768) numpy array of DINO CLS features.
     """
     DINO_MODEL_NAME = 'facebook/dinov2-base'
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Load model (Consider moving this outside if calling in a loop!)
     dino_model = AutoModel.from_pretrained(DINO_MODEL_NAME).to(device)
     dino_model.eval()
-    for param in dino_model.parameters():
-        param.requires_grad = False
-    # 1. Convert to Torch Tensor and add Channel/Batch dims (64, 96, 96) -> (64, 1, 96, 96)
-    # Convert to float and normalize if necessary (assuming your original data is [0, 1] normalized)    
-    # 2. Replicate to 3 channels (64, 1, 96, 96) -> (64, 3, 96, 96) and move to device
-    input_tensor_3ch = depth_array_1x96x96.repeat(1, 3, 1, 1).to(device)
+    
+    # 1. Standardize Input to Torch Tensor
+    if isinstance(image_batch, np.ndarray):
+        input_tensor = torch.from_numpy(image_batch).float()
+    elif isinstance(image_batch, torch.Tensor):
+        input_tensor = image_batch.float()
+    else:
+        raise TypeError(f"Unsupported input type: {type(image_batch)}")
 
-    with torch.no_grad():
-        outputs = dino_model(input_tensor_3ch)
+    # 2. Standardize Shape to (Batch, Channels, Height, Width)
+    if input_tensor.ndim == 3:
+        # Case: (Batch, H, W) -> Grayscale/Depth
+        input_tensor = input_tensor.unsqueeze(1) # Becomes (B, 1, H, W)
         
-    # 3. Extract the CLS token (index 0 of the sequence dimension)
-    # Shape: (Batch_size, Num_Tokens + 1, Hidden_Size) -> (Batch_size, Hidden_Size)
+    elif input_tensor.ndim == 4:
+        # Check if Channels are last (B, H, W, C) -> move to (B, C, H, W)
+        # Heuristic: Channels are usually small (1, 3, 4), spatial dims are large
+        if input_tensor.shape[-1] <= 4 and input_tensor.shape[1] > 4:
+            input_tensor = input_tensor.permute(0, 3, 1, 2)
+    else:
+        raise ValueError(f"Input dimensions {input_tensor.shape} not supported. Expected 3D or 4D.")
+
+    # 3. Handle Channel Counts (Target: 3 Channels)
+    B, C, H, W = input_tensor.shape
+    
+    if C == 1:
+        # Duplicate 1 -> 3
+        input_tensor = input_tensor.repeat(1, 3, 1, 1)
+    elif C == 3:
+        # RGB -> Keep as is
+        pass
+    elif C == 4:
+        # RGBA or RGB-D -> Take first 3 channels (RGB)
+        input_tensor = input_tensor[:, :3, :, :]
+    else:
+        raise ValueError(f"Unexpected channel count: {C}. Expected 1, 3, or 4.")
+
+    # 4. Move to GPU
+    input_tensor = input_tensor.to(device)
+
+    # 5. Inference
+    with torch.no_grad():
+        outputs = dino_model(input_tensor)
+        
+    # 6. Extract CLS token
     cls_features = outputs.last_hidden_state[:, 0, :] 
     
-    # 4. Convert back to CPU NumPy array
     return cls_features
-
 
 def get_patch_features(depth_array_1x96x96: np.ndarray) -> np.ndarray:
     """

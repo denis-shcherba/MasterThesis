@@ -1,3 +1,4 @@
+import cv2
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -7,6 +8,7 @@ from envs.utils import point_in_box_filtering, rescale_img, sample_points
 import abc
 import matplotlib.pyplot as plt
 from utils.data_utils import get_pc_from_depth
+import pyrealsense2 as rs
 
 class BaseRobotEnv(gym.Env, abc.ABC):
     """
@@ -25,7 +27,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     def __init__(self, 
                  obs_type="depth_agent_pos",
                  robot_mode="floating",
-                 path_mode="SE39D",
+                 path_mode="taskspace",
                  simulate=True,
                  botop=False,
                  on_real=False,
@@ -52,6 +54,11 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             self.gripper = "l_gripper"
 
         self.end_effector = end_effector
+        
+        if self.obs_type == "rgb_agent_pos":
+            self.use_opencv = True
+        else:
+            self.use_opencv = False
 
         np.random.seed(self.seed)
 
@@ -69,8 +76,20 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         if self.simulate:
             self.sim = None 
 
-        if self.botop:
-            self.bot=None
+
+        self.bot=False
+
+
+        if self.use_opencv and self.on_real:
+            # Initialize RealSense color-only pipeline (not aligned to depth)
+            self._rs_pipeline = rs.pipeline()
+            self._rs_config = rs.config()
+            # Enable ONLY color stream to avoid implicit alignment
+            self._rs_config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+            self._rs_profile = self._rs_pipeline.start(self._rs_config)
+            # Warm-up frames
+            for _ in range(5):
+                self._rs_pipeline.wait_for_frames()
 
         if self.obs_type == "pixels_agent_pos":
             self.observation_space = spaces.Dict(
@@ -102,11 +121,40 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                     "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
                 }
             )
+        elif self.obs_type == "rgb_agent_pos":
+            self.observation_space = spaces.Dict(
+                {
+                    "rgb": spaces.Box(low=0, high=255, shape=(480, 640, 3), dtype=np.uint8),
+                    "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
+                }
+            )
         else:
             raise ValueError(f"Unknown observation type: {obs_type}")
 
         self.action_space = self._define_action_space()
 
+
+    def _rs_get_color(self):
+        """Grab a color frame from RealSense and return RGB uint8 (H, W, 3)."""
+        if self._rs_pipeline is None:
+            return None
+        frames = self._rs_pipeline.wait_for_frames()
+        color_frame = frames.get_color_frame()
+        if not color_frame:
+            return None
+        import numpy as np
+        import cv2
+        bgr = np.asanyarray(color_frame.get_data())
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        return rgb
+
+    def _rs_shutdown(self):
+            if self._rs_pipeline is not None:
+                try:
+                    self._rs_pipeline.stop()
+                except Exception:
+                    pass
+                self._rs_pipeline = None
 
     def _load_robot(self):
         """Loads the robot model based on self.robot_mode."""
@@ -172,6 +220,13 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             R = q.getMatrix()
             agent_pos_raw[:3] = pose[:3]  
             agent_pos_raw[3:9] = np.array([R[0:3, 0], R[0:3, 1]]).flatten()
+        elif self.path_mode == "posyaw":
+            agent_pos_raw = np.zeros(4)
+            pose = self.C.getFrame(self.gripper_name).getPose()
+            agent_pos_raw[:3] = pose[:3]  
+            sin_comp = self.C.eval(ry.FS.scalarProductXY, [self.gripper_name, "table"])[0]
+            cos_comp = self.C.eval(ry.FS.scalarProductXX, [self.gripper_name, "table"])[0]
+            agent_pos_raw[3] = np.arctan2(sin_comp, cos_comp)
 
         agent_pos = np.array(agent_pos_raw, dtype=np.float32)
 
@@ -182,6 +237,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         elif self.obs_type == "points_agent_pos":
             points = self.sim.getPoints(n_samples=4096, vis=True)
             observation["points"] = points
+
+
         elif self.obs_type == "depth_agent_pos" or self.obs_type == "depth_rgb_agent_pos":
             if self.botop:
                 if self.on_real:
@@ -204,7 +261,12 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
             observation["depth"] = depth
             if self.obs_type == "depth_rgb_agent_pos":
-                observation["rgb"] = rgb
+                observation["rgb"] = rgb[100:, :, :]
+
+        elif self.obs_type == "rgb_agent_pos":
+            if self.botop:
+                if self.on_real:
+                    observation["rgb"] = self._rs_get_color()[100:, :, :]
 
         observation["agent_pos"] = agent_pos
         return observation
@@ -214,6 +276,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         if self.sim:
             del self.sim
             self.sim = None
+        if self.use_opencv and self.on_real:
+            self._rs_shutdown()
         print(f"Closed {self.__class__.__name__}.")
 
     @abc.abstractmethod
@@ -340,6 +404,29 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     
         if "WAYPOINTS" in self.extras.upper():
             demo_group.create_dataset("waypoints", data=self.waypoint_pos)
+
+        # if ...  if save obj_params or so
+
         
         print(f"Collected Demo: {self.demo_id}")
         self.demo_id += 1
+
+    def stream_rgb(self):
+        while True:
+            if self.botop:
+                rgb, _ = self.bot.getImageAndDepth(self.camera_name)
+            elif self.simulate:
+                self.camview = ry.CameraView(self.C)
+                self.camview.setCamera(self.C.getFrame(self.camera_name))
+
+                rgb, _ = self.camview.computeImageAndDepth(self.C)
+            # Convert from RGB (ry outputs RGB) → BGR (OpenCV expects BGR)
+            frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+            cv2.imshow("Camera Stream", frame)
+
+            # quit on 'q'
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        cv2.destroyAllWindows()

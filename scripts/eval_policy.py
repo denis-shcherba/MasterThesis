@@ -21,6 +21,7 @@ from envs.utils import point_in_box_filtering, sample_points
 log = logging.getLogger(__name__)
 DEBUG_DEPTH = False
 DEBUG_STATE = False
+DEBUG_RGB = True
 
 def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
     for name in env.unwrapped.C.getFrameNames():
@@ -97,7 +98,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_regression", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     if cfg.env.on_real:
         matplotlib.use("Agg")   # headless backend, no X11 required
@@ -121,7 +122,7 @@ def eval_policy(cfg: DictConfig) -> None:
         else:
             img_type = "DEPTH"
 
-        env = gym.make("TableEnv-v0", obs_type="depth_rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
+        env = gym.make("TableEnv-v0", obs_type="rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
     else:
         env = gym.make("ShelfEnv-v1", obs_type="depth_agent_pos", end_effector=cfg.env.get("end_effector", None), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion, shelf_floor_offsets=cfg.env.shelf_floor_offsets, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, allow_book_yaw=cfg.env.allow_book_yaw, focal_length_range=cfg.env.focal_length_range, extras="WAYPOINTS")
         env.unwrapped.C.view(True)
@@ -167,6 +168,10 @@ def eval_policy(cfg: DictConfig) -> None:
 
             current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
     
+            if cfg.env.on_real:
+                env.unwrapped.C.delFrame("cylinder")
+
+
             if cfg.observation_mode == 'dino_cls':
                 depth_obs = get_cls_features(current_depth)
             elif cfg.observation_mode == 'dino_patches':
@@ -184,9 +189,13 @@ def eval_policy(cfg: DictConfig) -> None:
                     log.error("SAM point cloud is None, skipping this episode.")
                     continue
                 else:
-                    env.unwrapped.C.delFrame("cylinder")
                     env.unwrapped.C.addFrame("temp_pc").setPointCloud(sam_pc)
-                    env.unwrapped.C.view(True)
+                    print(sam_pc.shape)
+                    for i in range(sam_pc.shape[0]):
+                        env.unwrapped.C.addFrame(f"pc_point_{i}").setPosition(sam_pc[i]).setShape(ry.ST.sphere, [.05]).setColor([0, 1, 1, .9])
+                        print(sam_pc[i])
+                        env.unwrapped.C.view(True)
+                    #env.unwrapped.C.view(True)
                     depth_obs = torch.from_numpy(sam_pc).to(device).float()
             elif cfg.observation_mode == 'points':
                 center = env.unwrapped.C.getFrame("BOX_MASK").getPosition()
@@ -194,17 +203,21 @@ def eval_policy(cfg: DictConfig) -> None:
 
                 points = get_pc_from_depth(env.unwrapped.C, env.unwrapped.camera_name, current_depth.squeeze(0).cpu().numpy())
 
-                plt.imshow(current_depth.squeeze(0).cpu().numpy(), cmap='gray')
-                plt.show()
+                # plt.imshow(current_depth.squeeze(0).cpu().numpy(), cmap='gray')
+                # plt.show()
 
                 if img_type == "BOX_POINTS":
 
                     points = point_in_box_filtering(points, (center, box_size), ignore_planes=[])
                 points = sample_points(points, n_samples=1024)  
 
+                # for i in range(points.shape[0]):
+                #     env.unwrapped.C.addFrame(f"pc_point_{i}").setPosition(points[i]).setShape(ry.ST.sphere, [.05]).setColor([0, 1, 1, .9])
+                #     print(points[i])
+                #     env.unwrapped.C.view(True)
 
                 env.unwrapped.C.addFrame("temp_pc").setPointCloud(points)
-                env.unwrapped.C.view(True)
+                #env.unwrapped.C.view(True)
 
                 depth_obs = torch.from_numpy(points).float().to(device).unsqueeze(0)
 
@@ -212,7 +225,7 @@ def eval_policy(cfg: DictConfig) -> None:
                 depth_obs = current_depth # No normalization bc of droput (-1 depth)
 
             depth_obs = depth_obs.unsqueeze(1)  
-
+ 
             if cfg.observation_mode == 'sam_points':
                 depth_obs = depth_obs.transpose(1, 0)
 
@@ -222,59 +235,15 @@ def eval_policy(cfg: DictConfig) -> None:
             #cm_err = np.linalg.norm(waypoint.cpu().numpy() - env.unwrapped.waypoint_pos)
             #cm_errs.append(cm_err)
             #print("Predicted waypoint:", cm_err)
-            env.unwrapped.C.addFrame("predicted_waypoint").setPosition(waypoint.cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
-            env.unwrapped.C.view(True)
+            for j in range(waypoint.shape[1]):
+                env.unwrapped.C.addFrame(f"predicted_waypoint_{j}").setPosition(waypoint[:, j, :].cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
+            #env.unwrapped.C.view(True)
 
-            roboenv = RobotEnviroment(env.unwrapped.C, sim=True)
+            roboenv = RobotEnviroment(env.unwrapped.C, sim=True, camera=cfg.env.camera_name)
 
             if cfg.env.get("task", None) == "push":
-                komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=1, kOrder=0, enableCollisions=False)
-                komo.addObjective(
-                times=[], 
-                feature=ry.FS.jointState, 
-                frames=[],
-                type=ry.OT.sos, 
-                scale=[1e-1], 
-                target=env.unwrapped.q0
-                )
-                komo.addObjective([], ry.FS.positionRel, ['l_gripper', 'predicted_waypoint'], ry.OT.eq, [1e1], [0, 0, .02])
-
-                ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
-                #print(ret)
-
-                komo.view(True, "IK solution")
-                path = komo.getPath()
-                bot = ry.BotOp(env.unwrapped.C, True)
-                bot.moveTo(path[0])
-                while bot.getTimeToEnd() > 0:
-                    bot.wait(env.unwrapped.C, 0.1)
-
-                delta = env.unwrapped.C.getFrame("target").getPosition() - env.unwrapped.C.getFrame("predicted_waypoint").getPosition()
-                delta_length = np.linalg.norm(delta)
-                delta /= delta_length
-                env.unwrapped.C.getFrame("target").setPosition(env.unwrapped.C.getFrame("predicted_waypoint").getPosition() + delta * (delta_length + 0.05))
-
-                #komo.addObjective([], ry.FS.positionDiff, ['l_gripper', 'target'], ry.OT.eq, np.eye(3)-np.outer(delta, delta))
-
-
-                komo = ry.KOMO(env.unwrapped.C, phases=1, slicesPerPhase=16, kOrder=2, enableCollisions=False)
-                komo.addControlObjective([], 0, .1)
-                komo.addControlObjective([], 1, 10)
-                komo.addControlObjective([], 2, 1)
-
-                komo.addObjective([1], ry.FS.positionDiff, ['l_gripper', 'target'], ry.OT.eq, [1, 1, 0])
-                
-
-                ret = ry.NLP_Solver(komo.nlp(), verbose=0) .solve()
-                #print(ret)
-
-                komo.view(True, "IK solution")
-                path = komo.getPath()
-                bot.moveAutoTimed(path)
-                while bot.getTimeToEnd() > 0:
-                    bot.wait(env.unwrapped.C, 0.1)
-
-                quit()
+                #roboenv.push_point_to_point("predicted_waypoint_0", "predicted_waypoint_1", pcl="temp_pc", bot=env.unwrapped.bot)
+                pass
                     
             # roboenv.pull_way2way("predicted_waypoint", None, False)
 
@@ -304,6 +273,11 @@ def eval_policy(cfg: DictConfig) -> None:
     else:
         sequence_length = cfg.model.context_length
         
+    if cfg.observation_mode == 'dino_cls' or cfg.observation_mode == 'dino_patches':
+        key = "rgb"
+    else:
+        key = "depth"
+
     for evaluation in range(cfg.get("num_eval_episodes")):
         obs, info = env.reset()
 
@@ -320,15 +294,15 @@ def eval_policy(cfg: DictConfig) -> None:
                 log.info(f"--- Step {i}: Generating new action chunk ---")
                 
                 # Get current observation and normalize it
-                current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
+                current_obs = torch.from_numpy(obs[key]).float().to(device).unsqueeze(0)
                 current_state = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
                 if cfg.observation_mode == 'depth':
-                    depth_obs = normalize_depth(current_depth, normalization_stats["depth_stats"])
+                    depth_obs = normalize_depth(current_obs, normalization_stats["depth_stats"])
                 elif cfg.observation_mode == 'points':
                     center = env.unwrapped.C.getFrame("BOX_MASK").getPosition()
                     box_size = env.unwrapped.C.getFrame("BOX_MASK").getSize()
 
-                    points = get_pc_from_depth(env.unwrapped.C, env.unwrapped.camera_name, current_depth.squeeze(0).cpu().numpy())
+                    points = get_pc_from_depth(env.unwrapped.C, env.unwrapped.camera_name, current_obs.squeeze(0).cpu().numpy())
 
                     points = point_in_box_filtering(points, (center, box_size), ignore_planes=[])
                     points = sample_points(points, n_samples=1024)  
@@ -337,7 +311,33 @@ def eval_policy(cfg: DictConfig) -> None:
 
 
                 elif cfg.observation_mode == 'dino_cls':
-                    depth_obs = get_cls_features(current_depth)
+                    depth_obs = get_cls_features(current_obs)
+
+                if DEBUG_RGB:
+                    # 1. Convert Tensor to Numpy
+                    # Assume current_rgb is (1, C, H, W) or (1, H, W, C)
+                    img_np = current_obs.squeeze(0).detach().cpu().numpy()
+                    
+                    # 2. Fix Channel Ordering for Matplotlib (Needs H, W, C)
+                    # If shape is (3, H, W), transpose to (H, W, 3)
+                    if img_np.ndim == 3 and img_np.shape[0] == 3:
+                        img_np = np.transpose(img_np, (1, 2, 0))
+                    
+                    # 3. Ensure uint8 for visualization
+                    if img_np.dtype != np.uint8:
+                        # If float 0..1, scale to 0..255
+                        if img_np.max() <= 1.0:
+                            img_np = (img_np * 255).astype(np.uint8)
+                        else:
+                            img_np = img_np.astype(np.uint8)
+
+                    # 4. Save to disk instead of show()
+                    plt.figure() # Create a new figure to avoid overwriting previous ones
+                    plt.imshow(img_np)
+                    plt.title("Current RGB Debug")
+                    plt.savefig("debug_current_rgb.png") # <--- Saves to your current directory
+                    plt.close() # Close memory
+                    print("Debug image saved to debug_current_rgb.png")
 
                 normalized_current_state = normalize_state(current_state, normalization_stats["action_stats"])
 
@@ -403,11 +403,11 @@ def eval_policy(cfg: DictConfig) -> None:
             denormalized_seq = denormalize_actions(state_seq, normalization_stats["action_stats"])
             
             # Store the normalized observation in history (after action execution)
-            depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
+            obs_tensor = torch.from_numpy(obs[key]).float().to(device).unsqueeze(0)
             if cfg.observation_mode == 'depth':
-                depth_obs = normalize_depth(depth, normalization_stats["depth_stats"])
+                depth_obs = normalize_depth(obs_tensor, normalization_stats["depth_stats"])
             elif cfg.observation_mode == 'dino_cls':
-                depth_obs = get_cls_features(depth)
+                depth_obs = get_cls_features(obs_tensor)
                 
             state_tensor = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
             state_tensor = normalize_state(state_tensor, normalization_stats["action_stats"])
