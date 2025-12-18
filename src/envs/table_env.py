@@ -176,8 +176,8 @@ class TableEnv(BaseRobotEnv):
 
     def _draw_arena_grid(self):
         # 1. Define the number of points you want along each axis
-        num_x = 12   # Adjust as needed
-        num_y = 8  # Adjust as needed
+        num_x = 20   # Adjust as needed
+        num_y = 13  # Adjust as needed
 
         center = np.array([0, 0, self.table_base_height]) + np.concatenate((self.obj_center, np.array([0])))
 

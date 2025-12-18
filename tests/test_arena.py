@@ -32,7 +32,7 @@ def find_q0(C):
 
     komo.addObjective([], ry.FS.positionDiff, ['l_gripper', 'target_center'], ry.OT.eq, [1e1, 1e1, 0])
     komo.addObjective([], ry.FS.vectorZ, ['l_gripper'], ry.OT.eq, 1e1, [0, 0, 1])
-    komo.addObjective([], ry.FS.negDistance, ['l_gripper', 'target_center'], ry.OT.ineq, 1, [-0.5])
+    komo.addObjective([], ry.FS.negDistance, ['l_gripper', 'target_center'], ry.OT.ineq, 1, [-0.2])
     komo.addObjective([], ry.FS.scalarProductXY, ['l_gripper', 'target_center'], ry.OT.eq, 1e1)
 
     #komo.addObjective([], ry.FS.positionDiff, ['l_gripper', 'target'], ry.OT.eq, np.eye(3)-np.outer(delta, delta))

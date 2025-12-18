@@ -10,7 +10,7 @@ from envs.high_level_methods import RobotEnviroment
 import numpy as np
 
 log = logging.getLogger(__name__)
-qHome = [0.02460767, 0.28028935, -0.03155226, -1.1576008,  -0.01385739,  1.4093496, 0.76464119]   
+qHome = [0.07153886, 0.26904758, -0.0768381,  -1.86966085,  0.01444394,  2.12814592, 0.76464528]
 
 
 @hydra.main(config_path="../configs/env/", config_name="table_3d_abs_push", version_base=None)
@@ -111,11 +111,11 @@ def visit_arena_grid(env, on_real=False):
     # RoboEnv.move_to_point(env.unwrapped.C.getFrame("target").getPosition()-np.array([0, 0, .025]), straight_line=True, straight_gripper=True, accumulated_collisions = False)
     # quit()
 
-    for i in range(96):    
+    for i in range(260):    
         #env.reset(options={"get_obs": False})
         pos = env.unwrapped.C.getFrame(f"arena_grid_{i}").getPosition()
         RoboEnv.move_to_point(pos+np.array([0, 0, .055]), straight_line=True, straight_gripper=True, accumulated_collisions = False)
-        env.unwrapped.C.view(True, f"Visiting arena grid point {i} of {8*12}")
+        env.unwrapped.C.view(True, f"Visiting arena grid point {i} of {260}")
         # env.reset(options={"obj_pos": pos})
         # env.unwrapped.C.view(True)
 

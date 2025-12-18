@@ -10,7 +10,7 @@ fusion_method: concat
 
 time_encoding: none
 max_timesteps: 64 # This might still be needed if your dataset processing uses it.
-observation_mode: depth
+observation_mode: ${observation_mode}  # inherit from global config
 
 # Diffusion Head settings
 prediction_length: ${prediction_length}       # length of the generated action trajectory.

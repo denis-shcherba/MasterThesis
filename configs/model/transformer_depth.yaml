@@ -2,7 +2,7 @@
 type: multimodal         # Options: pointcloud, multimodal
 
 action_dim: 4            # Dimension of action space 
-dropout_rate: 0.5        # Dropout rate for regularization
+dropout_rate: 0.2        # Dropout rate for regularization
 output_activation: null  
 policy_head_type: transformer
 
@@ -18,6 +18,6 @@ observation_mode: ${observation_mode}  # inherit from global config
 # Transformer settings
 context_length: ${context_length} 
 prediction_length: ${prediction_length}
-embed_dim: 128
+embed_dim: 64
 num_layers: 2
-num_heads: 2
+num_heads: 4

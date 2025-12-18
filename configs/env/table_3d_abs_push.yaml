@@ -7,7 +7,7 @@ botop: true
 on_real: true
 camera_name: cameraWrist    # or "cameraWrist"
 env: TableEnv-v0
-q0: [0.02460767, 0.28028935, -0.03155226, -1.1576008,  -0.01385739,  1.4093496, 0.76464119]
+q0: [0.07153886, 0.26904758, -0.0768381,  -1.86966085,  0.01444394,  2.12814592, 0.76464528]
 task: push
 obj: cylinder
 
