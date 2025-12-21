@@ -44,7 +44,7 @@ class ShelfEnv(BaseRobotEnv):
                 shelf_openings_small=None, # e.g. [4, 11]
                 shelf_equidistant=False,
                 shelf_floor_offsets=None,
-                
+                q0=[.0, .0, .0, -2., 0. ,2., -0.5],
                 task = "pull",
 
                 num_boxes_per_sample=1,
@@ -59,7 +59,9 @@ class ShelfEnv(BaseRobotEnv):
         self.task = task
         self.path_type = path_type
         self.img_type = img_type
+        self.q0 = q0
         self.extras = extras
+        self.obj = "book"
 
         self.camera_name = camera_name
         self.last_pos = np.array([0., 0., 0.])
@@ -99,22 +101,15 @@ class ShelfEnv(BaseRobotEnv):
 
         if self.robot_mode == "normal":
             self.C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)
-            self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
-    
-        if self.img_type.upper() == "BOX_POINTS":
-            box_mask_height = 1
-            box_mask_width = 1.2
-            box_mask_depth = 1.75
-            pos_offset_x = 0
-            pos_offset_y = 0
-            pos_offset_z = .03
+            self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0])).setPoseByText("t(-0 -0.1 0.65) d(0 0 0 1)")
+            print(self.C.getJointState())
+            self.C.setJointState([ 0.,  -1,  0.,  -2.,   0.,   2.,  -2.4])
+            self.C.view(True)
+            # quit()
 
-            self.C.addFrame("BOX_MASK") \
-                .setShape(ry.ST.box, size=[box_mask_width, box_mask_depth, box_mask_height]) \
-                .setColor([1, 0, 0, .2]) \
-                .setPosition(self.C.getFrame("table").getPosition()+np.array([pos_offset_x, pos_offset_y, pos_offset_z+self.C.getFrame("table").getSize()[2]/2+box_mask_height/2])) \
-                
-                
+        if self.img_type.upper() == "BOX_POINTS":
+            raise NotImplementedError("BOX_POINTS img_type not implemented in ShelfEnv yet.")
+
         if collect_data: 
             self.h5file = h5py.File("shelf_demo.h5", "w")
             self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
@@ -155,45 +150,7 @@ class ShelfEnv(BaseRobotEnv):
         shelf_center_pos = self.shelf_bottom_frame.getPosition()[:3]
         self.shelf_corner_ref_point = shelf_center_pos + np.array([-self.shelf_width/2, -self.shelf_depth/2, 0])
 
-    def _spawn_book(self, book_params, i=0, prefix="target_book"):
-        b_size_x, b_size_y, b_size_z = book_params
-        
-        book_center_position = self.C.getFrame("table").getPosition() + np.array([0, .4,  b_size_z/2 + self.C.getFrame("table").getSize()[2]/2]) + np.array([ 
-            np.random.uniform(self.box_offset_ranges['x'][0], self.box_offset_ranges['x'][1]),
-            np.random.uniform(self.box_offset_ranges['y'][0], self.box_offset_ranges['y'][1]), 
-            0])
             
-        yaw = 0
-        if self.allow_book_yaw:
-            yaw = np.random.uniform(0, np.pi)
-        q_orientation = ry.Quaternion().setRollPitchYaw([0, 0, yaw])   # TODO?
-        
-        frame_name = f"{prefix}_{i}"
-        self.books.append(frame_name)
-        self.C.addFrame(frame_name) \
-            .setPosition(book_center_position) \
-            .setQuaternion(q_orientation.asArr()) \
-            .setShape(ry.ST.ssBox, size=[b_size_x, b_size_y, b_size_z, 0.005]) \
-            .setColor([1, 0, 0]) \
-            .setContact(1) \
-            .setMass(.1) \
-            .setAttributes({"friction": .1}) 
-        
-        if self.extras.upper() == "WAYPOINTS":
-            self.C.addFrame("waypoint_marker").setPosition(self.C.getFrame(self.books[0]).getPosition()+np.array([0, 0, b_size_z/2])).setShape(ry.ST.marker, [.1]).setColor([0, 0, 1, .5])
-
-            #self.waypoint_pos = self.C.eval(ry.FS.positionRel, [self.camera_name, "waypoint_marker"])[0]
-            self.waypoint_pos = self.C.getFrame("waypoint_marker").getPosition()
-
-        self.C.addFrame("target_p").setPose(self.C.getFrame(frame_name).getPose())
-
-        self.C.addFrame("target").setParent(self.C.getFrame("target_p"))
-        self.C.getFrame("target").setRelativePosition([.2, 0, 0]).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
-
-        self.C.view(False)
-
-        
-    
     def _spawn_book(self, book_params, i=0, prefix="target_book"):
 
 
@@ -228,7 +185,8 @@ class ShelfEnv(BaseRobotEnv):
 
         for i, book_params in enumerate(sample):
             self._spawn_book(book_params[0], i)            
-            
+            if self.save_obj_pos and i == 0:
+                self.book_pos = book_params
 
         # target at the middle of the shelf ending for goal evaluation
         target = np.array([

@@ -122,7 +122,7 @@ class RobotEnviroment:
 
         M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', "hook_point"], ry.OT.eq, [1e2])
         if self.C.getJointDimension() > 3:
-            M.komo.addObjective([1], ry.FS.scalarProductYX, ['gripper', "hook_point"], ry.OT.eq)
+            M.komo.addObjective([1], ry.FS.scalarProductYX, [self.gripper, "hook_point"], ry.OT.eq)
 
         # M.komo.addObjective([2.], ry.FS.positionDiff, ["hook_tip", "target"], ry.OT.eq, 1e1)
         # M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
@@ -131,6 +131,7 @@ class RobotEnviroment:
         M.solve()
         if not M.feasible:
             print("INFEASIBLE AT M")
+            #M.komo.view(True)
             self.C.delFrame("hook_point")
             return False
 
@@ -139,6 +140,8 @@ class RobotEnviroment:
         M1.approachPush([.85, 1.], self.gripper, .03)
         path1 = M1.solve()
         if not M1.feasible:
+            #M1.komo.view(True)
+
             print("INFEASIBLE AT M1")
             self.C.delFrame("hook_point")
             return False

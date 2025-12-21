@@ -34,6 +34,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                  camera_name="cameraStatic",
                  seed=42,
                  end_effector=None,
+                 save_obj_pos=False,
                  **kwargs
                 ):
         super().__init__()
@@ -48,6 +49,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         self.camera_name = camera_name
         self.C = ry.Config()
         self.seed = seed
+        self.save_obj_pos = save_obj_pos
         if self.robot_mode == "floating":
             self.gripper = "gripper"
         elif self.robot_mode == "normal":
@@ -407,7 +409,11 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
         # if ...  if save obj_params or so
 
-        
+        if self.save_obj_pos:
+            if self.obj == "book":
+                demo_group.create_dataset("book", data=self.book_pos)
+
+
         print(f"Collected Demo: {self.demo_id}")
         self.demo_id += 1
 
