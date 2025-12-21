@@ -1,2 +1,2 @@
-checkpoint_path: outputs/final_outputs/shelf_env/hook/hook4test.pth
-normalization_stats_path: outputs/final_outputs/shelf_env/hook/hook4test.yaml
+checkpoint_path: outputs/final_outputs/shelf_env/hook/dino.pth
+normalization_stats_path: outputs/final_outputs/shelf_env/hook/dino.yaml

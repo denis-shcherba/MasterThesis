@@ -44,7 +44,7 @@ class ShelfEnv(BaseRobotEnv):
                 shelf_openings_small=None, # e.g. [4, 11]
                 shelf_equidistant=False,
                 shelf_floor_offsets=None,
-                q0=[.0, .0, .0, -2., 0. ,2., -0.5],
+                q0=None,
                 task = "pull",
 
                 num_boxes_per_sample=1,

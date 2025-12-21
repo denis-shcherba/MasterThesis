@@ -21,7 +21,7 @@ from envs.utils import point_in_box_filtering, sample_points
 log = logging.getLogger(__name__)
 DEBUG_DEPTH = False
 DEBUG_STATE = False
-DEBUG_RGB = True
+DEBUG_RGB = False
 
 def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
     for name in env.unwrapped.C.getFrameNames():
@@ -98,7 +98,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     if cfg.env.on_real:
         matplotlib.use("Agg")   # headless backend, no X11 required
@@ -124,7 +124,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
         env = gym.make("TableEnv-v0", obs_type="rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
     else:
-        env = gym.make("ShelfEnv-v1", obs_type="depth_agent_pos", end_effector=cfg.env.get("end_effector", None), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion, shelf_floor_offsets=cfg.env.shelf_floor_offsets, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, allow_book_yaw=cfg.env.allow_book_yaw, focal_length_range=cfg.env.focal_length_range, extras="WAYPOINTS")
+        env = gym.make("ShelfEnv-v1", obs_type="depth_agent_pos", end_effector=cfg.env.get("end_effector", None), q0=cfg.env.get("q0", None), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion, shelf_floor_offsets=cfg.env.shelf_floor_offsets, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, allow_book_yaw=cfg.env.allow_book_yaw, focal_length_range=cfg.env.focal_length_range, extras="WAYPOINTS")
         env.unwrapped.C.view(True)
 
     
@@ -273,10 +273,12 @@ def eval_policy(cfg: DictConfig) -> None:
     else:
         sequence_length = cfg.model.context_length
         
-    if cfg.observation_mode == 'dino_cls' or cfg.observation_mode == 'dino_patches':
-        key = "rgb"
-    else:
-        key = "depth"
+    # TODO handle different observation modes for real e.g. rgb in dino..
+    # if cfg.observation_mode == 'dino_cls' or cfg.observation_mode == 'dino_patches':
+    #     key = "rgb"
+    # else:
+    #     key = "depth"
+    key = "depth"
 
     for evaluation in range(cfg.get("num_eval_episodes")):
         obs, info = env.reset()

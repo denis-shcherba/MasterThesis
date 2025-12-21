@@ -93,7 +93,7 @@ class TableEnv(BaseRobotEnv):
         self.C.getFrame("table").setShape(self.C.getFrame("table").getShapeType(), [1.2, 1.1, .1, .01]).setColor(np.array([242, 240, 216]) / 255)
         self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0]))
     
-        self.C.getFrame("cameraStaticTable") \
+        self.C.getFrame("cameraStaticTableTop") \
             .setPosition(self.camera_base_pos) \
             .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
 

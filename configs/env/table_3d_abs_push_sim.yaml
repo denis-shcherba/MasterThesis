@@ -1,0 +1,38 @@
+
+robot_mode: normal         # "normal" or "floating"
+path_mode: taskspace       # "jointspace" or "taskspace"
+
+simulate: true
+botop: false
+on_real: false
+camera_name: cameraStaticTableTripod   
+env: TableEnv-v0
+q0: [0.07153886, 0.26904758, -0.0768381,  -1.86966085,  0.01444394,  2.12814592, 0.76464528]
+task: push
+obj: cylinder
+
+box_size_ranges:
+  x: [0.05905, 0.0605]
+  y: [0.05905, 0.0605]
+  z: [0.05905, 0.0605]
+
+
+box_offset_ranges:
+  x: [-0.16, 0.16]
+  y: [-0.13, 0.06] 
+
+table_offset_ranges:
+  width: [0.0, 0.0]
+  length: [0.0, 0.0]
+  yaw: [0, 0]
+
+camera_offset_ranges:
+  null
+
+camera_rpy_ranges:
+  null
+
+focal_length_range: null
+
+depth_noise_ranges: null
+

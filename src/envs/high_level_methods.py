@@ -339,8 +339,8 @@ class RobotEnviroment:
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
 
-            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=True)
-            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=True)
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=get_observation, visualize=False)
+            sim.run_trajectory_position_control(np.array(path2[:, :7]), n_steps=2,  tau=0.01, capture_obs=get_observation, visualize=False)
 
         elif self.on_real:
             # Use RealSense color-only for raw RGB capture (no depth alignment)
@@ -412,6 +412,12 @@ class RobotEnviroment:
         elif self.observation_mode == "DEPTH":
             if self.sim == True:
                 self.depth_image = sim.depth
+                # self.C.addFrame("camera_marker", "cameraStaticTableTripod").setShape(ry.ST.marker, [.3])
+                # self.C.view(True)
+                # import matplotlib.pyplot as plt
+                # plt.imshow(self.depth_image[0], cmap='gray')
+                # plt.show()
+                # plt.close()
 
 
         self.ways = []

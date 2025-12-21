@@ -1,5 +1,5 @@
 defaults:
-  - env: shelf_hook_panda
+  - env: table_3d_abs_push_sim
 
 num_samples: 1_000
 output_subdir: null
