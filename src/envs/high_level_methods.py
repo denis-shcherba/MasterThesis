@@ -303,8 +303,8 @@ class RobotEnviroment:
         #M.komo.view(True)
         if not M.ret.feasible:
             print("infeasible at M")
-            M.komo.view(True)
-            M.komo.report(True, True, True)
+            # M.komo.view(True)
+            # M.komo.report(True, True, True)
             return False
 
         M1 = M.sub_motion(0, accumulated_collisions=False)
@@ -320,7 +320,7 @@ class RobotEnviroment:
         path1 = M1.path
         if not M1.ret.feasible:
             print("infeasible at M1")
-            M1.komo.view(True)
+            # M1.komo.view(True)
             return False
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
@@ -332,7 +332,7 @@ class RobotEnviroment:
         path2 = M2.path
         if not M2.ret.feasible:
             print("infeasible at M2")
-            M2.komo.view(True)
+            # M2.komo.view(True)
             return False
 
 

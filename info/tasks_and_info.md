@@ -20,7 +20,12 @@ TODO maybe if time
 
 # Table env
 
-## pushing cyl:
+## Pushing cylinder:
+
+### real data:
+
+#### lerobot diffusion policy
+**loss**: 0.06
 
 ## pulling book?
 

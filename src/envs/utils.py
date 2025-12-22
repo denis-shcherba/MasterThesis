@@ -30,6 +30,42 @@ def rescale_img(img, rescale_size: int = 96) -> np.ndarray:
 
     return post_img
 
+def rescale_img_with_padding(img: np.ndarray, rescale_size: int = 224) -> np.ndarray:
+    """
+    Resizes an image to a square target size while maintaining aspect ratio 
+    by adding black padding (letterboxing).
+    Works for both Depth (H, W) and RGB (H, W, C).
+    """
+    h, w = img.shape[:2]
+    
+    # 1. Calculate scaling factor to fit the largest side into rescale_size
+    scale = rescale_size / max(h, w)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    
+    # 2. Resize the image (preserves aspect ratio)
+    # Use INTER_NEAREST for depth/segmentation to avoid creating fake depth values
+    # Use INTER_LINEAR or INTER_CUBIC for RGB
+    interp = cv2.INTER_NEAREST if img.ndim == 2 else cv2.INTER_LINEAR
+    resized_img = cv2.resize(img, (new_w, new_h), interpolation=interp)
+    
+    # 3. Create a black canvas
+    if img.ndim == 3: # RGB
+        canvas = np.zeros((rescale_size, rescale_size, img.shape[2]), dtype=img.dtype)
+        canvas[ 
+            (rescale_size - new_h) // 2 : (rescale_size - new_h) // 2 + new_h,
+            (rescale_size - new_w) // 2 : (rescale_size - new_w) // 2 + new_w,
+            :
+        ] = resized_img
+    else: # Depth / Grayscale
+        canvas = np.zeros((rescale_size, rescale_size), dtype=img.dtype)
+        canvas[ 
+            (rescale_size - new_h) // 2 : (rescale_size - new_h) // 2 + new_h,
+            (rescale_size - new_w) // 2 : (rescale_size - new_w) // 2 + new_w
+        ] = resized_img
+        
+    return canvas
+
 def crop_img(img, crop_size: int = 96) -> np.ndarray:
     pass
 

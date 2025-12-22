@@ -254,6 +254,8 @@ class TableEnv(BaseRobotEnv):
             return spaces.Box(low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32)
         elif self.path_mode == "taskspace":
             return spaces.Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
+        elif self.path_mode == "posyaw":
+            return spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
         else:
             return spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
 
@@ -318,6 +320,14 @@ class TableEnv(BaseRobotEnv):
                 demo_group.create_dataset("path", data=se3_path)
             elif self.path_mode == "pos3d" or self.robot_mode == "pos3d_delta" or self.robot_mode == "pos3d_rel":
                 demo_group.create_dataset("path", data=se3_path[:, :3])
+            elif self.path_mode == "posyaw":
+                yaw_path = np.zeros((self.roboenv.path.shape[0], 1))
+                for i in range(self.roboenv.path.shape[0]):
+                    C2.setJointState(self.roboenv.path[i])
+                    sin_comp = C2.eval(ry.FS.scalarProductXY, ["l_gripper", "table"])[0]
+                    cos_comp = C2.eval(ry.FS.scalarProductXX, ["l_gripper", "table"])[0]
+                    yaw_path[i] = np.arctan2(sin_comp, cos_comp)
+                demo_group.create_dataset("path", data=np.hstack((se3_path[:, :3], yaw_path)))
             if self.img_type.upper() == "DEPTH":
                 demo_group.create_dataset(
                 "depth", 

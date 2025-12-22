@@ -1,6 +1,6 @@
 
 robot_mode: normal         # "normal" or "floating"
-path_mode: taskspace       # "jointspace" or "taskspace"
+path_mode: posyaw       # "jointspace" or "taskspace"
 
 simulate: true
 botop: false

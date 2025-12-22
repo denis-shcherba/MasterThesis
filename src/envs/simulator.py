@@ -139,6 +139,8 @@ class Simulator:
             if capture_obs:
                 if self.observation_mode == "DEPTH":
                     depth = self.getDepth(crop=False, rescale=False)
+                    # plt.imshow(depth)
+                    # plt.show()
                     self.depth.append(depth)
                 elif self.observation_mode == "RGB":
                     rgb = self.getRGB(rescale=False)

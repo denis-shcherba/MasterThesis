@@ -257,18 +257,17 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 self.camview.setCamera(self.C.getFrame(self.camera_name))
     
                 rgb, depth = self.camview.computeImageAndDepth(self.C, False)
-                # if self.rescale:
-                #   depth = rescale_img(depth, rescale_size=96)
+                depth = rescale_img(depth, rescale_size=96)
 
 
             observation["depth"] = depth
             if self.obs_type == "depth_rgb_agent_pos":
-                observation["rgb"] = rgb[100:, :, :]
+                observation["rgb"] = rgb[:, :, :]
 
         elif self.obs_type == "rgb_agent_pos":
             if self.botop:
                 if self.on_real:
-                    observation["rgb"] = self._rs_get_color()[100:, :, :]
+                    observation["rgb"] = self._rs_get_color()[:, :, :]
 
         observation["agent_pos"] = agent_pos
         return observation

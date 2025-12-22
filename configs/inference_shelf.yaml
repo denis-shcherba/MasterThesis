@@ -6,7 +6,7 @@ defaults:
   - env: shelf_hook_floating
 
 experiment_name: "Transformer 10 step input Inference"
-observation_mode: dino_cls
+observation_mode: depth
 output_subdir: null
 num_eval_episodes: 20
 simulate: True
