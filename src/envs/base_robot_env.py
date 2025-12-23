@@ -4,7 +4,7 @@ from gymnasium import spaces
 import numpy as np
 import robotic as ry
 from importlib.resources import files
-from envs.utils import point_in_box_filtering, rescale_img, sample_points
+from envs.utils import point_in_box_filtering, rescale_img, sample_points, rescale_img_with_padding
 import abc
 import matplotlib.pyplot as plt
 from utils.data_utils import get_pc_from_depth
@@ -257,7 +257,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 self.camview.setCamera(self.C.getFrame(self.camera_name))
     
                 rgb, depth = self.camview.computeImageAndDepth(self.C, False)
-                depth = rescale_img(depth, rescale_size=96)
+                depth = rescale_img_with_padding(depth)
 
 
             observation["depth"] = depth
