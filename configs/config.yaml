@@ -1,7 +1,7 @@
 defaults:
   - _self_  
-  - model: diffusion_depth
-  - loss: default_mse
+  - model: transformer_depth
+  - loss: default_9d
   - optimizer: adam
   - data: depth
   - trainer: steps
@@ -13,16 +13,17 @@ train:
   grad_clip: 1.0
 
 # Global settings
-observation_mode: dino_cls
+observation_mode: depth
 seed: 42
 experiment_name: SimpleSingleStepBC
 output_dir: ${hydra:runtime.output_dir}
 context_length: 8
-prediction_length: 16
+prediction_length: 8
+use_ema: false
 
 is_regression: false
 is_waypointPlusTimings: false # whether to use a separate network for waypoint and timing prediction naming
 
 
 wandb:
-  enabled: false
+  enabled: true

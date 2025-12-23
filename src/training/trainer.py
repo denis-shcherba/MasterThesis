@@ -10,7 +10,7 @@ import json
 from transformers import get_cosine_schedule_with_warmup
 import torch.nn as nn
 from omegaconf import DictConfig
-
+from diffusers.training_utils import EMAModel
 # Set up logger
 log = logging.getLogger(__name__)
 
@@ -72,8 +72,6 @@ class BaseTrainer(ABC):
     """
     Abstract Base Class for training models. It handles the overall training loop,
     checkpointing, validation, and logging.
-    
-    Subclasses must implement the _compute_loss method.
     """
     def __init__(self, model: nn.Module, optimizer: torch.optim.Optimizer, criterion, device, cfg: DictConfig):
         self.model = model.to(device)
@@ -82,12 +80,26 @@ class BaseTrainer(ABC):
         self.criterion = criterion
         self.device = device
         self.cfg = cfg
-        self.scheduler = create_scheduler(cfg.get('scheduler', {}), optimizer)
+        self.scheduler = create_scheduler(cfg.get('scheduler', {}), optimizer) # (Assuming this function exists in your scope)
         self.train_losses = []
         self.val_losses = []
         self.best_val_loss = float('inf')
         self.output_dir = Path(cfg.get('output_dir', 'outputs'))
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # --- EMA CHANGE: Initialize EMA Model ---
+        self.use_ema = cfg.get('use_ema', False)
+        if self.use_ema:
+            self.ema_model = EMAModel(
+                self.model.parameters(),
+                decay=cfg.get('ema_decay', 0.9999),
+                use_ema_warmup=True,
+                power=cfg.get('ema_power', 0.75)
+            )
+            self.ema_model.to(self.device)
+            # print("EMA initialized with decay 0.9999")
+        # ----------------------------------------
+
         if cfg.get('wandb', {}).get('enabled', False):
             self.init_wandb()
         
@@ -109,13 +121,22 @@ class BaseTrainer(ABC):
         self.model.train()
         self.optimizer.zero_grad()
         loss = self._compute_loss(batch)
+        
         if torch.isnan(loss) or torch.isinf(loss):
             tqdm.write(f"WARNING: Invalid loss detected: {loss.item()}")
-            return None # Return None to indicate an invalid loss
+            return None 
+        
         loss.backward()
+        
         if self.cfg.get('train', {}).get('grad_clip', 0) > 0:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg['train']['grad_clip'])
+        
         self.optimizer.step()
+
+        # --- EMA CHANGE: Update EMA weights ---
+        if self.use_ema:
+            self.ema_model.step(self.model.parameters())
+        # --------------------------------------
 
         return loss.item()
 
@@ -134,6 +155,14 @@ class BaseTrainer(ABC):
 
     def validate_epoch(self, val_loader):
         """Runs one full validation pass on the validation dataset."""
+        
+        # --- EMA CHANGE: Swap weights for Validation ---
+        # We want to validate the EMA model to see if it's actually better.
+        if self.use_ema:
+            self.ema_model.store(self.model.parameters()) # Save online weights
+            self.ema_model.copy_to(self.model.parameters()) # Load EMA weights
+        # -----------------------------------------------
+
         self.model.eval()
         total_loss = 0.0
         num_batches = 0
@@ -144,13 +173,18 @@ class BaseTrainer(ABC):
                 total_loss += loss.item()
                 num_batches += 1
                 pbar.set_postfix({'Loss': f'{loss.item():.6f}'})
+        
+        # --- EMA CHANGE: Restore Online weights ---
+        # We must restore the noisy online weights so training can continue correctly next step.
+        if self.use_ema:
+            self.ema_model.restore(self.model.parameters())
+        # ------------------------------------------
+
         return total_loss / num_batches if num_batches > 0 else float('inf')
 
     def save_checkpoint(self, counter_value, is_best=False, save_path=None):
             """
-            Saves a checkpoint. Always saves a 'latest_checkpoint.pth'.
-            If is_best, also saves 'best_checkpoint.pth'.
-            If save_path is provided, also saves to that specific path.
+            Saves a checkpoint.
             """
             checkpoint = {
                 'counter': counter_value,
@@ -164,6 +198,11 @@ class BaseTrainer(ABC):
             if self.scheduler is not None:
                 checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
 
+            # --- EMA CHANGE: Save EMA State ---
+            if self.use_ema:
+                checkpoint['ema_state_dict'] = self.ema_model.state_dict()
+            # ----------------------------------
+
             # Always save the latest checkpoint
             latest_path = self.output_dir / 'latest_checkpoint.pth'
             torch.save(checkpoint, latest_path)
@@ -172,9 +211,9 @@ class BaseTrainer(ABC):
             if is_best:
                 best_path = self.output_dir / 'best_checkpoint.pth'
                 torch.save(checkpoint, best_path)
-                log.info(f"New best model saved with validation loss: {self.best_val_loss:.6f}")
+                # log.info(f"New best model saved with validation loss: {self.best_val_loss:.6f}")
 
-            # Save to a custom path if one was provided (for periodic checkpoints)
+            # Save to a custom path if one was provided
             if save_path:
                 torch.save(checkpoint, save_path)
     

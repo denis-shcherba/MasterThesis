@@ -13,8 +13,8 @@ class DepthImageEncoder(nn.Module):
         super(DepthImageEncoder, self).__init__()
         self.feature_dim = feature_dim
 
-        # Start with a ResNet18 (or use resnet34, etc.)
-        base_model = models.resnet18(pretrained=pretrained)
+        weights = 'IMAGENET1K_V1' if pretrained else None
+        base_model = models.resnet18(weights=weights)
 
         # Modify first conv layer to accept 1 channel (depth image)
         self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)

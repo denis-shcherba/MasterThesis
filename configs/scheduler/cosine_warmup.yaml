@@ -1,5 +1,5 @@
 use: true
 type: cosine_warmup
-total_steps: 25000       # required
+total_steps: 50000       # required
 warmup_ratio: 0.02       # fraction of steps for warmup
 num_cycles: 0.5          # default, can adjust for more cycles

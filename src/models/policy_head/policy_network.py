@@ -193,6 +193,7 @@ class MultiModalPolicy(nn.Module):
                  # for Diffusion
                  num_diffusion_iters: int = 10,
                  down_dims: list = [64, 128, 256],
+                 use_pretrained_encoder: bool = False,
                  ):
         super(MultiModalPolicy, self).__init__()
         
@@ -212,7 +213,12 @@ class MultiModalPolicy(nn.Module):
         # Observation encoder
         if self.observation_mode == 'depth':
             if self.encoder_type == 'resnet':
-                self.obs_encoder = DepthImageEncoder(feature_dim=feature_dim)
+                if self.encoder_type == 'resnet':
+                    print(use_pretrained_encoder)
+                    self.obs_encoder = DepthImageEncoder(
+                        feature_dim=feature_dim, 
+                        pretrained=use_pretrained_encoder 
+                    )
         elif self.observation_mode == 'dino_cls':
             self.obs_encoder = FeatureAdapter(feature_dim=feature_dim)
         elif self.observation_mode == 'dino_patches':
@@ -625,6 +631,8 @@ def create_model(model_cfg):
         # for diffusion
         num_diffusion_iters=model_cfg.get('num_diffusion_iters', 10),
         down_dims=model_cfg.get('down_dims', [64, 128, 256]),
+        # whether to use pretrained encoder
+        use_pretrained_encoder=model_cfg.get('use_pretrained_encoder', False),
         
     )
     return model

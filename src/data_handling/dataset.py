@@ -9,7 +9,8 @@ from data_handling.waypoint_dataset import create_wp_dataloaders
 
 class ManipulationDataset(Dataset):
     """
-    Streaming HDF5 dataset for imitation learning.
+    Streaming HDF5 dataset for imitation learning with Augmentation support.
+    Supports optional observation caching for memory management.
     """
     def __init__(
         self,
@@ -31,7 +32,8 @@ class ManipulationDataset(Dataset):
         observation_mode: str = 'depth',
         depth_normalization_method: str = 'minmax',
         action_normalization_method: str = 'minmax',
-        normalize_action_indices: Optional[List[int]] = None
+        normalize_action_indices: Optional[List[int]] = None,
+        cache_observations: bool = True,  # NEW: Control observation caching
     ):
         self.h5_file_path = h5_file_path
         self.is_regression = is_regression
@@ -47,49 +49,46 @@ class ManipulationDataset(Dataset):
         self.depth_normalization_method = depth_normalization_method
         self.action_normalization_method = action_normalization_method
         self.normalize_action_indices = normalize_action_indices
+        self.cache_observations = cache_observations  # NEW
 
         self.logger = logging.getLogger(__name__)
         self.rng = np.random.default_rng(random_seed)
 
+        # --- Observation Mode Setup ---
         if self.observation_mode == 'depth':
             self.obs_key = 'depth'
-        
         elif self.observation_mode == 'points':
             self.normalize_depth = False
             self.obs_key = 'points'
-
         elif self.observation_mode == 'dino_cls':
             self.obs_key = 'cls_features'
             self.normalize_depth = False
-            print("INFO: Using pre-extracted DINO CLS features. "
-                  "Depth normalization disabled.")
-
         elif self.observation_mode == 'dino_patches':
-            # (T, num_patches, dim) or (T, H_p, W_p, dim)
             self.obs_key = 'patch_features'
             self.normalize_depth = False
-            print("INFO: Using pre-extracted DINO PATCH features "
-                  "(no depth normalization).")
-            
         elif self.observation_mode == 'sam_points':
-            # (T, num_patches, dim) or (T, H_p, W_p, dim)
             self.obs_key = 'points'
             self.normalize_depth = False
-            print("INFO: Using pre-extracted DINO PATCH features "
-                  "(no depth normalization).")
-
         else:
             raise ValueError(f"Unknown observation_mode: {self.observation_mode}")
 
         self.depth_dropout_prob = depth_dropout_prob
         self.depth_noise_scale = depth_noise_scale
+        
         self.demo_meta: List[Dict] = []
         self.valid_indices: List[Tuple[int, int]] = []
+        
+        # 1. Index all available keys and parse augmentation info
         self._index_demonstrations()
+        
+        # 2. Create Train/Val split (Handles augmentation logic)
         if self.split in ['train', 'val']:
             self._create_split(train_split)
+            
+        # 3. Subsample if requested (on top of the split)
         self._subsample_if_needed(subsample_demos)
 
+        # 4. Compute stats (only on the specific split data)
         with h5py.File(self.h5_file_path, 'r') as f:
             if self.normalize_actions:
                 self.action_stats = self._compute_action_normalization_stats(f)
@@ -101,11 +100,125 @@ class ManipulationDataset(Dataset):
             else:
                 self.depth_stats = None
 
+        # 5. Preload data into RAM
+        self.h5_file = None  # Will be opened lazily per worker
         if self.observation_mode in ['dino_cls', 'dino_patches', 'depth', 'sam_points', 'points']:
-            print(f"Starting preload for {self.split} split...")
-            self._preload_all_data()  # Preload everything
-            print(f"Preload complete for {self.split} split")
+            if self.cache_observations:
+                print(f"Starting preload for {self.split} split (observations in RAM)...")
+                self._preload_all_data()
+                print(f"Preload complete for {self.split} split")
+            else:
+                print(f"Starting preload for {self.split} split (observations from disk)...")
+                self._preload_actions_only()
+                print(f"Preload complete for {self.split} split")
+
+    def _index_demonstrations(self):
+        """
+        Scans HDF5, checks shapes, and populates self.demo_meta.
+        Now also parses 'demo_0_aug_1' to identify base_id and is_augmented.
+        """
+        with h5py.File(self.h5_file_path, 'r') as f:
+            # Sort ensures demo_0 comes before demo_0_aug_1
+            all_keys = sorted([k for k in f.keys() if k.startswith('demo_')])
             
+            for demo_idx, demo_key in enumerate(all_keys):
+                # --- Parse Augmentation Info ---
+                parts = demo_key.split('_') # e.g. ['demo', '0'] or ['demo', '0', 'aug', '1']
+                try:
+                    base_id = int(parts[1])
+                except ValueError:
+                    self.logger.warning(f"Skipping {demo_key}: Could not parse ID.")
+                    continue
+                
+                is_augmented = len(parts) > 2 and 'aug' in parts
+
+                path_shape = f[f'{demo_key}/path'].shape
+                obs_data_key = f'{demo_key}/{self.obs_key}'
+                
+                if obs_data_key not in f:
+                    continue
+                
+                obs_shape = f[obs_data_key].shape
+                
+                if len(path_shape) != 2 or (obs_shape[0] != path_shape[0] and self.obs_key != 'points'):
+                    continue
+
+                obs_sample_shape = obs_shape[1:]
+                num_timesteps = path_shape[0]
+                
+                meta = {
+                    'demo_id': demo_idx,
+                    'demo_key': demo_key,
+                    'base_id': base_id,
+                    'is_augmented': is_augmented,
+                    'num_timesteps': num_timesteps, 
+                    'obs_sample_shape': obs_sample_shape
+                }
+                self.demo_meta.append(meta)
+                
+                # Pre-calculate valid start indices for sliding windows
+                if num_timesteps >= self.future_sequence_length:
+                    for t in range(num_timesteps - self.future_sequence_length + 1):
+                        self.valid_indices.append((demo_idx, t))
+
+        if not self.demo_meta:
+            raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
+
+    def _create_split(self, train_split: float):
+        """
+        Splits data by BASE_ID.
+        Train: Includes Base + Augmentations.
+        Val: Includes Base ONLY (discards augmentations).
+        """
+        # 1. Identify all unique base IDs
+        all_base_ids = sorted(list(set(m['base_id'] for m in self.demo_meta)))
+        num_base = len(all_base_ids)
+        
+        # 2. Shuffle base IDs to create random split
+        indices = np.arange(num_base)
+        self.rng.shuffle(indices)
+        
+        split_idx = int(num_base * train_split)
+        
+        train_base_ids = set(all_base_ids[i] for i in indices[:split_idx])
+        val_base_ids = set(all_base_ids[i] for i in indices[split_idx:])
+        
+        target_ids = train_base_ids if self.split == 'train' else val_base_ids
+        
+        # 3. Filter demo_meta
+        new_demo_meta = []
+        old_indices_kept = set()
+        
+        for meta in self.demo_meta:
+            bid = meta['base_id']
+            is_aug = meta['is_augmented']
+            
+            if bid in target_ids:
+                if self.split == 'train':
+                    new_demo_meta.append(meta)
+                    old_indices_kept.add(meta['demo_id'])
+                else:
+                    if not is_aug:
+                        new_demo_meta.append(meta)
+                        old_indices_kept.add(meta['demo_id'])
+        
+        self.demo_meta = new_demo_meta
+        
+        # 4. Remap valid_indices
+        old_to_new_id_map = {old_meta['demo_id']: new_id for new_id, old_meta in enumerate(self.demo_meta)}
+        
+        for meta in self.demo_meta:
+            meta['demo_id'] = old_to_new_id_map[meta['demo_id']]
+            
+        self.valid_indices = [
+            (old_to_new_id_map[old_idx], t) 
+            for old_idx, t in self.valid_indices 
+            if old_idx in old_indices_kept
+        ]
+        
+        print(f"[{self.split.upper()}] Loaded {len(self.demo_meta)} trajectories "
+              f"from {len(target_ids)} unique expert demos.")
+    
     def _preload_all_data(self):
         """Preload ALL data into RAM - called once during init"""
         self.feature_cache = {}
@@ -151,61 +264,42 @@ class ManipulationDataset(Dataset):
             self.h5_file.close()
             self.h5_file = None
 
-    def _index_demonstrations(self):
+    def _preload_actions_only(self):
+        """Preload actions and metadata only - observations loaded on-demand from disk"""
+        self.feature_cache = None  # Signal that observations are not cached
+        self.action_cache = {}
+        self.book_params_cache = {}
+        self.waypoint_cache = {}
+        self.initial_obs_cache = {}
+        
+        total_size = 0
+        
         with h5py.File(self.h5_file_path, 'r') as f:
-            demo_keys = sorted([k for k in f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
-            
-            for demo_idx, demo_key in enumerate(demo_keys):
-                path_shape = f[f'{demo_key}/path'].shape
+            for meta in self.demo_meta:
+                demo_key = meta['demo_key']
                 
-                obs_data_key = f'{demo_key}/{self.obs_key}'
-                if obs_data_key not in f:
-                    self.logger.warning(f"Skipping demo {demo_key}: Observation key '{self.obs_key}' not found.")
-                    continue
+                # Preload actions (always small)
+                self.action_cache[demo_key] = f[f"{demo_key}/path"][...].astype(np.float32)
+                total_size += self.action_cache[demo_key].nbytes
                 
-                obs_shape = f[obs_data_key].shape
+                # Preload metadata (always small)
+                if 'book_params' in f[demo_key]:
+                    self.book_params_cache[demo_key] = f[f"{demo_key}/book_params"][...].astype(np.float32)
+                else:
+                    self.book_params_cache[demo_key] = np.array([0.0], dtype=np.float32)
                 
-                # Check 1: path data is 2D and action_dim matches
-                # Check 2: observation (time) steps match action (time) steps
-                if len(path_shape) != 2 or (obs_shape[0] != path_shape[0] and self.obs_key != 'points'):
-                    self.logger.warning(f"Skipping demo {demo_key}: Shape mismatch. Path: {path_shape}, Obs: {obs_shape}")
-                    continue
+                if 'waypoints' in f[demo_key]:
+                    self.waypoint_cache[demo_key] = f[f"{demo_key}/waypoints"][...].astype(np.float32)
+                else:
+                    self.waypoint_cache[demo_key] = np.array([0.0, 0.0, 0.0], dtype=np.float32)
                 
-                # Save the full observation shape (e.g., (768,) for CLS features)
-                obs_sample_shape = obs_shape[1:] 
-                
-                num_timesteps = path_shape[0]
-                meta = {'demo_id': demo_idx, 'demo_key': demo_key, 'num_timesteps': num_timesteps, 'obs_sample_shape': obs_sample_shape} # <-- Store shape
-                self.demo_meta.append(meta)
-                
-                if num_timesteps >= self.future_sequence_length:
-                    for t in range(num_timesteps - self.future_sequence_length + 1):
-                        self.valid_indices.append((demo_idx, t))
-                
-        if not self.demo_meta:
-            raise ValueError(f"No valid demonstrations found in {self.h5_file_path}")
+                # Preload initial observation (single frame, small)
+                if self.observation_mode != 'sam_points':
+                    self.initial_obs_cache[demo_key] = f[f"{demo_key}/{self.obs_key}"][0].astype(np.float32)
+                else:
+                    self.initial_obs_cache[demo_key] = f[f"{demo_key}/{self.obs_key}"][...].astype(np.float32)
 
-    def _create_split(self, train_split: float):
-        """Filter demos for train/val split."""
-        num_demos = len(self.demo_meta)
-        indices = np.arange(num_demos)
-        self.rng.shuffle(indices)
-        split_idx = int(num_demos * train_split)
-        
-        if self.split == 'train':
-            selected_demo_indices = set(indices[:split_idx])
-        else:
-            selected_demo_indices = set(indices[split_idx:])
-        
-        self.demo_meta = [meta for i, meta in enumerate(self.demo_meta) if i in selected_demo_indices]
-        self.valid_indices = [(demo_idx, t) for demo_idx, t in self.valid_indices if demo_idx in selected_demo_indices]
-
-        old_to_new_id_map = {old_meta['demo_id']: new_id for new_id, old_meta in enumerate(self.demo_meta)}
-        
-        for meta in self.demo_meta:
-            meta['demo_id'] = old_to_new_id_map[meta['demo_id']]
-            
-        self.valid_indices = [(old_to_new_id_map[demo_idx], t) for demo_idx, t in self.valid_indices]
+        print(f"✓ Preloaded actions/metadata: {total_size/1e9:.2f} GB in RAM (observations on disk)")
 
     def _subsample_if_needed(self, subsample_demos: Optional[int]):
         if subsample_demos is not None and subsample_demos > 0:
@@ -215,30 +309,21 @@ class ManipulationDataset(Dataset):
                 self.valid_indices = [(demo_idx, t) for demo_idx, t in self.valid_indices if demo_idx in kept_demo_ids]
 
     def _compute_action_normalization_stats(self, f):
-        # Determine which indices to compute stats for
         if self.normalize_action_indices is not None:
             indices_to_normalize = self.normalize_action_indices
         else:
             indices_to_normalize = list(range(self.action_dim))
         
-        # Initialize arrays for computing stats only on normalized indices
         min_vals = np.full(self.action_dim, np.inf, dtype=np.float64)
         max_vals = np.full(self.action_dim, -np.inf, dtype=np.float64)
         sum_vals = np.zeros(self.action_dim, dtype=np.float64)
         sum_sq_vals = np.zeros(self.action_dim, dtype=np.float64)
         count = 0
         
-        demo_ids_in_split = {meta['demo_id'] for meta in self.demo_meta}
-        original_demo_meta = []
-        with h5py.File(self.h5_file_path, 'r') as temp_f:
-            all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
-            original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
-        
-        for meta in original_demo_meta:
+        for meta in self.demo_meta:
             arr = f[f"{meta['demo_key']}/path"][...]
             count += arr.shape[0]
             
-            # Only compute stats for specified indices
             for idx in indices_to_normalize:
                 min_vals[idx] = min(min_vals[idx], arr[:, idx].min())
                 max_vals[idx] = max(max_vals[idx], arr[:, idx].max())
@@ -247,11 +332,9 @@ class ManipulationDataset(Dataset):
 
         if self.action_normalization_method == 'minmax':
             range_vals = np.ones(self.action_dim, dtype=np.float64)
-            # Compute range only for normalized indices
             for idx in indices_to_normalize:
                 range_vals[idx] = max_vals[idx] - min_vals[idx] if max_vals[idx] - min_vals[idx] != 0 else 1.0
             
-            # For unnormalized indices, set neutral values: min=0, range=1
             for idx in range(self.action_dim):
                 if idx not in indices_to_normalize:
                     min_vals[idx] = 0.0
@@ -267,13 +350,10 @@ class ManipulationDataset(Dataset):
             mean = np.zeros(self.action_dim, dtype=np.float64)
             std = np.ones(self.action_dim, dtype=np.float64)
             
-            # Compute mean and std only for normalized indices
             for idx in indices_to_normalize:
                 mean[idx] = sum_vals[idx] / count
                 var = (sum_sq_vals[idx] / count) - mean[idx] ** 2
                 std[idx] = np.sqrt(var) if var > 1e-8 else 1.0
-            
-            # Unnormalized indices already have mean=0, std=1
             
             return {
                 'method': self.action_normalization_method,
@@ -286,12 +366,7 @@ class ManipulationDataset(Dataset):
         min_val, max_val = np.inf, -np.inf
         sum_val, sum_sq_val, count = 0.0, 0.0, 0
 
-        demo_ids_in_split = {meta['demo_id'] for meta in self.demo_meta}
-        original_demo_meta = []
-        with h5py.File(self.h5_file_path, 'r') as temp_f:
-            all_demo_keys = sorted([k for k in temp_f.keys() if k.startswith('demo_')], key=lambda x: int(x.split('_')[1]))
-            original_demo_meta = [{'demo_key': key} for idx, key in enumerate(all_demo_keys) if idx in demo_ids_in_split]
-        for meta in original_demo_meta:
+        for meta in self.demo_meta:
             arr = f[f"{meta['demo_key']}/depth"][...]
             flat = arr.flatten()
             count += flat.size
@@ -308,18 +383,24 @@ class ManipulationDataset(Dataset):
             var = (sum_sq_val / count) - mean ** 2
             std = np.sqrt(var) if var > 1e-8 else 1
             return {'method': self.depth_normalization_method, 'mean': float(mean), 'std': float(std)}
-            
+
     def __len__(self):
         return len(self.valid_indices)
 
+    def _get_h5_file(self):
+        """Lazily open HDF5 file per worker process"""
+        if self.h5_file is None:
+            self.h5_file = h5py.File(self.h5_file_path, 'r')
+        return self.h5_file
+
     def __getitem__(self, idx):
-        """Now fully in-memory - no HDF5 access"""
         demo_idx, future_start_t = self.valid_indices[idx]
         meta = self.demo_meta[demo_idx]
         demo_key = meta['demo_key']
         
-        # === ALL FROM CACHE - NO DISK I/O ===
         future_end_t = future_start_t + self.future_sequence_length
+        
+        # Actions always from cache
         future_actions_sequence = self.action_cache[demo_key][future_start_t:future_end_t][:, :self.action_dim].copy()
 
         history_end_t = future_start_t + 1
@@ -332,14 +413,19 @@ class ManipulationDataset(Dataset):
         
         real_data_start_t = max(0, history_start_t)
         
-        # Load from CACHE (not HDF5!)
-        real_obs = self.feature_cache[demo_key][real_data_start_t:history_end_t]
+        # Get observations - from cache or disk
+        if self.cache_observations:
+            real_obs = self.feature_cache[demo_key][real_data_start_t:history_end_t]
+        else:
+            h5_file = self._get_h5_file()
+            real_obs = h5_file[f"{demo_key}/{self.obs_key}"][real_data_start_t:history_end_t].astype(np.float32)
+        
+        # Actions always from cache
         real_actions = self.action_cache[demo_key][real_data_start_t:history_end_t][:, :self.action_dim]
         
         obs_sequence[num_to_pad:] = real_obs
         past_actions_sequence[num_to_pad:] = real_actions
 
-        # Normalization...
         if self.normalize_actions:
             past_actions_sequence[num_to_pad:] = self._normalize_actions(past_actions_sequence[num_to_pad:])
             future_actions_sequence = self._normalize_actions(future_actions_sequence)
@@ -348,7 +434,6 @@ class ManipulationDataset(Dataset):
             normalized_obs = np.array([self._normalize_depth(img) for img in obs_sequence[num_to_pad:]])
             obs_sequence[num_to_pad:] = normalized_obs
 
-        # Load metadata from CACHE (not HDF5!)
         book_params = self.book_params_cache[demo_key]
         waypoint = self.waypoint_cache[demo_key]
         initial_obs = self.initial_obs_cache[demo_key]
@@ -363,23 +448,9 @@ class ManipulationDataset(Dataset):
             'initial_observation': torch.from_numpy(initial_obs).float()
         }
     
-    def _load_obs(self, demo_key, start=None, end=None):
-        if hasattr(self, 'feature_cache') and demo_key in self.feature_cache:
-            if start is None:
-                return self.feature_cache[demo_key]
-            return self.feature_cache[demo_key][start:end]
-        
-        # Fallback to HDF5
-        obs_key_path = f"{demo_key}/{self.obs_key}"
-        if start is None:
-            return self.h5_file[obs_key_path][...].astype(np.float32)
-        return self.h5_file[obs_key_path][start:end].astype(np.float32)
-
     def _normalize_actions(self, actions):
         stats = self.action_stats
         normalized_actions = actions.copy()
-        
-        # Get indices to normalize
         indices_to_normalize = stats.get('normalize_indices', list(range(self.action_dim)))
         
         if stats['method'] == 'minmax':
@@ -388,7 +459,6 @@ class ManipulationDataset(Dataset):
         else:  # zscore
             for idx in indices_to_normalize:
                 normalized_actions[..., idx] = (actions[..., idx] - stats['mean'][idx]) / stats['std'][idx]
-        
         return normalized_actions
 
     def _normalize_depth(self, depth):
@@ -397,7 +467,14 @@ class ManipulationDataset(Dataset):
             return (depth - stats['min']) / stats['range']
         else:
             return (depth - stats['mean']) / stats['std']
-
+    
+    def __del__(self):
+        """Clean up HDF5 file handle if it's open"""
+        if hasattr(self, 'h5_file') and self.h5_file is not None:
+            try:
+                self.h5_file.close()
+            except:
+                pass
 
 def create_dataloaders(
     h5_file_path: str,
@@ -420,8 +497,9 @@ def create_dataloaders(
     depth_normalization_method = 'minmax',
     action_normalization_method = 'zscore',
     normalize_action_indices: Optional[List[int]] = None
-
 ) -> Tuple[DataLoader, DataLoader]:
+    
+    # 1. Train Dataset (Include Augmentations)
     train_dataset = ManipulationDataset(
         h5_file_path=h5_file_path,
         sequence_length=sequence_length,
@@ -432,7 +510,7 @@ def create_dataloaders(
         depth_noise_scale=depth_noise_scale,
         subsample_demos=subsample_demos,
         train_split=train_split,
-        split='train',
+        split='train',          # This triggers "Keep Base + Augs" logic
         random_seed=random_seed,
         is_regression=is_regression,
         is_waypointPlusTimings=is_waypointPlusTimings,
@@ -444,15 +522,16 @@ def create_dataloaders(
         normalize_action_indices=normalize_action_indices
     )
 
+    # 2. Validation Dataset (Clean Data Only)
     val_dataset = ManipulationDataset(
         h5_file_path=h5_file_path,
         sequence_length=sequence_length,
         future_sequence_length=future_sequence_length,
         action_dim=action_dim,
         num_points=num_points,
-        subsample_demos=None,
+        subsample_demos=None,    # Usually don't subsample Val
         train_split=train_split,
-        split='val',
+        split='val',            # This triggers "Keep ONLY Clean" logic
         random_seed=random_seed,
         is_regression=is_regression,
         is_waypointPlusTimings=is_waypointPlusTimings,
@@ -463,6 +542,12 @@ def create_dataloaders(
         action_normalization_method=action_normalization_method,
         normalize_action_indices=normalize_action_indices
     )
+    
+    # Optional: You might want to pass train_dataset.action_stats to val_dataset 
+    # if you want val data normalized by train statistics. 
+    # Currently, val_dataset computes its own stats on the clean val data.
+    # This is often acceptable in early research but for strict evaluation:
+    # val_dataset.action_stats = train_dataset.action_stats
 
     train_loader = DataLoader(
         train_dataset,
@@ -482,7 +567,6 @@ def create_dataloaders(
         drop_last=False
     )
     return train_loader, val_loader
-
 
 def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
     data_cfg = cfg.data
