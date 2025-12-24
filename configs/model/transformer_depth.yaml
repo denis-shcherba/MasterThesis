@@ -1,13 +1,13 @@
 # Base policy configuration
 type: multimodal         # Options: pointcloud, multimodal
 
-action_dim: 9            # Dimension of action space 
+action_dim: 4            # Dimension of action space 
 dropout_rate: 0.2        # Dropout rate for regularization
 output_activation: null  
 policy_head_type: transformer
 
 # Multimodal policy specific settings
-state_dim: 9           # Same as action_dim for now (maybe change/omit)
+state_dim: 4           # Same as action_dim for now (maybe change/omit)
 fusion_method: concat  # Method to fuse modalities (concat, add, concat_project) 
 
 time_encoding: positional
@@ -20,6 +20,6 @@ use_pretrained_encoder: false  # whether to use a pretrained encoder (on imagene
 # Transformer settings
 context_length: ${context_length} 
 prediction_length: ${prediction_length}
-embed_dim: 256
-num_layers: 4
+embed_dim: 128
+num_layers: 2
 num_heads: 4

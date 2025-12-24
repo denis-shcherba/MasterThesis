@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from models.perception.pointnet import PointNet
 from models.perception.dinoencoder import FeatureAdapter, FeatureAdapterSpatial
-from models.perception.depthimageencoder import DepthImageEncoder
+from models.perception.imageencoder import FlexibleImageEncoder
 from models.policy_head.policy_head import MLPHead, ResidualMLPHead, TransformerHead, DiffusionHead
 import math
 import inspect
@@ -23,6 +23,32 @@ def prepare_depth_input(observation: torch.Tensor) -> Tuple[torch.Tensor, int, i
         obs_input = observation.unsqueeze(1)  # (B, 1, H, W)
     else:
         raise ValueError(f"Unexpected depth observation shape: {observation.shape}")
+    return obs_input, batch_size, seq_len
+
+def prepare_rgb_input(observation: torch.Tensor) -> Tuple[torch.Tensor, int, int]:
+    """
+    Ensures RGB input is in shape (B*S, 3, H, W) for the ResNet encoder.
+    
+    Args:
+        observation: Tensor of shape (B, S, 3, H, W) usually.
+    Returns: 
+        obs_input: Flattened batch tensor (B*S, 3, H, W)
+        batch_size: int
+        seq_len: int
+    """
+    if observation.dim() == 5:  # Expected: (B, S, C, H, W)
+        batch_size, seq_len, C, H, W = observation.shape
+        # Collapse Batch and Sequence dims
+        obs_input = observation.view(batch_size * seq_len, C, H, W)
+        
+    elif observation.dim() == 4:  # Edge case: (B, C, H, W) - implies seq_len=1 was squeezed
+        batch_size, C, H, W = observation.shape
+        seq_len = 1
+        obs_input = observation  # Already correct shape
+        
+    else:
+        raise ValueError(f"Unexpected RGB observation shape: {observation.shape}. Expected 4D or 5D tensor.")
+        
     return obs_input, batch_size, seq_len
 
 def prepare_point_input(observation: torch.Tensor) -> Tuple[torch.Tensor, int, int]:
@@ -98,7 +124,8 @@ class WayPlusTimingsPolicy(nn.Module):
         self.waypoint_dim = waypoint_dim
 
         # Depth encoder with regularization
-        self.obs_encoder = DepthImageEncoder(
+        self.obs_encoder = FlexibleImageEncoder(
+            input_channels=1,
             feature_dim=feature_dim, 
             freeze_layers=False,      # Freeze layer3 and layer4
         )
@@ -215,7 +242,8 @@ class MultiModalPolicy(nn.Module):
             if self.encoder_type == 'resnet':
                 if self.encoder_type == 'resnet':
                     print(use_pretrained_encoder)
-                    self.obs_encoder = DepthImageEncoder(
+                    self.obs_encoder = FlexibleImageEncoder(
+                        input_channels=1,
                         feature_dim=feature_dim, 
                         pretrained=use_pretrained_encoder 
                     )
@@ -225,7 +253,12 @@ class MultiModalPolicy(nn.Module):
             self.obs_encoder = FeatureAdapterSpatial(feature_dim=feature_dim)
         elif self.observation_mode == 'points':
             self.obs_encoder = PointNet(num_points=1024, feature_dim=feature_dim)
-
+        elif self.observation_mode == 'rgb':
+            self.obs_encoder = FlexibleImageEncoder(
+                input_channels=3,
+                feature_dim=feature_dim, 
+                pretrained=use_pretrained_encoder 
+            )
         else:
             raise ValueError(f"Unsupported observation_mode: {self.observation_mode}")
 
@@ -337,6 +370,12 @@ class MultiModalPolicy(nn.Module):
             obs_input, batch_size, seq_len = prepare_depth_input(observations)
             obs_features = self.obs_encoder(obs_input)  # (B*S, D)
 
+            if timestep is not None:
+                timestep = timestep.view(batch_size * seq_len)
+        elif self.observation_mode == 'rgb':
+            # Reshape (B, S, 3, H, W) -> (B*S, 3, H, W)
+            obs_input, batch_size, seq_len = prepare_rgb_input(observations)
+            obs_features = self.obs_encoder(obs_input)  # Output: (B*S, feature_dim)
             if timestep is not None:
                 timestep = timestep.view(batch_size * seq_len)
         elif self.observation_mode == 'dino_cls':
@@ -503,7 +542,7 @@ class DepthToKeypoint(nn.Module):
         self.output_dim = 3 # Fixed output for end position (x, y, z)
         
         # Pass the dropout_prob to the adapter
-        self.adapter = DepthImageEncoder(feature_dim=feature_dim, dropout_rate=dropout_prob) 
+        self.adapter = FlexibleImageEncoder(input_channels=1, feature_dim=feature_dim, dropout_rate=dropout_prob) 
         self.regressor_head = nn.Linear(feature_dim, self.output_dim)
 
     def forward(self, dino_cls: torch.Tensor) -> torch.Tensor:

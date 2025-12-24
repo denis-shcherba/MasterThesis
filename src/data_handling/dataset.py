@@ -21,7 +21,7 @@ class ManipulationDataset(Dataset):
         future_sequence_length: int = None,
         action_dim: int = 9,
         num_points: int = 1000,
-        normalize_depth: bool = True,
+        normalize_obs: bool = True,
         normalize_actions: bool = True,
         depth_dropout_prob: float = 0.05,
         depth_noise_scale: float = 0.0001,
@@ -33,7 +33,9 @@ class ManipulationDataset(Dataset):
         depth_normalization_method: str = 'minmax',
         action_normalization_method: str = 'minmax',
         normalize_action_indices: Optional[List[int]] = None,
-        cache_observations: bool = True,  # NEW: Control observation caching
+        cache_observations: bool = False,
+        # NEW ARGUMENT: Allows passing stats from main process to workers
+        precomputed_stats: Optional[Dict] = None, 
     ):
         self.h5_file_path = h5_file_path
         self.is_regression = is_regression
@@ -42,14 +44,14 @@ class ManipulationDataset(Dataset):
         self.future_sequence_length = future_sequence_length if future_sequence_length is not None else sequence_length
         self.action_dim = action_dim
         self.num_points = num_points
-        self.normalize_depth = normalize_depth
+        self.normalize_obs = normalize_obs
         self.normalize_actions = normalize_actions
         self.split = split
         self.observation_mode = observation_mode
         self.depth_normalization_method = depth_normalization_method
         self.action_normalization_method = action_normalization_method
         self.normalize_action_indices = normalize_action_indices
-        self.cache_observations = cache_observations  # NEW
+        self.cache_observations = cache_observations
 
         self.logger = logging.getLogger(__name__)
         self.rng = np.random.default_rng(random_seed)
@@ -57,18 +59,20 @@ class ManipulationDataset(Dataset):
         # --- Observation Mode Setup ---
         if self.observation_mode == 'depth':
             self.obs_key = 'depth'
+        elif self.observation_mode == 'rgb':
+            self.obs_key = 'rgb' 
         elif self.observation_mode == 'points':
-            self.normalize_depth = False
+            self.normalize_obs = False
             self.obs_key = 'points'
         elif self.observation_mode == 'dino_cls':
             self.obs_key = 'cls_features'
-            self.normalize_depth = False
+            self.normalize_obs = False
         elif self.observation_mode == 'dino_patches':
             self.obs_key = 'patch_features'
-            self.normalize_depth = False
+            self.normalize_obs = False
         elif self.observation_mode == 'sam_points':
             self.obs_key = 'points'
-            self.normalize_depth = False
+            self.normalize_obs = False
         else:
             raise ValueError(f"Unknown observation_mode: {self.observation_mode}")
 
@@ -88,30 +92,36 @@ class ManipulationDataset(Dataset):
         # 3. Subsample if requested (on top of the split)
         self._subsample_if_needed(subsample_demos)
 
-        # 4. Compute stats (only on the specific split data)
-        with h5py.File(self.h5_file_path, 'r') as f:
-            if self.normalize_actions:
-                self.action_stats = self._compute_action_normalization_stats(f)
-            else:
-                self.action_stats = None
+        # 4. Compute (or Load) Stats
+        self.action_stats = None
+        self.obs_stats = None
 
-            if self.normalize_depth and self.observation_mode == 'depth':
-                self.depth_stats = self._compute_depth_normalization_stats(f)
-            else:
-                self.depth_stats = None
+        if precomputed_stats is not None:
+            # WORKER PATH: Use the stats provided by the main process (Fast!)
+            self.action_stats = precomputed_stats.get('action_stats')
+            self.obs_stats = precomputed_stats.get('obs_stats')
+        else:
+            # MAIN PROCESS PATH: Compute stats from disk (Slow, done once)
+            # Only open file if we actually need to compute something
+            if self.normalize_actions or (self.normalize_obs and self.observation_mode == 'depth'):
+                with h5py.File(self.h5_file_path, 'r') as f:
+                    if self.normalize_actions:
+                        self.action_stats = self._compute_action_normalization_stats(f)
+                    
+                    if self.normalize_obs and self.observation_mode == 'depth':
+                        self.obs_stats = self._compute_depth_normalization_stats(f)
 
         # 5. Preload data into RAM
         self.h5_file = None  # Will be opened lazily per worker
-        if self.observation_mode in ['dino_cls', 'dino_patches', 'depth', 'sam_points', 'points']:
+        if self.observation_mode in ['dino_cls', 'dino_patches', 'depth', 'sam_points', 'points', 'rgb']:
             if self.cache_observations:
-                print(f"Starting preload for {self.split} split (observations in RAM)...")
+                print(f"[{self.split}] Starting preload (observations in RAM)...")
                 self._preload_all_data()
-                print(f"Preload complete for {self.split} split")
+                print(f"[{self.split}] Preload complete.")
             else:
-                print(f"Starting preload for {self.split} split (observations from disk)...")
+                print(f"[{self.split}] Starting preload (observations from disk)...")
                 self._preload_actions_only()
-                print(f"Preload complete for {self.split} split")
-
+                print(f"[{self.split}] Preload complete.")
     def _index_demonstrations(self):
         """
         Scans HDF5, checks shapes, and populates self.demo_meta.
@@ -408,38 +418,83 @@ class ManipulationDataset(Dataset):
         num_to_pad = max(0, -history_start_t)
         
         obs_sample_shape = meta['obs_sample_shape']
-        obs_sequence = np.zeros((self.sequence_length, *obs_sample_shape), dtype=np.float32)
+        
+        # ---------------------------------------------------------
+        # OPTIMIZATION: USE UINT8 BUFFER ONLY FOR RGB
+        # ---------------------------------------------------------
+        if self.observation_mode == 'rgb':
+            dtype_to_use = np.uint8
+        else:
+            # Depth, Points, Features need float precision immediately
+            dtype_to_use = np.float32
+
+        # Initialize buffer with the chosen dtype
+        obs_sequence = np.zeros((self.sequence_length, *obs_sample_shape), dtype=dtype_to_use)
         past_actions_sequence = np.zeros((self.sequence_length, self.action_dim), dtype=np.float32)
         
         real_data_start_t = max(0, history_start_t)
         
         # Get observations - from cache or disk
         if self.cache_observations:
-            real_obs = self.feature_cache[demo_key][real_data_start_t:history_end_t]
+            # Slicing a cache works for both uint8 and float32
+            obs_sequence[num_to_pad:] = self.feature_cache[demo_key][real_data_start_t:history_end_t]
         else:
             h5_file = self._get_h5_file()
-            real_obs = h5_file[f"{demo_key}/{self.obs_key}"][real_data_start_t:history_end_t].astype(np.float32)
+            # HDF5 read: If dataset is uint8 and buffer is uint8, this is fast and low memory.
+            # If dataset is uint8 and buffer is float32 (Depth), this does an implicit cast (fine).
+            obs_sequence[num_to_pad:] = h5_file[f"{demo_key}/{self.obs_key}"][real_data_start_t:history_end_t]
         
         # Actions always from cache
         real_actions = self.action_cache[demo_key][real_data_start_t:history_end_t][:, :self.action_dim]
         
-        obs_sequence[num_to_pad:] = real_obs
         past_actions_sequence[num_to_pad:] = real_actions
 
+        # Normalize Actions
         if self.normalize_actions:
             past_actions_sequence[num_to_pad:] = self._normalize_actions(past_actions_sequence[num_to_pad:])
             future_actions_sequence = self._normalize_actions(future_actions_sequence)
         
-        if self.observation_mode == 'depth' and self.normalize_depth:
-            normalized_obs = np.array([self._normalize_depth(img) for img in obs_sequence[num_to_pad:]])
-            obs_sequence[num_to_pad:] = normalized_obs
-
+        # Fetch other metadata
         book_params = self.book_params_cache[demo_key]
         waypoint = self.waypoint_cache[demo_key]
-        initial_obs = self.initial_obs_cache[demo_key]
+        initial_obs = self.initial_obs_cache[demo_key] # This might be uint8 or float32 depending on mode
+
+        # --- VISUAL NORMALIZATION & PERMUTATION LOGIC ---
+        
+        # Define a variable for the final float output
+        final_obs_sequence = obs_sequence # Default alias
+
+        if self.observation_mode in ['depth', 'rgb'] and self.normalize_obs:
+            
+            # 1. Normalize and Cast to Float
+            # The list comprehension naturally outputs float arrays if _normalize_image returns floats
+            normalized_seq = np.array([self._normalize_image(img) for img in obs_sequence[num_to_pad:]], dtype=np.float32)
+            
+            # Since we might have changed dtype (uint8 -> float32), we can't shove it back into obs_sequence
+            # if obs_sequence was initialized as uint8. We need a new buffer or overwrite if compatible.
+            
+            if self.observation_mode == 'rgb':
+                # Create a new float buffer for the final output
+                final_obs_sequence = np.zeros((self.sequence_length, *obs_sample_shape), dtype=np.float32)
+                final_obs_sequence[num_to_pad:] = normalized_seq
+            else:
+                # Depth was already float32, so we can overwrite in place
+                obs_sequence[num_to_pad:] = normalized_seq
+                final_obs_sequence = obs_sequence
+
+            # 2. Normalize Initial Observation
+            initial_obs = self._normalize_image(initial_obs).astype(np.float32)
+
+            # 3. Handle RGB Transpose (HWC -> CHW)
+            if self.observation_mode == 'rgb':
+                # Permute ENTIRE sequence at once: (T, H, W, C) -> (T, C, H, W)
+                final_obs_sequence = np.transpose(final_obs_sequence, (0, 3, 1, 2))
+                
+                # Permute initial observation: (H, W, C) -> (C, H, W)
+                initial_obs = np.transpose(initial_obs, (2, 0, 1))
 
         return {
-            'observation_sequence': torch.from_numpy(obs_sequence).float(),
+            'observation_sequence': torch.from_numpy(final_obs_sequence).float(),
             'previous_actions_sequence': torch.from_numpy(past_actions_sequence).float(),
             'target_actions_sequence': torch.from_numpy(future_actions_sequence).float(),
             'demo_id': torch.tensor(meta['demo_id'], dtype=torch.long),
@@ -461,12 +516,34 @@ class ManipulationDataset(Dataset):
                 normalized_actions[..., idx] = (actions[..., idx] - stats['mean'][idx]) / stats['std'][idx]
         return normalized_actions
 
-    def _normalize_depth(self, depth):
-        stats = self.depth_stats
-        if stats['method'] == 'minmax':
-            return (depth - stats['min']) / stats['range']
-        else:
-            return (depth - stats['mean']) / stats['std']
+    def _normalize_image(self, img):
+            """
+            Handles generic image normalization.
+            img: np.ndarray (H, W) for depth or (H, W, C) for RGB
+            """
+            if self.observation_mode == 'rgb':
+                # CASE 1: RGB
+                # Standard: Scale 0-255 to 0-1
+                img = img / 255.0
+                
+                # Optional: If using Pretrained ResNet, typically apply ImageNet Mean/Std here
+                # mean = np.array([0.485, 0.456, 0.406])
+                # std = np.array([0.229, 0.224, 0.225])
+                # img = (img - mean) / std
+                
+                return img
+
+            elif self.observation_mode == 'depth':
+                # CASE 2: Depth (Uses pre-computed stats)
+                stats = self.obs_stats
+                if stats['method'] == 'minmax':
+                    # Clip to ensure we don't go out of bounds on validation data
+                    val = np.clip(img, stats['min'], stats['min'] + stats['range'])
+                    return (val - stats['min']) / stats['range']
+                else:
+                    return (img - stats['mean']) / stats['std']
+            
+            return img
     
     def __del__(self):
         """Clean up HDF5 file handle if it's open"""
@@ -492,7 +569,7 @@ def create_dataloaders(
     is_regression: bool = False,
     is_waypointPlusTimings: bool = False,
     observation_mode: str = 'points',
-    normalize_depth: bool = True,
+    normalize_obs: bool = True,
     normalize_actions: bool = True,
     depth_normalization_method = 'minmax',
     action_normalization_method = 'zscore',
@@ -500,6 +577,7 @@ def create_dataloaders(
 ) -> Tuple[DataLoader, DataLoader]:
     
     # 1. Train Dataset (Include Augmentations)
+    print("Initializing Train Dataset (Computing Stats)...")
     train_dataset = ManipulationDataset(
         h5_file_path=h5_file_path,
         sequence_length=sequence_length,
@@ -510,51 +588,55 @@ def create_dataloaders(
         depth_noise_scale=depth_noise_scale,
         subsample_demos=subsample_demos,
         train_split=train_split,
-        split='train',          # This triggers "Keep Base + Augs" logic
+        split='train',
         random_seed=random_seed,
         is_regression=is_regression,
         is_waypointPlusTimings=is_waypointPlusTimings,
         observation_mode=observation_mode,
-        normalize_depth=normalize_depth,
+        normalize_obs=normalize_obs,
         normalize_actions=normalize_actions,
         depth_normalization_method=depth_normalization_method,
         action_normalization_method=action_normalization_method,
         normalize_action_indices=normalize_action_indices
     )
 
-    # 2. Validation Dataset (Clean Data Only)
+    # 2. Extract Stats from Train to pass to Val
+    # This prevents Val from scanning the disk needlessly
+    shared_stats = {
+        'action_stats': train_dataset.action_stats,
+        'obs_stats': train_dataset.obs_stats
+    }
+
+    # 3. Validation Dataset (Clean Data Only)
+    print("Initializing Val Dataset (Using Train Stats)...")
     val_dataset = ManipulationDataset(
         h5_file_path=h5_file_path,
         sequence_length=sequence_length,
         future_sequence_length=future_sequence_length,
         action_dim=action_dim,
         num_points=num_points,
-        subsample_demos=None,    # Usually don't subsample Val
+        subsample_demos=None, 
         train_split=train_split,
-        split='val',            # This triggers "Keep ONLY Clean" logic
+        split='val', 
         random_seed=random_seed,
         is_regression=is_regression,
         is_waypointPlusTimings=is_waypointPlusTimings,
         observation_mode=observation_mode,
-        normalize_depth=normalize_depth,
+        normalize_obs=normalize_obs,
         normalize_actions=normalize_actions,
         depth_normalization_method=depth_normalization_method,
         action_normalization_method=action_normalization_method,
-        normalize_action_indices=normalize_action_indices
+        normalize_action_indices=normalize_action_indices,
+        # OPTIMIZATION: Pass the stats here!
+        precomputed_stats=shared_stats 
     )
     
-    # Optional: You might want to pass train_dataset.action_stats to val_dataset 
-    # if you want val data normalized by train statistics. 
-    # Currently, val_dataset computes its own stats on the clean val data.
-    # This is often acceptable in early research but for strict evaluation:
-    # val_dataset.action_stats = train_dataset.action_stats
-
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=torch.cuda.is_available(),
+        pin_memory=torch.cuda.is_available(), # Keep False for safety first run
         drop_last=True,
     )
 
@@ -566,6 +648,8 @@ def create_dataloaders(
         pin_memory=torch.cuda.is_available(),
         drop_last=False
     )
+    
+    print("Dataloaders ready.")
     return train_loader, val_loader
 
 def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
@@ -587,7 +671,7 @@ def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
             action_dim=data_cfg.action_dim,
             num_points=data_cfg.get('num_points', 0),
             train_split=data_cfg.train_split,
-            normalize_depth=data_cfg.get('normalize_depth', True),
+            normalize_obs=data_cfg.get('normalize_obs', True),
             normalize_actions=data_cfg.get('normalize_actions', True),
             depth_dropout_prob=data_cfg.get('depth_dropout_prob', 0.05),
             depth_noise_scale=data_cfg.get('depth_noise_scale', 0.0001),
