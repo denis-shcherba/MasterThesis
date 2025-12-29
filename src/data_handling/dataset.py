@@ -23,8 +23,6 @@ class ManipulationDataset(Dataset):
         num_points: int = 1000,
         normalize_obs: bool = True,
         normalize_actions: bool = True,
-        depth_dropout_prob: float = 0.05,
-        depth_noise_scale: float = 0.0001,
         subsample_demos: Optional[int] = None,
         train_split: float = 0.8,
         split: str = 'train',
@@ -76,8 +74,6 @@ class ManipulationDataset(Dataset):
         else:
             raise ValueError(f"Unknown observation_mode: {self.observation_mode}")
 
-        self.depth_dropout_prob = depth_dropout_prob
-        self.depth_noise_scale = depth_noise_scale
         
         self.demo_meta: List[Dict] = []
         self.valid_indices: List[Tuple[int, int]] = []
@@ -561,8 +557,6 @@ def create_dataloaders(
     action_dim: int = 9,
     num_points: int = 1000,
     train_split: float = 0.8,
-    depth_dropout_prob: float = 0.05,
-    depth_noise_scale: float = 0.0001,
     num_workers: int = 4,
     subsample_demos: Optional[int] = None,
     random_seed: int = 42,
@@ -584,8 +578,6 @@ def create_dataloaders(
         future_sequence_length=future_sequence_length,
         action_dim=action_dim,
         num_points=num_points,
-        depth_dropout_prob=depth_dropout_prob,
-        depth_noise_scale=depth_noise_scale,
         subsample_demos=subsample_demos,
         train_split=train_split,
         split='train',
@@ -673,8 +665,6 @@ def create_dataloaders_from_config(cfg) -> Tuple[DataLoader, DataLoader]:
             train_split=data_cfg.train_split,
             normalize_obs=data_cfg.get('normalize_obs', True),
             normalize_actions=data_cfg.get('normalize_actions', True),
-            depth_dropout_prob=data_cfg.get('depth_dropout_prob', 0.05),
-            depth_noise_scale=data_cfg.get('depth_noise_scale', 0.0001),
             num_workers=data_cfg.num_workers,
             subsample_demos=data_cfg.get('subsample_demos', None),
             random_seed=data_cfg.random_seed,

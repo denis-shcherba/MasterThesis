@@ -72,11 +72,11 @@ def train_policy(cfg: DictConfig) -> None:
 
         # safely get attributes; default to None if missing
         action_stats = getattr(train_dataset, "action_stats", None)
-        depth_stats  = getattr(train_dataset, "depth_stats", None)
+        obs_stats  = getattr(train_dataset, "obs_stats", None)
 
         normalization_stats = {
             "action_stats": action_stats,
-            "depth_stats": depth_stats,
+            "obs_stats": obs_stats,
         }
 
 
