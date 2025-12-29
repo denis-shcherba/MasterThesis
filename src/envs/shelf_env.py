@@ -104,8 +104,7 @@ class ShelfEnv(BaseRobotEnv):
             self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0])).setPoseByText("t(-0 -0.1 0.65) d(0 0 0 1)")
             print(self.C.getJointState())
             self.C.setJointState([ 0.,  -1,  0.,  -2.,   0.,   2.,  -2.4])
-            self.C.view(True)
-            # quit()
+            self.C.view(False)
 
         if self.img_type.upper() == "BOX_POINTS":
             raise NotImplementedError("BOX_POINTS img_type not implemented in ShelfEnv yet.")
@@ -220,12 +219,11 @@ class ShelfEnv(BaseRobotEnv):
 
 
     def _get_info(self):
-        gripper_pos = self.C.getFrame(self.gripper_name).getPosition()
+        book_pos = self.C.getFrame("target_book_0").getPosition()
         target_pos = self.C.getFrame("target").getPosition()
         
-        distance = np.linalg.norm(gripper_pos - target_pos)
+        distance = np.linalg.norm(book_pos - target_pos)
         success = distance < 0.05 # Tighter tolerance for reaching
-        
         return {"distance_to_target": distance, "success": success}
 
     def hook_block(self):
@@ -234,12 +232,15 @@ class ShelfEnv(BaseRobotEnv):
     def pull_block(self):
         success = self.roboenv.pull_real("target_book_0", self.C.getFrame("target").getPosition(), accumulated_collisions=True, get_observation=False)
 
-    def getImageDepth(self):
+    def getImageDepth(self, camera_name=None):
+        if camera_name is None:
+            camera_name = self.camera_name
+
         if self.botop:
-            rgb, depth = self.bot.getImageAndDepth(self.camera_name)
+            rgb, depth = self.bot.getImageAndDepth(camera_name)
         elif self.simulate:
             self.camview = ry.CameraView(self.C)
-            self.camview.setCamera(self.C.getFrame(self.camera_name))
+            self.camview.setCamera(self.C.getFrame(camera_name))
 
             rgb, depth = self.camview.computeImageAndDepth(self.C)
         return rgb, depth
@@ -298,7 +299,7 @@ class ShelfEnv(BaseRobotEnv):
             if self.path_mode == "taskspace" or self.path_mode == "pos3d" or self.path_mode == "pos3d_delta" or self.path_mode == "pos3d_rel":
                 
                 # clip minimum height for z to avoid collisions with table
-                if "_delta" in self.robot_mode:
+                if "_delta" in self.path_mode:
                     pass
                 else:
                     if action[2] < 0.67:
@@ -311,14 +312,17 @@ class ShelfEnv(BaseRobotEnv):
                 komo.clearObjectives()
                 komo.addControlObjective([], 0, 1e-1)
 
-                if self.robot_mode == "pos3d_delta":
+                if self.path_mode == "pos3d_delta":
                     komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3] + self.last_pos)
                 else:
                     komo.addObjective([], ry.FS.position, [self.gripper_name], ry.OT.sos, [1e2], action[:3])
                 
-                if self.robot_mode == "taskspace":
+                if self.path_mode == "taskspace":
                     rot_matrix = gram_schmidt_orthonormalize(action[3:])
                     quat = ry.Quaternion().setMatrix(rot_matrix).asArr()
+
+                    # self.C.addFrame("temp_frame").setShape(ry.ST.marker, .3).setPosition(action[:3]).setQuaternion(quat)
+                    # self.C.view(True)
 
                     komo.addObjective([], ry.FS.quaternion, [self.gripper_name], ry.OT.sos, [1e2], quat)
                 sol = ry.NLP_Solver(komo.nlp())
@@ -335,7 +339,6 @@ class ShelfEnv(BaseRobotEnv):
                         self.sim._sim.step(komo.getPath()[0], .01, ry.ControlMode.position)
                         self.C.view()
                 self.last_pos = self.C.getFrame(self.gripper_name).getPosition()
-
 
         # --- After action, get the new results ---
         observation = self._get_obs()

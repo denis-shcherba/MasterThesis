@@ -6,7 +6,7 @@ import gymnasium as gym
 import envs  # noqa: F401  
 
 
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
 def rerun_path_from_h5(cfg: DictConfig):
     if cfg.env.get("env", None) == "table" or cfg.env.get("env", None) == "TableEnv-v0":
         env = gym.make("TableEnv-v0", obs_type="rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
@@ -16,7 +16,7 @@ def rerun_path_from_h5(cfg: DictConfig):
 
     env.reset()
 
-    with h5py.File("table_demo.h5", 'r') as f:
+    with h5py.File("shelf_demo_rest.h5", 'r') as f:
         demo_groups = [name for name in f.keys() if name.startswith('demo_')]
         total_demos = len(demo_groups)
 

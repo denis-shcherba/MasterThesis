@@ -65,6 +65,10 @@ def normalize_depth(depth_tensor, stats):
     # Expects depth_tensor shape: [1, H, W]
     return (depth_tensor - stats["min"]) / stats["range"]
 
+def normalize_rgb(rgb_tensor):
+    # Expects rgb_tensor shape: [3, H, W]
+    return (rgb_tensor/ 255).float()
+
 
 def normalize_state(state_tensor, stats):
     """

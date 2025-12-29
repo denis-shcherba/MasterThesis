@@ -1,3 +1,4 @@
+import cv2
 import hydra
 from omegaconf import DictConfig
 import torch
@@ -6,7 +7,7 @@ import logging
 import os
 from models.policy_head.policy_network import create_model
 from data_handling.processing import pose_9d_to_7d, pose_7d_to_9d
-from utils.data_utils import get_pc_from_depth, normalize_depth, normalize_state, denormalize_actions, get_cls_features, get_patch_features, get_sam_pointcloud
+from utils.data_utils import get_pc_from_depth, normalize_depth, normalize_rgb, normalize_state, denormalize_actions, get_cls_features, get_patch_features, get_sam_pointcloud
 import yaml
 import json
 from hydra.core.hydra_config import HydraConfig
@@ -98,7 +99,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     return processed_input
 
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     if cfg.env.on_real:
         matplotlib.use("Agg")   # headless backend, no X11 required
@@ -122,10 +123,9 @@ def eval_policy(cfg: DictConfig) -> None:
         else:
             img_type = "DEPTH"
 
-        env = gym.make("TableEnv-v0", obs_type="depth_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
+        env = gym.make("TableEnv-v0", obs_type="rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
     else:
         env = gym.make("ShelfEnv-v1", obs_type="depth_agent_pos", end_effector=cfg.env.get("end_effector", None), q0=cfg.env.get("q0", None), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion, shelf_floor_offsets=cfg.env.shelf_floor_offsets, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, allow_book_yaw=cfg.env.allow_book_yaw, focal_length_range=cfg.env.focal_length_range, extras="WAYPOINTS")
-        env.unwrapped.C.view(True)
 
     
     action_execution_horizon = cfg.get("action_execution_horizon")
@@ -282,15 +282,42 @@ def eval_policy(cfg: DictConfig) -> None:
 
     for evaluation in range(cfg.get("num_eval_episodes")):
         obs, info = env.reset()
-
+        # env.unwrapped.C.view(True, "new evaluation")
         # History lists
         depth_sequence = []
         state_sequence = []
         
         action_chunk = None
-        max_episode_length = 100
+        max_episode_length = 80
+
+        dist_to_target = float('inf')
+        success = False
+        video_frames = []
 
         for i in range(max_episode_length):
+            raw_img = obs.get("raw_rgb") 
+
+            if raw_img is not None:
+                # A. Ensure it's a numpy array (it likely is, but safety first)
+                if hasattr(raw_img, "cpu"): 
+                    raw_img = raw_img.detach().cpu().numpy()
+                
+                # B. Create a copy to avoid mutating the observation
+                frame = raw_img.copy()
+
+                # C. Handle Shape: Models often like (C, H, W), Video needs (H, W, C)
+                # Check if the first dimension is 3 (Color channels)
+                if frame.ndim == 3 and frame.shape[0] == 3:
+                    frame = np.transpose(frame, (1, 2, 0))
+                
+                # D. Handle Data Type: Models like Float (0..1), Video needs Int (0..255)
+                if frame.dtype != np.uint8:
+                    # If it's float, we assume it's in range [0, 1] or normalized
+                    # If your normalize_rgb did mean/std subtraction, this might look weird
+                    frame = (frame * 255).astype(np.uint8)
+                
+                video_frames.append(frame)
+
             if i % action_execution_horizon == 0:
 
                 log.info(f"--- Step {i}: Generating new action chunk ---")
@@ -300,6 +327,9 @@ def eval_policy(cfg: DictConfig) -> None:
                 current_state = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
                 if cfg.observation_mode == 'depth':
                     depth_obs = normalize_depth(current_obs, normalization_stats["depth_stats"])
+                elif cfg.observation_mode == 'rgb':
+                    depth_obs = normalize_rgb(current_obs)
+                    depth_obs = depth_obs.permute(0, 3, 1, 2)  # Change to [B, C, H, W]
                 elif cfg.observation_mode == 'points':
                     center = env.unwrapped.C.getFrame("BOX_MASK").getPosition()
                     box_size = env.unwrapped.C.getFrame("BOX_MASK").getSize()
@@ -404,12 +434,28 @@ def eval_policy(cfg: DictConfig) -> None:
             obs, reward, terminated, truncated, info = env.step(action)
             denormalized_seq = denormalize_actions(state_seq, normalization_stats["action_stats"])
             
+
+            if info.get("distance_to_target", None) is not None:
+                if info["distance_to_target"] < dist_to_target:
+                    dist_to_target = info["distance_to_target"]
+                    rgb, _ = env.unwrapped.getImageDepth()
+                    
+            if info.get("success", None) is not None:
+                if info["success"]:
+                    success = True
+
+
             # Store the normalized observation in history (after action execution)
             obs_tensor = torch.from_numpy(obs[key]).float().to(device).unsqueeze(0)
             if cfg.observation_mode == 'depth':
                 depth_obs = normalize_depth(obs_tensor, normalization_stats["depth_stats"])
             elif cfg.observation_mode == 'dino_cls':
                 depth_obs = get_cls_features(obs_tensor)
+            elif cfg.observation_mode == 'dino_patches':
+                pass
+            elif cfg.observation_mode == 'rgb':
+                depth_obs = normalize_rgb(obs_tensor)
+                depth_obs = depth_obs.permute(0, 3, 1, 2)  # Change to [B, C, H, W]
                 
             state_tensor = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
             state_tensor = normalize_state(state_tensor, normalization_stats["action_stats"])
@@ -426,13 +472,49 @@ def eval_policy(cfg: DictConfig) -> None:
                 log.info(f"Episode finished at step {i}.")
                 break
 
-        log.info(f"Evaluation {evaluation} finished with distance to goal {info.get('distance_to_goal', 'N/A')} and success {info.get('success', 'N/A')}.")
+        output_dir = HydraConfig.get().run.dir
+
+        
+        if len(video_frames) > 0:
+            video_path = os.path.join(output_dir, f"eval_ep_{evaluation}.mp4")
+            
+            try:
+                # 1. Get video dimensions from the first frame
+                # Shape is usually (Height, Width, Channels)
+                height, width, layers = video_frames[0].shape
+                
+                # 2. Initialize the VideoWriter
+                # 'mp4v' is a standard codec for .mp4 files
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
+                out = cv2.VideoWriter(video_path, fourcc, 30.0, (width, height))
+                
+                # 3. Write frames
+                for frame in video_frames:
+                    # IMPORTANT: OpenCV expects Blue-Green-Red (BGR), but we collected Red-Green-Blue (RGB).
+                    # We convert it here so the colors look correct in the video.
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    out.write(frame_bgr)
+                    
+                out.release() # Close the file properly
+                log.info(f"Video saved to {video_path}")
+                
+            except Exception as e:
+                log.error(f"Failed to save video: {e}")
+
+        log.info(f"Evaluation {evaluation} finished with min dist to target {dist_to_target}, last dist to target {info.get('distance_to_target', 'N/A')} and success {success}.")
+        # rotate pi/2 negative as camera is rotated
+        rgb_rot = cv2.rotate(rgb, cv2.ROTATE_90_CLOCKWISE)
+
+        cv2.imwrite(
+            os.path.join(HydraConfig.get().run.dir, f"best_dist_to_target{evaluation}.png"),
+            cv2.cvtColor(rgb_rot, cv2.COLOR_RGB2BGR)
+        )
         info_dicts.append(info)
 
-    output_dir = HydraConfig.get().run.dir
-    with open(os.path.join(output_dir, "data.json"), "w") as f:
-        json.dump(info_dicts, f, indent=4, default=lambda o: o.item() if hasattr(o, "item") else str(o))
-    log.info(f"Policy evaluation finished. Results saved to {output_dir}")
+        with open(os.path.join(output_dir, "data.json"), "w") as f:
+            json.dump(info_dicts, f, indent=4, default=lambda o: o.item() if hasattr(o, "item") else str(o))
+
+        log.info(f"Policy evaluation finished. Results saved to {output_dir}")
 
 if __name__ == "__main__":
     eval_policy()

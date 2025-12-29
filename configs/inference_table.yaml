@@ -3,10 +3,10 @@ defaults:
   - model: transformer_depth
   - data: depth
   - inference: transformer_depth_table
-  - env: table_3d_abs_push_sim
+  - env: table_3d_abs_push_real
 
 experiment_name: "Transformer 10 step input Inference"
-observation_mode: depth
+observation_mode: rgb
 output_subdir: null
 num_eval_episodes: 500
 simulate: True

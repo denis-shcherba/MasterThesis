@@ -115,7 +115,21 @@ class RobotEnviroment:
         # self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         mat = np.eye(3) - np.outer(direction_vec, direction_vec)
 
-       
+        # self.C.delFrame("shelf_middle")
+        # self.C.delFrame("shelf_back_0")
+        # self.C.delFrame("shelf_back_1")
+        # for i in range(2, 9):
+                
+        #     self.C.delFrame(f"big_xy_bottom_0_{i}")
+        #     self.C.delFrame(f"big_xy_bottom_1_{i}")
+
+        # self.C.view(True)
+
+        # self.C.addFrame("rotation_frame_gripper", self.gripper).setShape(ry.ST.marker, [0.1]).setQuaternion([1, 0, 0, 0])
+        # for i in self.C.getFrameNames():
+        #     print(i)
+
+
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=True)
         M.add_stable_frame(ry.JT.transXYPhi, "big_xy_bottom_0_1", '_pull_end', object_)
@@ -138,6 +152,9 @@ class RobotEnviroment:
         M1 = M.sub_motion(0, accumulated_collisions=True)
         M1.retractPush([.0, .15], self.gripper, .03)
         M1.approachPush([.85, 1.], self.gripper, .03)
+        #M1.komo.addObjective([0,1], ry.FS.angularVel, ["rotation_frame_gripper"], ry.OT.eq, [1, 1, 0])   
+        # M1.komo.addObjective([0,1], ry.FS.vectorZ, ["rotation_frame_gripper"], ry.OT.sos, 1, [0, 0, 1])   
+
         path1 = M1.solve()
         if not M1.feasible:
             #M1.komo.view(True)
@@ -149,7 +166,8 @@ class RobotEnviroment:
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
         M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e1], [], 1)   
-        
+        # M2.komo.addObjective([0,1], ry.FS.vectorZ, ["rotation_frame_gripper"], ry.OT.sos, 1, [0, 0, 1])   
+
         path2 = M2.solve()
 
         if not M2.feasible:

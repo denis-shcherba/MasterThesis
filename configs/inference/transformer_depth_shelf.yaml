@@ -1,2 +1,2 @@
-checkpoint_path: outputs/final_outputs/shelf_env/hook/depth.pth
-normalization_stats_path: outputs/final_outputs/shelf_env/hook/depth.yaml
+checkpoint_path: outputs/final_outputs/shelf_env/hook/7dof.pth
+normalization_stats_path: outputs/final_outputs/shelf_env/hook/7dof.yaml

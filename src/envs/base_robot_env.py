@@ -126,7 +126,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         elif self.obs_type == "rgb_agent_pos":
             self.observation_space = spaces.Dict(
                 {
-                    "rgb": spaces.Box(low=0, high=255, shape=(480, 640, 3), dtype=np.uint8),
+                    "rgb": spaces.Box(low=0, high=255, shape=(226, 226, 3), dtype=np.uint8),
+                    "raw_rgb": spaces.Box(low=0, high=255, shape=(480, 640, 3), dtype=np.uint8),
                     "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
                 }
             )
@@ -205,8 +206,6 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             self.C.addFrame("hook_tip", "hook_second").setRelativePosition([0, hook_tip_length/2, 0])
 
 
-
-
     def _get_obs(self):
         """Gets an observation from the environment (common logic)."""
         if self.path_mode == "jointspace" or self.robot_mode == "floating":
@@ -267,7 +266,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         elif self.obs_type == "rgb_agent_pos":
             if self.botop:
                 if self.on_real:
-                    observation["rgb"] = self._rs_get_color()[:, :, :]
+                    observation["raw_rgb"] = self._rs_get_color()[:, :, :]
+                    observation["rgb"] = rescale_img_with_padding(observation["raw_rgb"])
 
         observation["agent_pos"] = agent_pos
         return observation
@@ -371,6 +371,8 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
             demo_group.create_dataset("path", data=se3_path)
         elif self.path_mode == "pos3d" or self.path_mode == "pos3d_rel":
+            demo_group.create_dataset("path", data=self.roboenv.path)
+        elif self.path_mode == "jointspace":
             demo_group.create_dataset("path", data=self.roboenv.path)
         if self.img_type.upper() == "DEPTH":
             demo_group.create_dataset(

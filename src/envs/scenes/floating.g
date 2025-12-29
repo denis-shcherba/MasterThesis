@@ -34,3 +34,7 @@ cameraWrist(gripper): {
  focalLength: 0.895, width: 640, height: 360, zRange: [.01, 10]
 }
 
+cameraShelf(world): {
+ shape: camera, size: [.1],
+ focalLength: 1, width: 224, height: 224, zRange: [.01, 10]
+}
