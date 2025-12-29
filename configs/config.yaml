@@ -7,13 +7,13 @@ defaults:
   - trainer: steps
   - scheduler: cosine_warmup
 train:
-  batch_size: 64
+  batch_size: 128
   num_workers: 8
   device: cuda
   grad_clip: 1.0
 
 # Global settings
-observation_mode: rgb
+observation_mode: depth
 seed: 42
 experiment_name: SimpleSingleStepBC
 output_dir: ${hydra:runtime.output_dir}
