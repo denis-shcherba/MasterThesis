@@ -37,6 +37,26 @@ class Simulator:
         self.base_removal = base_removal
         self.observation_mode = observation_mode
 
+    def reset(self):
+        """
+        Resets the existing simulation state without recreating the C++ object.
+        """
+        # 1. Clear internal buffers to prevent data accumulation across episodes
+        self.points = []
+        self.rgb = []
+        self.depth = []
+        
+        # 2. Reset the C++ Simulation clock to 0.0 (or 1.0)
+        self._sim.resetTime(0.0)
+        
+        # 3. Clear the motion buffers (Splines/Position control)
+        self._sim.resetSplineRef()
+        
+
+        
+        # 6. Optional: Select the sensor again to ensure the buffer is fresh
+        self._sim.selectSensor(self.camera)
+
     def getDepth(self, crop: bool = False, rescale: bool = True, crop_size: int = 96, rescale_size: int = 96) -> np.ndarray:
         _, depth = self._sim.getImageAndDepth()
         if crop == True:

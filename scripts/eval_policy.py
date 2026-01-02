@@ -18,11 +18,41 @@ import matplotlib
 import matplotlib.pyplot as plt
 from envs.high_level_methods import RobotEnviroment
 from envs.utils import point_in_box_filtering, sample_points
+import tracemalloc
 
+tracemalloc.start()
+
+matplotlib.use('Agg')
 log = logging.getLogger(__name__)
 DEBUG_DEPTH = False
 DEBUG_STATE = False
 DEBUG_RGB = False
+
+import psutil
+import gc
+from collections import Counter
+
+class MemoryTracker:
+    def __init__(self):
+        self.process = psutil.Process(os.getpid())
+        self.last_mem = 0
+        
+    def report(self, episode_idx):
+        # 1. Physical RAM usage
+        curr_mem = self.process.memory_info().rss / (1024 ** 2)  # MB
+        diff = curr_mem - self.last_mem
+        
+        # 2. Count Python objects to find reference leaks
+        objs = gc.get_objects()
+        type_counts = Counter([type(o).__name__ for o in objs])
+        
+        print(f"\n--- MEMORY REPORT [EPISODE {episode_idx}] ---")
+        print(f"Total RAM: {curr_mem:.2f} MB (Change: +{diff:.2f} MB)")
+        print(f"Top 5 Objects in Memory:")
+        for name, count in type_counts.most_common(5):
+            print(f"  - {name}: {count}")
+        
+        self.last_mem = curr_mem
 
 def show_state_input_seq(cfg, env, state_input_seq, color=[1, 0, 0, .9], prefix=""):
     for name in env.unwrapped.C.getFrameNames():
@@ -97,7 +127,6 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
 
     log.info(f"Preprocessing complete. Final keys: {list(processed_input.keys())}")
     return processed_input
-
 info_dicts =[]
 @hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
@@ -117,15 +146,17 @@ def eval_policy(cfg: DictConfig) -> None:
     log.info(f"Using padding strategy: {padding_strategy}")
 
     torch.manual_seed(cfg.seed)
+    obs_type = cfg.get("observation_mode", "depth").lower()
     if cfg.env.get("env", None) == "table" or cfg.env.get("env", None) == "TableEnv-v0":
         if cfg.observation_mode in ["points"]: # ...
             img_type = "BOX_POINTS"
         else:
             img_type = "DEPTH"
 
-        env = gym.make("TableEnv-v0", obs_type="rgb_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
+
+        env = gym.make("TableEnv-v0", obs_type=f"{obs_type}_agent_pos", q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
     else:
-        env = gym.make("ShelfEnv-v1", obs_type="depth_agent_pos", end_effector=cfg.env.get("end_effector", None), q0=cfg.env.get("q0", None), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion, shelf_floor_offsets=cfg.env.shelf_floor_offsets, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, allow_book_yaw=cfg.env.allow_book_yaw, focal_length_range=cfg.env.focal_length_range, extras="WAYPOINTS")
+        env = gym.make("ShelfEnv-v1", obs_type=f"{obs_type}_agent_pos", end_effector=cfg.env.get("end_effector", None), q0=cfg.env.get("q0", None), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion, shelf_floor_offsets=cfg.env.shelf_floor_offsets, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, allow_book_yaw=cfg.env.allow_book_yaw, focal_length_range=cfg.env.focal_length_range, extras="WAYPOINTS")
 
     
     action_execution_horizon = cfg.get("action_execution_horizon")
@@ -159,106 +190,6 @@ def eval_policy(cfg: DictConfig) -> None:
     model.eval()
     log.info("Model set to evaluation mode.")
 
-    cm_errs = []
-    
-    if cfg.get("is_regression", False):
-        log.info("Model is set for regression.")
-        for i in range(cfg.num_eval_episodes):
-            obs, info = env.reset()
-
-            current_depth = torch.from_numpy(obs["depth"]).float().to(device).unsqueeze(0)
-    
-            if cfg.env.on_real:
-                env.unwrapped.C.delFrame("cylinder")
-
-
-            if cfg.observation_mode == 'dino_cls':
-                depth_obs = get_cls_features(current_depth)
-            elif cfg.observation_mode == 'dino_patches':
-                depth_obs = get_patch_features(current_depth)
-            elif cfg.observation_mode == 'sam_points':
-                if i == 0:
-                    plt.imshow(current_depth.squeeze(0).cpu().numpy(), cmap='gray')
-                    plt.show()
-                current_rgb = torch.from_numpy(obs["rgb"]).float().cpu().numpy()
-                current_rgb = (current_rgb * 255).astype(np.uint8)
-
-
-                sam_pc = get_sam_pointcloud(env.unwrapped.C, cfg.env.camera_name, current_rgb, current_depth.squeeze(0).cpu().numpy())
-                if sam_pc is None:
-                    log.error("SAM point cloud is None, skipping this episode.")
-                    continue
-                else:
-                    env.unwrapped.C.addFrame("temp_pc").setPointCloud(sam_pc)
-                    print(sam_pc.shape)
-                    for i in range(sam_pc.shape[0]):
-                        env.unwrapped.C.addFrame(f"pc_point_{i}").setPosition(sam_pc[i]).setShape(ry.ST.sphere, [.05]).setColor([0, 1, 1, .9])
-                        print(sam_pc[i])
-                        env.unwrapped.C.view(True)
-                    #env.unwrapped.C.view(True)
-                    depth_obs = torch.from_numpy(sam_pc).to(device).float()
-            elif cfg.observation_mode == 'points':
-                center = env.unwrapped.C.getFrame("BOX_MASK").getPosition()
-                box_size = env.unwrapped.C.getFrame("BOX_MASK").getSize()
-
-                points = get_pc_from_depth(env.unwrapped.C, env.unwrapped.camera_name, current_depth.squeeze(0).cpu().numpy())
-
-                # plt.imshow(current_depth.squeeze(0).cpu().numpy(), cmap='gray')
-                # plt.show()
-
-                if img_type == "BOX_POINTS":
-
-                    points = point_in_box_filtering(points, (center, box_size), ignore_planes=[])
-                points = sample_points(points, n_samples=1024)  
-
-                # for i in range(points.shape[0]):
-                #     env.unwrapped.C.addFrame(f"pc_point_{i}").setPosition(points[i]).setShape(ry.ST.sphere, [.05]).setColor([0, 1, 1, .9])
-                #     print(points[i])
-                #     env.unwrapped.C.view(True)
-
-                env.unwrapped.C.addFrame("temp_pc").setPointCloud(points)
-                #env.unwrapped.C.view(True)
-
-                depth_obs = torch.from_numpy(points).float().to(device).unsqueeze(0)
-
-            else:
-                depth_obs = current_depth # No normalization bc of droput (-1 depth)
-
-            depth_obs = depth_obs.unsqueeze(1)  
- 
-            if cfg.observation_mode == 'sam_points':
-                depth_obs = depth_obs.transpose(1, 0)
-
-            with torch.no_grad():
-                waypoint = model(depth_obs)
-
-            #cm_err = np.linalg.norm(waypoint.cpu().numpy() - env.unwrapped.waypoint_pos)
-            #cm_errs.append(cm_err)
-            #print("Predicted waypoint:", cm_err)
-            for j in range(waypoint.shape[1]):
-                env.unwrapped.C.addFrame(f"predicted_waypoint_{j}").setPosition(waypoint[:, j, :].cpu().numpy()).setShape(ry.ST.sphere, [.02]).setColor([1, 0, 0, .9])
-            #env.unwrapped.C.view(True)
-
-            roboenv = RobotEnviroment(env.unwrapped.C, sim=True, camera=cfg.env.camera_name)
-
-            if cfg.env.get("task", None) == "push":
-                #roboenv.push_point_to_point("predicted_waypoint_0", "predicted_waypoint_1", pcl="temp_pc", bot=env.unwrapped.bot)
-                pass
-                    
-            # roboenv.pull_way2way("predicted_waypoint", None, False)
-
-            # bot = ry.BotOp(env.unwrapped.C, False)
-            # bot.moveAutoTimed(roboenv.path)
-            # while bot.getTimeToEnd() > 0:
-            #     bot.wait(env.unwrapped.C, 0.1)
-
-            #env.unwrapped.C.view(True)
-
-        avg_cm_err = sum(cm_errs) / len(cm_errs)
-        log.info(f"Average CM Error over {cfg.num_eval_episodes} episodes: {avg_cm_err:.5f} m")
-        log.info(f"Average squared error thus {avg_cm_err**2}.")
-        quit()
-
     normalization_stats_path = cfg.get("inference", {}).get("normalization_stats_path", None)
     if normalization_stats_path is None:
         log.error("normalization_stats_path not found.")
@@ -280,7 +211,12 @@ def eval_policy(cfg: DictConfig) -> None:
     #     key = "depth"
     key = "depth"
 
+    tracker = MemoryTracker() # <-- Initialize here
+    output_dir = HydraConfig.get().run.dir
+
     for evaluation in range(cfg.get("num_eval_episodes")):
+
+
         obs, info = env.reset()
         # env.unwrapped.C.view(True, "new evaluation")
         # History lists
@@ -288,13 +224,18 @@ def eval_policy(cfg: DictConfig) -> None:
         state_sequence = []
         
         action_chunk = None
-        max_episode_length = 80
+        max_episode_length = 85
 
         dist_to_target = float('inf')
         success = False
         video_frames = []
 
         for i in range(max_episode_length):
+
+            if torch.cuda.is_available():
+                print(f"CUDA allocated: {torch.cuda.memory_allocated() / 1024**2:.1f} MB")
+                print(f"CUDA reserved: {torch.cuda.memory_reserved() / 1024**2:.1f} MB")
+                print(f"CUDA max allocated: {torch.cuda.max_memory_allocated() / 1024**2:.1f} MB")
             raw_img = obs.get("raw_rgb") 
 
             if raw_img is not None:
@@ -326,7 +267,7 @@ def eval_policy(cfg: DictConfig) -> None:
                 current_obs = torch.from_numpy(obs[key]).float().to(device).unsqueeze(0)
                 current_state = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
                 if cfg.observation_mode == 'depth':
-                    depth_obs = normalize_depth(current_obs, normalization_stats["depth_stats"])
+                    depth_obs = normalize_depth(current_obs, normalization_stats["obs_stats"])
                 elif cfg.observation_mode == 'rgb':
                     depth_obs = normalize_rgb(current_obs)
                     depth_obs = depth_obs.permute(0, 3, 1, 2)  # Change to [B, C, H, W]
@@ -345,72 +286,44 @@ def eval_policy(cfg: DictConfig) -> None:
                 elif cfg.observation_mode == 'dino_cls':
                     depth_obs = get_cls_features(current_obs)
 
-                if DEBUG_RGB:
-                    # 1. Convert Tensor to Numpy
-                    # Assume current_rgb is (1, C, H, W) or (1, H, W, C)
-                    img_np = current_obs.squeeze(0).detach().cpu().numpy()
-                    
-                    # 2. Fix Channel Ordering for Matplotlib (Needs H, W, C)
-                    # If shape is (3, H, W), transpose to (H, W, 3)
-                    if img_np.ndim == 3 and img_np.shape[0] == 3:
-                        img_np = np.transpose(img_np, (1, 2, 0))
-                    
-                    # 3. Ensure uint8 for visualization
-                    if img_np.dtype != np.uint8:
-                        # If float 0..1, scale to 0..255
-                        if img_np.max() <= 1.0:
-                            img_np = (img_np * 255).astype(np.uint8)
-                        else:
-                            img_np = img_np.astype(np.uint8)
-
-                    # 4. Save to disk instead of show()
-                    plt.figure() # Create a new figure to avoid overwriting previous ones
-                    plt.imshow(img_np)
-                    plt.title("Current RGB Debug")
-                    plt.savefig("debug_current_rgb.png") # <--- Saves to your current directory
-                    plt.close() # Close memory
-                    print("Debug image saved to debug_current_rgb.png")
-
                 normalized_current_state = normalize_state(current_state, normalization_stats["action_stats"])
 
-                # --- MODIFIED: Fixed Zero Padding Logic ---
-                if padding_strategy == 'zero':
-                    # Create sequence with proper zero padding
-                    if len(depth_sequence) == 0:
-                        # First prediction: all zeros except last entry (current obs)
-                        dummy_depth = torch.zeros_like(depth_obs)
-                        dummy_state = torch.zeros_like(normalized_current_state)
-                        
-                        padded_depth_list = [dummy_depth] * (sequence_length - 1) + [depth_obs]
-                        padded_state_list = [dummy_state] * (sequence_length - 1) + [normalized_current_state]
-                    else:
-                        # Subsequent predictions: zero pad + history + current
-                        history_length = len(depth_sequence)
-                        num_zeros_needed = max(0, sequence_length - history_length - 1)
-                        
-                        dummy_depth = torch.zeros_like(depth_obs)
-                        dummy_state = torch.zeros_like(normalized_current_state)
-                        
-                        # Build sequence: [zeros] + [history] + [current]
-                        padded_depth_list = ([dummy_depth] * num_zeros_needed + 
-                                           depth_sequence[-min(history_length, sequence_length-1):] + 
-                                           [depth_obs])
-                        padded_state_list = ([dummy_state] * num_zeros_needed + 
-                                           state_sequence[-min(history_length, sequence_length-1):] + 
-                                           [normalized_current_state])
-                        
-                        # Ensure we don't exceed sequence_length
-                        if len(padded_depth_list) > sequence_length:
-                            padded_depth_list = padded_depth_list[-sequence_length:]
-                            padded_state_list = padded_state_list[-sequence_length:]
-                
+                # Create sequence with proper zero padding
+                if len(depth_sequence) == 0:
+                    # First prediction: all zeros except last entry (current obs)
+                    dummy_depth = torch.zeros_like(depth_obs)
+                    dummy_state = torch.zeros_like(normalized_current_state)
+                    
+                    padded_depth_list = [dummy_depth] * (sequence_length - 1) + [depth_obs]
+                    padded_state_list = [dummy_state] * (sequence_length - 1) + [normalized_current_state]
                 else:
-                    raise ValueError(f"Unknown padding_strategy: {padding_strategy}")
+                    # Subsequent predictions: zero pad + history + current
+                    history_length = len(depth_sequence)
+                    num_zeros_needed = max(0, sequence_length - history_length - 1)
+                    
+                    dummy_depth = torch.zeros_like(depth_obs)
+                    dummy_state = torch.zeros_like(normalized_current_state)
+                    
+                    # Build sequence: [zeros] + [history] + [current]
+                    padded_depth_list = ([dummy_depth] * num_zeros_needed + 
+                                    depth_sequence[-min(history_length, sequence_length-1):] + 
+                                    [depth_obs])
+                    padded_state_list = ([dummy_state] * num_zeros_needed + 
+                                    state_sequence[-min(history_length, sequence_length-1):] + 
+                                    [normalized_current_state])
+                    
+                    # Ensure we don't exceed sequence_length
+                    if len(padded_depth_list) > sequence_length:
+                        padded_depth_list = padded_depth_list[-sequence_length:]
+                        padded_state_list = padded_state_list[-sequence_length:]
+                
                 # ----------------------------------------------
 
                 # Stack history into a batch for the model
                 depth_seq = torch.stack(padded_depth_list, dim=1)
                 state_seq = torch.stack(padded_state_list, dim=1)
+
+                
                 if DEBUG_DEPTH:
                     test_depth_sequence(depth_seq.cpu().numpy())
                 if DEBUG_STATE:
@@ -432,23 +345,22 @@ def eval_policy(cfg: DictConfig) -> None:
             
             log.info(f"Step {i}: Executing action {action_index_in_chunk} from chunk.")
             obs, reward, terminated, truncated, info = env.step(action)
-            denormalized_seq = denormalize_actions(state_seq, normalization_stats["action_stats"])
+            #denormalized_seq = denormalize_actions(state_seq, normalization_stats["action_stats"])
             
-
             if info.get("distance_to_target", None) is not None:
                 if info["distance_to_target"] < dist_to_target:
                     dist_to_target = info["distance_to_target"]
+
                     rgb, _ = env.unwrapped.getImageDepth()
-                    
+
             if info.get("success", None) is not None:
                 if info["success"]:
-                    success = True
-
+                    success = True 
 
             # Store the normalized observation in history (after action execution)
             obs_tensor = torch.from_numpy(obs[key]).float().to(device).unsqueeze(0)
             if cfg.observation_mode == 'depth':
-                depth_obs = normalize_depth(obs_tensor, normalization_stats["depth_stats"])
+                depth_obs = normalize_depth(obs_tensor, normalization_stats["obs_stats"])
             elif cfg.observation_mode == 'dino_cls':
                 depth_obs = get_cls_features(obs_tensor)
             elif cfg.observation_mode == 'dino_patches':
@@ -472,7 +384,6 @@ def eval_policy(cfg: DictConfig) -> None:
                 log.info(f"Episode finished at step {i}.")
                 break
 
-        output_dir = HydraConfig.get().run.dir
 
         
         if len(video_frames) > 0:
@@ -497,11 +408,19 @@ def eval_policy(cfg: DictConfig) -> None:
                     
                 out.release() # Close the file properly
                 log.info(f"Video saved to {video_path}")
+                video_frames.clear()  # Move this here instead of at the end
+                del video_frames
+                video_frames = []  # Recreate empty list
                 
             except Exception as e:
                 log.error(f"Failed to save video: {e}")
 
-        log.info(f"Evaluation {evaluation} finished with min dist to target {dist_to_target}, last dist to target {info.get('distance_to_target', 'N/A')} and success {success}.")
+
+
+
+        info["min_dist_to_target"] = dist_to_target
+        info["success"] = success
+        log.info(f"Evaluation {evaluation} finished with min dist to target {info.get('min_dist_to_target', 'N/A')}, last dist to target {info.get('distance_to_target', 'N/A')} and success {success}.")
         # rotate pi/2 negative as camera is rotated
         rgb_rot = cv2.rotate(rgb, cv2.ROTATE_90_CLOCKWISE)
 
@@ -515,6 +434,58 @@ def eval_policy(cfg: DictConfig) -> None:
             json.dump(info_dicts, f, indent=4, default=lambda o: o.item() if hasattr(o, "item") else str(o))
 
         log.info(f"Policy evaluation finished. Results saved to {output_dir}")
+        # 1. Clear Simulator Frames (The binary growth source)
+        if hasattr(env.unwrapped, 'C'):
+            for name in env.unwrapped.C.getFrameNames():
+                if "previous_pos" in name or "temp_pc" in name or "pc_point" in name:
+                    env.unwrapped.C.delFrame(name)
+        
+        # 2. Force Matplotlib to release GUI buffers
+        plt.close('all')
+
+        # 3. Explicitly kill large local references
+        if 'rgb' in locals(): del rgb
+        if 'raw_img' in locals(): del raw_img
+        if 'frame' in locals(): del frame
+        
+        
+        # 4. Final Hammer: GC and CUDA Cache
+        gc.collect() 
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        import objgraph
+        import random
+
+        # Print the names of 10 random leaked functions to see what they are
+        functions = [o for o in gc.get_objects() if isinstance(o, type(lambda: None))]
+        sample_size = min(len(functions), 10)
+        print(f"Sample of functions in memory: {[f.__name__ for f in random.sample(functions, sample_size)]}")
+        tracker.report(evaluation)
+        snapshot = tracemalloc.take_snapshot()
+        top_stats = snapshot.statistics('lineno')
+
+        print("[ Top 10 Memory Consuming Lines ]")
+        for stat in top_stats[:10]:
+            print(stat)
+
+        # Force a collection before checking
+        gc.collect()
+
+        print(f"\n--- LEAK ANALYSIS FOR EPISODE {evaluation} ---")
+        # This shows what types of objects were created since the last call
+        objgraph.show_growth(limit=10)
+
+        # This is the "Smoking Gun": If functions/frames are leaking, find out what's holding them
+        print("\n--- Why are there so many functions? ---")
+        leaked_funcs = [o for o in gc.get_objects() if isinstance(o, type(lambda: None))]
+        if len(leaked_funcs) > 1000: # Adjust threshold
+            # Look at the most recent leaked functions
+            objgraph.show_chain(
+                objgraph.find_backref_chain(leaked_funcs[-1], objgraph.is_proper_module),
+                filename='chain.png'
+            )
+            print("Graph saved to chain.png - this shows who is holding the reference!")
 
 if __name__ == "__main__":
     eval_policy()

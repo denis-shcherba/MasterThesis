@@ -18,6 +18,7 @@ demos/
 wandb/
 outputs/
 eval_outputs/
+final_evals
 checkpoints/
 .vscode/
 test_outputs/
@@ -25,3 +26,4 @@ thesis/
 .venv
 
 *.png
+*.csv

@@ -1,4 +1,4 @@
-path_mode: taskspace
+path_mode: jointspace
 robot_mode: normal         # "normal" or "floating"
 end_effector: hook        # "hook" or null
 simulate: true

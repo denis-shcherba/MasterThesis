@@ -271,10 +271,10 @@ class TableEnv(BaseRobotEnv):
 
 
     def _get_info(self):
-        gripper_pos = self.C.getFrame(self.gripper_name).getPosition()
+        obj_pos = self.C.getFrame("cylinder").getPosition()
         target_pos = self.C.getFrame("target").getPosition()
         
-        distance = np.linalg.norm(gripper_pos - target_pos)
+        distance = np.linalg.norm(obj_pos[:2] - target_pos[:2])
         success = distance < 0.05 # Tighter tolerance for reaching
         
         return {"distance_to_target": distance, "success": success}

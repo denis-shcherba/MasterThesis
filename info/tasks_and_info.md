@@ -1,6 +1,6 @@
 # Shelf env
 
-## Hooking book
+<!-- ## Hooking book
 
 ### floating pos + yaw:
 
@@ -13,22 +13,34 @@
 
 
 #### dino patch 1000 transformer
-TODO maybe if time
+TODO maybe if time -->
 
 
 ### 7dof taskspace:
 
 #### depth 1000 transformer
 
-**run**: experiment_20251223_132104 **val_loss**:3.2e-3, **train_loss**:6.6e-4, **success**: doesnt work at all
+**run**: experiment_20251223_132104 **val_loss**:3.2e-3, **train_loss**:6.6e-4, **success**: 38% (100 evals) 
 
 #### rgb 1000 transformer
 
-**run**: experiment_20251225_174021 **val_loss**:2.7e-3, **train_loss**:6.2-4, **success**: %
+**run**: experiment_20251225_174021 **val_loss**:2.7e-3, **train_loss**:6.2e-4, **success**: %
+
+#### depth 1000 diffusion
+
+**run**: experiment_20251228_232913 **val_loss**:3.8e-3, **train_loss**:2e-3, **success**: %
+
 
 
 ### 7dof jointspace:
 
+#### minimax action normalization
+
+**run**: experiment_20251229_152111 **val_loss**:3.8e-3, **train_loss**:2e-3, **success**: 45% (100 evals)
+
+#### zscore action normalization
+
+**run**: experiment_20251228_232913 **val_loss**:1.6e-3, **train_loss**:1.1e-4, **success**: 53% (100 evals)
 
 # Table env
 
@@ -67,6 +79,8 @@ TODO
 #### dino cls features
 **run**: experiment_20251218_194527 **val_loss**: 7e-4, **train_loss**: 3e-4 , **success**: TODO
 
+
+<!-- 
 ## pulling book?
 
-TODO not really prio, extract experiments from ~october?
+TODO not really prio, extract experiments from ~october? -->

@@ -188,12 +188,13 @@ class ShelfEnv(BaseRobotEnv):
                 self.book_pos = book_params
 
         # target at the middle of the shelf ending for goal evaluation
-        target = np.array([
-            (self.shelf_bottom_frame.getPosition()[:2] + np.array([-self.shelf_depth/2, 0])),
-        ])
-        target = np.append(target, self.C.getFrame("target_book_0").getPosition()[2])
+        if self.C.getFrame("target") is None:
+            target = np.array([
+                (self.shelf_bottom_frame.getPosition()[:2] + np.array([-self.shelf_depth/2, 0])),
+            ])
+            target = np.append(target, self.C.getFrame("target_book_0").getPosition()[2])
 
-        self.C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
+            self.C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
     def _delete_books(self):
         for book in self.books:
@@ -245,12 +246,24 @@ class ShelfEnv(BaseRobotEnv):
             rgb, depth = self.camview.computeImageAndDepth(self.C)
         return rgb, depth
 
+    def getImage(self, camera_name=None):
+        if camera_name is None:
+            camera_name = self.camera_name
+
+        if self.botop:
+            rgb, _ = self.bot.getImageAndDepth(camera_name)
+        elif self.simulate:
+            self.camview = ry.CameraView(self.C)
+            self.camview.setCamera(self.C.getFrame(camera_name))
+
+            rgb, _ = self.camview.computeImageAndDepth(self.C)
+        return rgb
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
         if not self.on_real:
             self.C.setJointState(self.q0)
-            pass
         
         self._setup_scene()    
 

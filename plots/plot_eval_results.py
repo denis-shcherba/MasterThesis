@@ -116,8 +116,8 @@ def plot_success_rate(timestamps, success_rates, start_str, end_str, use_bars=Fa
 
 
 if __name__ == "__main__":
-    START_TIMESTAMP_STR = "2025-09-09_00-00-00"
-    END_TIMESTAMP_STR = "2025-09-17_23-59-59"
+    START_TIMESTAMP_STR = "2025-12-27_00-00-00"
+    END_TIMESTAMP_STR = "2025-12-29_23-59-59"
 
     start_time = datetime.strptime(START_TIMESTAMP_STR, TIME_FORMAT)
     end_time = datetime.strptime(END_TIMESTAMP_STR, TIME_FORMAT)
