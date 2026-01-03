@@ -49,7 +49,7 @@ TODO maybe if time -->
 ### sim data:
 
 #### depth 1000 resnet 18 trained from scratch transformer
-**run**: experiment_20251222_161112 **val_loss**: 6e-5, **train_loss**: 1e-5 , **success**: estimated, not evaluated ~95%
+**run**: experiment_20251222_161112 **val_loss**: 6e-5, **train_loss**: 1e-5 , **success**: 94% (100 evals)
 
 #### depth 1000 resnet 18 trained pretrained on imagenet transformer
 

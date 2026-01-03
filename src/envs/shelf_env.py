@@ -45,6 +45,7 @@ class ShelfEnv(BaseRobotEnv):
                 shelf_equidistant=False,
                 shelf_floor_offsets=None,
                 q0=None,
+                rotate_panda_base=True,
                 task = "pull",
 
                 num_boxes_per_sample=1,
@@ -62,6 +63,7 @@ class ShelfEnv(BaseRobotEnv):
         self.q0 = q0
         self.extras = extras
         self.obj = "book"
+        self.rotate_panda_base = rotate_panda_base
 
         self.camera_name = camera_name
         self.last_pos = np.array([0., 0., 0.])
@@ -101,7 +103,8 @@ class ShelfEnv(BaseRobotEnv):
 
         if self.robot_mode == "normal":
             self.C.getFrame("table").setShape(ry.ST.ssBox, size=[.5, 1, .1, .005]).setColor(np.array([242, 240, 216])/255)
-            self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0])).setPoseByText("t(-0 -0.1 0.65) d(0 0 0 1)")
+            if self.rotate_panda_base:
+                self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0])).setPoseByText("t(-0 -0.1 0.65) d(0 0 0 1)")
             print(self.C.getJointState())
             self.C.setJointState([ 0.,  -1,  0.,  -2.,   0.,   2.,  -2.4])
             self.C.view(False)

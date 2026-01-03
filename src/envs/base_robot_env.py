@@ -196,9 +196,13 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 #gripper_base(floatZ): { Q:"t(0 0 .1035) d(180 1 0 0) d(-90 0 0 1)", shape: marker, size: [.03] }
                 self.C.getFrame("gripper_base").setQuaternion(ry.Quaternion().setRollPitchYaw([0, 3*np.pi/4, 0]).asArr())
 
-            hook_base_length = 0.25
-            hook_tip_length = 0.04
-            hook_width = 0.02
+            # hook_base_length = 0.25
+            # hook_tip_length = 0.04
+            # if self.on_real:
+            hook_base_length = .548
+            hook_tip_length = .1078
+
+            hook_width = 0.025
             gripper_depth = 0.02
 
             self.C.addFrame("hook_base", self.gripper).setRelativePosition([0, 0, -(hook_base_length/2-gripper_depth/2)]).setShape(ry.ST.box, [hook_width, hook_width, hook_base_length]).setColor([0.7, 0.7, 0.7]).setContact(1)

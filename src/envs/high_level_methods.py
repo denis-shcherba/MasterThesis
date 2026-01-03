@@ -165,7 +165,7 @@ class RobotEnviroment:
     
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
-        M2.komo.addObjective([0,1], ry.FS.position, [self.gripper], ry.OT.eq, [0, 0, 1e1], [], 1)   
+        M2.komo.addObjective([0,1], ry.FS.position, ["hook_tip"], ry.OT.eq, [0, 0, 1e1], [], 1)   
         # M2.komo.addObjective([0,1], ry.FS.vectorZ, ["rotation_frame_gripper"], ry.OT.sos, 1, [0, 0, 1])   
 
         path2 = M2.solve()
@@ -173,7 +173,7 @@ class RobotEnviroment:
         if not M2.feasible:
             print("INFEASIBLE AT M2")
             self.C.delFrame("hook_point")
-
+            #M2.komo.view(True)
             return False
 
         if self.sim == True:
@@ -181,6 +181,27 @@ class RobotEnviroment:
 
             sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=True, visualize=self.visualize)
             sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=True, visualize=self.visualize)
+
+        elif self.on_real:
+            # Use RealSense color-only for raw RGB capture (no depth alignment)
+            path = np.concatenate((path1, path2), axis=0)
+
+            imgs = []
+            timings = np.linspace(.1, 10, 64)
+            self.bot.move(path, timings)
+            i = 0
+            t_start = self.bot.get_t()
+            while self.bot.getTimeToEnd() > 0:
+                # rgb = self._rs_get_color()
+                # if rgb is not None:
+                #     imgs.append(rgb)
+                print(i, self.bot.get_t() - t_start)
+                
+                i += 1
+                self.bot.sync(self.C, .1)
+
+            print(timings)
+
 
         else:
             if self.visuals:
@@ -199,9 +220,11 @@ class RobotEnviroment:
                     return False
 
         elif self.observation_mode == "RGB":
-            self.rgb_image = sim.rgb
+            if self.sim:
+                self.rgb_image = sim.rgb
         elif self.observation_mode == "DEPTH":
-            self.depth_image = sim.depth
+            if self.sim:
+                self.depth_image = sim.depth
 
         self.path = np.concatenate((path1, path2), axis=0)
 

@@ -29,6 +29,7 @@ C.setJointState(qHome)
 limits = C.getJointLimits()
 verbose = 0
 
+print(qHome)
 
 RoboEnv = RobotEnviroment(C, verbose=verbose, sim=True)
 RoboEnv.move_to_point(C.getFrame("way1").getPosition(),straight_line=False, accumulated_collisions = False)

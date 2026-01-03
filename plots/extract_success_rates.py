@@ -51,7 +51,11 @@ def analyze_eval_results(eval_dir, output_csv="evaluation_results.csv"):
                     # 2. Collect Distances
                     if 'distance_to_target' in entry:
                         distances.append(float(entry['distance_to_target']))
-                    
+                    elif 'last_dist_to_target' in entry:
+                        distances.append(float(entry['last_dist_to_target']))
+                    elif 'last_dist' in entry:  
+                        distances.append(float(entry['last_dist']))
+
                     # 3. Collect Min Distances
                     if 'min_dist_to_target' in entry:
                         min_distances.append(float(entry['min_dist_to_target']))

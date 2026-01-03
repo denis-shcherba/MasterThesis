@@ -131,7 +131,7 @@ def execute_single_episode(evaluation_idx, env, model, cfg, device, normalizatio
         "episode": evaluation_idx,
         "min_dist_to_target": float(dist_to_target),
         "success": bool(success),
-        "last_dist": float(info.get("distance_to_target", -1))
+        "last_dist_to_target": float(info.get("distance_to_target", -1))
     }
 
 @hydra.main(config_path="../configs", config_name="inference_table", version_base=None)

@@ -80,6 +80,56 @@ def generate_random_box_sizes(box_size_ranges, num_samples=1, allow_yaw=False):
 
     return all_sizes
 
+
+def generate_uniform_box_params(shelf_size, box_size, grid_size=(10, 10), margins=0.0):
+    """
+    Generates a uniform 2D grid of center positions (x, y) with safety margins.
+    
+    Args:
+        shelf_size: Tuple (S_x, S_y, S_z)
+        box_size: Tuple (X_b, Y_b, Z_b)
+        grid_size: Tuple (N_x, N_y)
+        margins: Float (uniform) or Dict {'x_min': f, 'x_max': f, 'y_min': f, 'y_max': f}
+    """
+    X_b, Y_b, Z_b = box_size
+    S_x, S_y, S_z = shelf_size
+    N_x, N_y = grid_size
+
+    # 1. Parse margins
+    if isinstance(margins, (int, float)):
+        m = {'x_min': margins, 'x_max': margins, 'y_min': margins, 'y_max': margins}
+    else:
+        m = margins
+
+    # 2. Calculate feasible bounds for the center
+    # Logic: Margin + Half-Box-Width <= Center <= (Shelf-Width - Margin) - Half-Box-Width
+    x_min = m['x_min'] + (X_b / 2)
+    x_max = S_x - m['x_max'] - (X_b / 2)
+    
+    y_min = m['y_min'] + (Y_b / 2)
+    y_max = S_y - m['y_max'] - (Y_b / 2)
+
+    # Safety check: Ensure the margins/box aren't larger than the shelf itself
+    if x_min > x_max or y_min > y_max:
+        print("Warning: Margins and box size exceed shelf dimensions. Returning empty list.")
+        return []
+
+    # 3. Fixed Z position
+    z_fixed = Z_b / 2
+
+    # 4. Create linear spaces
+    x_coords = np.linspace(x_min, x_max, N_x)
+    y_coords = np.linspace(y_min, y_max, N_y)
+
+    # 5. Generate the grid
+    all_samples = []
+    for y in y_coords:
+        for x in x_coords:
+            sample = [(X_b, Y_b, Z_b, x, y, z_fixed, 0.0)]
+            all_samples.append(sample)
+
+    return all_samples
+
 def generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, num_boxes=1, allow_yaw=False, max_attempts=100):
     """
     Generates random sizes and positions x on a fixed-size shelf, allowing generation of an arbitrary yaw rotation as well.
