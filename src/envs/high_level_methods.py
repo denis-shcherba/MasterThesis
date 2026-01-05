@@ -111,19 +111,9 @@ class RobotEnviroment:
         
         self.C.addFrame("hook_point").setPosition(self.C.getFrame(object_).getPosition() + (high_on_potenuse+.03) * direction_vec).setShape(ry.ST.marker, [.05]).setQuaternion(ry.Quaternion().setEuler([0, 0, -theta]).asArr())
 
-
         # self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
         mat = np.eye(3) - np.outer(direction_vec, direction_vec)
 
-        # self.C.delFrame("shelf_middle")
-        # self.C.delFrame("shelf_back_0")
-        # self.C.delFrame("shelf_back_1")
-        # for i in range(2, 9):
-                
-        #     self.C.delFrame(f"big_xy_bottom_0_{i}")
-        #     self.C.delFrame(f"big_xy_bottom_1_{i}")
-
-        # self.C.view(True)
 
         # self.C.addFrame("rotation_frame_gripper", self.gripper).setShape(ry.ST.marker, [0.1]).setQuaternion([1, 0, 0, 0])
         # for i in self.C.getFrameNames():
@@ -192,15 +182,16 @@ class RobotEnviroment:
             i = 0
             t_start = self.bot.get_t()
             while self.bot.getTimeToEnd() > 0:
-                # rgb = self._rs_get_color()
-                # if rgb is not None:
-                #     imgs.append(rgb)
+                rgb = self._rs_get_color()
+                if rgb is not None:
+                    imgs.append(rgb)
                 print(i, self.bot.get_t() - t_start)
                 
                 i += 1
-                self.bot.sync(self.C, .1)
+                self.bot.sync(self.C, 0.15625)  # 10/64 hz
 
             print(timings)
+            self.rgb_image = np.array(imgs, dtype=np.uint8)[:, :260, 180:520, :]
 
 
         else:

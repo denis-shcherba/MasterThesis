@@ -36,7 +36,8 @@ dependencies = [
     "diffusers",
     "pyrealsense2",
     "psutil",
-    "objgraph"
+    "objgraph",
+    "pandas"
 ]
 
 [project.urls]

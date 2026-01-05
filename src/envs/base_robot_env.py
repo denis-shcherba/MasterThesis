@@ -35,6 +35,12 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                  seed=42,
                  end_effector=None,
                  save_obj_pos=False,
+
+                # regarding hook
+                hook_base_length = 0.25,
+                hook_tip_length = 0.4,
+                hook_width = 0.02,
+
                  **kwargs
                 ):
         super().__init__()
@@ -54,6 +60,11 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             self.gripper = "gripper"
         elif self.robot_mode == "normal":
             self.gripper = "l_gripper"
+
+        # hook
+        self.hook_base_length = hook_base_length
+        self.hook_tip_length = hook_tip_length
+        self.hook_width = hook_width
 
         self.end_effector = end_effector
         
@@ -196,18 +207,11 @@ class BaseRobotEnv(gym.Env, abc.ABC):
                 #gripper_base(floatZ): { Q:"t(0 0 .1035) d(180 1 0 0) d(-90 0 0 1)", shape: marker, size: [.03] }
                 self.C.getFrame("gripper_base").setQuaternion(ry.Quaternion().setRollPitchYaw([0, 3*np.pi/4, 0]).asArr())
 
-            # hook_base_length = 0.25
-            # hook_tip_length = 0.04
-            # if self.on_real:
-            hook_base_length = .548
-            hook_tip_length = .1078
-
-            hook_width = 0.025
             gripper_depth = 0.02
 
-            self.C.addFrame("hook_base", self.gripper).setRelativePosition([0, 0, -(hook_base_length/2-gripper_depth/2)]).setShape(ry.ST.box, [hook_width, hook_width, hook_base_length]).setColor([0.7, 0.7, 0.7]).setContact(1)
-            self.C.addFrame("hook_second", "hook_base").setRelativePosition([0, hook_tip_length/2-hook_width/2, -hook_base_length/2 ]).setShape(ry.ST.box, [hook_width, hook_tip_length, hook_width]).setColor([0.7, 0.7, 0.7]).setContact(1)
-            self.C.addFrame("hook_tip", "hook_second").setRelativePosition([0, hook_tip_length/2, 0])
+            self.C.addFrame("hook_base", self.gripper).setRelativePosition([0, 0, -(self.hook_base_length/2-gripper_depth/2)]).setShape(ry.ST.box, [self.hook_width, self.hook_width, self.hook_base_length]).setColor([0.7, 0.7, 0.7]).setContact(1)
+            self.C.addFrame("hook_second", "hook_base").setRelativePosition([0, self.hook_tip_length/2-self.hook_width/2, -self.hook_base_length/2 ]).setShape(ry.ST.box, [self.hook_width, self.hook_tip_length, self.hook_width]).setColor([0.7, 0.7, 0.7]).setContact(1)
+            self.C.addFrame("hook_tip", "hook_second").setRelativePosition([0, self.hook_tip_length/2, 0])
 
 
     def _get_obs(self):

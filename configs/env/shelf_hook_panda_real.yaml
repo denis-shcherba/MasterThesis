@@ -13,9 +13,9 @@ obj: book
 allow_book_yaw: false
 q0: [-0.11823945, -0.27751445, 0.54293547, -1.74915798, -1.21386092, 1.0878208,-0.70455155] #[ 0., -0.5, 0., -2., 0., 2., -0.5]
 
-shelf_pos_xyz: [1.07, 0.14, .2]
+shelf_pos_xyz: [1.07, 0.14, .206]
 shelf_quaternion: [1, 0, 0, 1]
-shelf_floor_offsets: [0.35, 0.43, 0.50, 0.18, 0.15, 0.2, 0.15, 0.15, 0.15, 0.12]  # Last 2 entries TODO
+shelf_floor_offsets: [0.35, 0.43, 0.28, 0.18, 0.15, 0.2, 0.15, 0.15, 0.15, 0.12]  # Last 2 entries TODO
 
 box_size_ranges:
   x: [0.1285, 0.1285]
@@ -24,6 +24,10 @@ box_size_ranges:
 
 rotate_panda_base: false
 real_table: true
+
+hook_base_length: 0.548
+hook_tip_length: 0.1078
+hook_width: 0.025
 
 # camera_offset_ranges:
 #   x: [-0.1, 0.1]

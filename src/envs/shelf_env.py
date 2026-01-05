@@ -106,15 +106,15 @@ class ShelfEnv(BaseRobotEnv):
             if self.rotate_panda_base:
                 self.C.getFrame("l_panda_base").setPosition(self.C.getFrame("l_panda_base").getPosition() + np.array([0, -.08, .0])).setPoseByText("t(-0 -0.1 0.65) d(0 0 0 1)")
             print(self.C.getJointState())
-            self.C.setJointState([ 0.,  -1,  0.,  -2.,   0.,   2.,  -2.4])
+            self.C.setJointState(self.q0)
             self.C.view(False)
 
         if self.img_type.upper() == "BOX_POINTS":
             raise NotImplementedError("BOX_POINTS img_type not implemented in ShelfEnv yet.")
 
+        self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
         if collect_data: 
             self.h5file = h5py.File("shelf_demo.h5", "w")
-            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
             self.demo_id = 0
             
         self._setup_scene()
@@ -273,6 +273,9 @@ class ShelfEnv(BaseRobotEnv):
         if self.botop:
             self.bot = ry.BotOp(self.C, self.on_real)
             if self.on_real:
+                self.bot.gripperMove(ry._left, 0)
+                while not self.bot.gripperDone(ry._left):
+                    self.bot.wait(self.C)
                 self.bot.home(self.C)
                 self.bot.moveTo(self.q0)
                 while self.bot.getTimeToEnd() > 0:
