@@ -4,6 +4,7 @@ import numpy as np
 import robotic as ry
 import time
 import pyrealsense2 as rs
+import cv2
 
 class RobotEnviroment:
     def __init__(self,
@@ -46,15 +47,18 @@ class RobotEnviroment:
             self.bot.gripperMove(ry._left, 0)
             while not self.bot.gripperDone(ry._left):
                 self.bot.wait(self.C)
-
-            # Initialize RealSense color-only pipeline (not aligned to depth)
             self._rs_pipeline = rs.pipeline()
             self._rs_config = rs.config()
-            # Enable ONLY color stream to avoid implicit alignment
+
+            # Enable both streams independently
+            # They will be time-synchronized but not spatially aligned
             self._rs_config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+            self._rs_config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+
             self._rs_profile = self._rs_pipeline.start(self._rs_config)
-            # Warm-up frames
-            for _ in range(5):
+
+            # Warm-up frames (to let auto-exposure settle)
+            for _ in range(10):
                 self._rs_pipeline.wait_for_frames()
         
         else:
@@ -75,6 +79,30 @@ class RobotEnviroment:
         bgr = np.asanyarray(color_frame.get_data())
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         return rgb
+
+    def _rs_get_data(self):
+        """Grab both color and depth frames simultaneously."""
+        if self._rs_pipeline is None:
+            return None, None
+        
+        # wait_for_frames blocks until both streams have a frame available
+        frames = self._rs_pipeline.wait_for_frames()
+        
+        color_frame = frames.get_color_frame()
+        depth_frame = frames.get_depth_frame()
+        
+        if not color_frame or not depth_frame:
+            return None, None
+                
+        # Process Color
+        bgr = np.asanyarray(color_frame.get_data())
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        
+        # Process Depth
+        # This is a (480, 640) array of uint16 values
+        depth = np.asanyarray(depth_frame.get_data())
+        
+        return rgb, depth
 
     def _rs_shutdown(self):
             if self._rs_pipeline is not None:
@@ -111,15 +139,6 @@ class RobotEnviroment:
         
         self.C.addFrame("hook_point").setPosition(self.C.getFrame(object_).getPosition() + (high_on_potenuse+.03) * direction_vec).setShape(ry.ST.marker, [.05]).setQuaternion(ry.Quaternion().setEuler([0, 0, -theta]).asArr())
 
-        # self.C.addFrame("tmp").setPosition(self.C.getFrame(object_).getPosition())
-        mat = np.eye(3) - np.outer(direction_vec, direction_vec)
-
-
-        # self.C.addFrame("rotation_frame_gripper", self.gripper).setShape(ry.ST.marker, [0.1]).setQuaternion([1, 0, 0, 0])
-        # for i in self.C.getFrameNames():
-        #     print(i)
-
-
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=True)
         M.add_stable_frame(ry.JT.transXYPhi, "big_xy_bottom_0_1", '_pull_end', object_)
@@ -130,7 +149,7 @@ class RobotEnviroment:
 
         # M.komo.addObjective([2.], ry.FS.positionDiff, ["hook_tip", "target"], ry.OT.eq, 1e1)
         # M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
-        M.komo.addObjective([2.], ry.FS.positionDiff, [object_, "target"], ry.OT.eq, 1e1)
+        M.komo.addObjective([2.], ry.FS.positionDiff, [object_, "target"], ry.OT.eq, [1, 1, .5])
 
         M.solve()
         if not M.feasible:
@@ -156,7 +175,7 @@ class RobotEnviroment:
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
         M2.komo.addObjective([0,1], ry.FS.position, ["hook_tip"], ry.OT.eq, [0, 0, 1e1], [], 1)   
-        # M2.komo.addObjective([0,1], ry.FS.vectorZ, ["rotation_frame_gripper"], ry.OT.sos, 1, [0, 0, 1])   
+        #M2.komo.addObjective([0,1], ry.FS.vectorZ, ["rotation_frame_gripper"], ry.OT.sos, 1, [0, 0, 1])   
 
         path2 = M2.solve()
 
@@ -177,14 +196,17 @@ class RobotEnviroment:
             path = np.concatenate((path1, path2), axis=0)
 
             imgs = []
+            depth =[]
             timings = np.linspace(.1, 10, 64)
             self.bot.move(path, timings)
             i = 0
             t_start = self.bot.get_t()
             while self.bot.getTimeToEnd() > 0:
-                rgb = self._rs_get_color()
+                rgb, depth_data = self._rs_get_data()
                 if rgb is not None:
                     imgs.append(rgb)
+                if depth_data is not None:
+                    depth.append(depth_data)
                 print(i, self.bot.get_t() - t_start)
                 
                 i += 1
@@ -192,7 +214,7 @@ class RobotEnviroment:
 
             print(timings)
             self.rgb_image = np.array(imgs, dtype=np.uint8)[:, :260, 180:520, :]
-
+            self.depth_image = np.array(depth, dtype=np.uint16)
 
         else:
             if self.visuals:

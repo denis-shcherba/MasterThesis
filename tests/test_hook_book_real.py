@@ -49,7 +49,7 @@ def silence_logs():
         os.close(old_stderr_fd)
 
 def collect_hook_data(cfg: DictConfig):
-    env = gym.make("ShelfEnv-v1", q0= cfg.q0, botop=cfg.botop, on_real=cfg.on_real, rotate_panda_base=cfg.rotate_panda_base, real_table=cfg.real_table, img_type="RGB", robot_mode=cfg.robot_mode, end_effector="hook", path_mode=cfg.path_mode, shelf_pos_xyz=cfg.shelf_pos_xyz, shelf_quaternion=cfg.shelf_quaternion, shelf_floor_offsets=cfg.shelf_floor_offsets, camera_name=cfg.camera_name, simulate=True, seed=42, collect_data=True, box_size_ranges=cfg.box_size_ranges, allow_book_yaw=cfg.allow_book_yaw,  focal_length_range=cfg.focal_length_range, hook_base_length=cfg.hook_base_length, hook_tip_length=cfg.hook_tip_length, hook_width=cfg.get("hook_width", 0.02))
+    env = gym.make("ShelfEnv-v1", q0= cfg.q0, botop=cfg.botop, on_real=cfg.on_real, rotate_panda_base=cfg.rotate_panda_base, real_table=cfg.real_table, img_type="DEPTHRGB", robot_mode=cfg.robot_mode, end_effector="hook", path_mode=cfg.path_mode, shelf_pos_xyz=cfg.shelf_pos_xyz, shelf_quaternion=cfg.shelf_quaternion, shelf_floor_offsets=cfg.shelf_floor_offsets, camera_name=cfg.camera_name, simulate=True, seed=42, collect_data=True, box_size_ranges=cfg.box_size_ranges, allow_book_yaw=cfg.allow_book_yaw,  focal_length_range=cfg.focal_length_range, hook_base_length=cfg.hook_base_length, hook_tip_length=cfg.hook_tip_length, hook_width=cfg.get("hook_width", 0.02))
     env.reset()
     env.unwrapped.C.view(True)
     box_size = (cfg.box_size_ranges['x'][0], cfg.box_size_ranges['y'][0], cfg.box_size_ranges['z'][0])
