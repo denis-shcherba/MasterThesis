@@ -22,9 +22,9 @@ log = logging.getLogger(__name__)
 @hydra.main(config_path="../configs/env", config_name="shelf_hook_panda_real", version_base=None)
 def main(cfg: DictConfig):
 
-    #evaluate_hook_feasibility(cfg, visualize=False)
+    evaluate_hook_feasibility(cfg, visualize=True)
     #evaluate_hook_lengths(cfg, file_name="hook_sweep_results.csv")
-    collect_hook_data(cfg)
+    #collect_hook_data(cfg)
 
 @contextmanager
 def silence_logs():
@@ -124,7 +124,7 @@ def evaluate_hook_feasibility(cfg: DictConfig, visualize: bool = False):
     box_size = (cfg.box_size_ranges['x'][0], cfg.box_size_ranges['y'][0], cfg.box_size_ranges['z'][0])
     margins = {'x_min': 0.05, 'x_max': 0.05, 'y_min': 0.02, 'y_max': 0.02}
 
-    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(10, 10), margins=margins)
+    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(3, 3))
     print(f"Generated {len(uniform_samples)} uniform samples.")
     RoboEnv = RobotEnviroment(env.unwrapped.C, sim=True, camera="cameraWrist", on_real=False, visualize=visualize)
 
