@@ -140,8 +140,8 @@ class ShelfEnv(BaseRobotEnv):
             raise RuntimeError(f"Shelf bottom frame '{self.shelf_bottom_frame_name}' not found. Check shelf generation logic or name.")
 
         shelf_size_params = self.shelf_bottom_frame.getSize() # [width, depth, thickness, radius]
-        self.shelf_width = shelf_size_params[0]
-        self.shelf_depth = shelf_size_params[1]
+        self.shelf_width = shelf_size_params[1]
+        self.shelf_depth = shelf_size_params[0]
         self.shelf_plate_thickness = shelf_size_params[2] # Thickness of the bottom plate itself
 
         # This is the size used for generate_random_box_params, interpreted as the spawning surface dimensions.
