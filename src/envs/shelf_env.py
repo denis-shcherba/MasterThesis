@@ -41,8 +41,6 @@ class ShelfEnv(BaseRobotEnv):
 
                 shelf_pos_xyz=None, # e.g. [.8, 0., .3]
                 shelf_quaternion=None, # e.g. [1, 0, 0, 1] (w,x,y,z) or as expected by generate_shelf
-                shelf_openings_small=None, # e.g. [4, 11]
-                shelf_equidistant=False,
                 shelf_floor_offsets=None,
                 q0=None,
                 rotate_panda_base=True,
@@ -76,7 +74,7 @@ class ShelfEnv(BaseRobotEnv):
         if not self.on_real:
             self.C.setJointState(self.q0)
 
-        self._create_shelf_scene(shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant, shelf_floor_offsets)
+        self._create_shelf_scene(shelf_pos_xyz, shelf_quaternion, shelf_floor_offsets)
 
         self.camera_base_pos = self.C.getFrame(self.camera_name).getPosition()
         self.camera_base_rpy = ry.Quaternion().set(self.C.getFrame(self.camera_name).getQuaternion()).getRollPitchYaw()
@@ -119,17 +117,15 @@ class ShelfEnv(BaseRobotEnv):
             
         self._setup_scene()
 
-    def _create_shelf_scene(self, shelf_pos_xyz, shelf_quaternion, shelf_openings_small, shelf_equidistant, shelf_floor_offsets):
+    def _create_shelf_scene(self, shelf_pos_xyz, shelf_quaternion, shelf_floor_offsets):
         # Placeholder for your simulator connection logic
         print("Connecting to custom simulator...")
         # Shelf setup
         self.shelf_pos = np.array(shelf_pos_xyz) if shelf_pos_xyz is not None else np.array([.8, 0., .3])
         _shelf_quaternion = shelf_quaternion if shelf_quaternion is not None else [1, 0, 0, 1]
-        _shelf_openings_small = shelf_openings_small if shelf_openings_small is not None else [4, 11]
         _shelf_floor_offsets = shelf_floor_offsets if shelf_floor_offsets is not None else [0.35, 0.43, 0.30, 0.18, 0.15, 0.2, 0.15, 0.15, 0.15, 0.12]
 
-        generate_shelf(self.C, self.shelf_pos, base_quaternion=_shelf_quaternion,
-                       openings_small=_shelf_openings_small, equidistant=shelf_equidistant, floor_offsets=_shelf_floor_offsets)
+        generate_shelf(self.C, self.shelf_pos, w=.38, d=.44, h=2, base_quaternion=_shelf_quaternion, floor_offsets=_shelf_floor_offsets)
 
         self.C.addFrame("cameraWP", self.camera_name).setShape(ry.ST.marker, [.1])
 
