@@ -66,7 +66,8 @@ TODO
 
 #### depth 1000 resnet 18 trained from scratch diffusion
 
-TODO
+**run**: experiment_20260106_191304 **val_loss**: 2.8e-4, **train_loss**: 9.8e-5 , **success**: 60% (100 evals)
+
 
 ### real data:
 

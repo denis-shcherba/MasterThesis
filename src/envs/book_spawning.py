@@ -92,8 +92,8 @@ def generate_uniform_box_params(shelf_size, box_size, grid_size=(10, 10), margin
         m = {'x_min': margins, 'x_max': margins, 'y_min': margins, 'y_max': margins}
     else:
         # Swap dict keys if they are passed in
-        m = {'x_min': margins['y_min'], 'x_max': margins['y_max'], 
-             'y_min': margins['x_min'], 'y_max': margins['x_max']}
+        m = {'x_min': margins['x_min'], 'x_max': margins['x_max'], 
+             'y_min': margins['y_min'], 'y_max': margins['y_max']}
 
     # Calculate bounds
     x_min = m['x_min'] + (X_b / 2)
@@ -114,9 +114,7 @@ def generate_uniform_box_params(shelf_size, box_size, grid_size=(10, 10), margin
     all_samples = []
     for y in y_coords:
         for x in x_coords:
-            # IMPORTANT: Swap the x and y BACK when returning the sample 
-            # so the simulation receives (Original_X, Original_Y)
-            sample = [(box_size[1], box_size[0], Z_b, y, x, z_fixed, 0.0)]
+            sample = [(box_size[0], box_size[1], Z_b, x, y, z_fixed, 0.0)]
             all_samples.append(sample)
 
     return all_samples

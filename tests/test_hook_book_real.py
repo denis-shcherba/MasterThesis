@@ -22,9 +22,9 @@ log = logging.getLogger(__name__)
 @hydra.main(config_path="../configs/env", config_name="shelf_hook_panda_real", version_base=None)
 def main(cfg: DictConfig):
 
-    evaluate_hook_feasibility(cfg, visualize=True)
+    #evaluate_hook_feasibility(cfg, visualize=False)
     #evaluate_hook_lengths(cfg, file_name="hook_sweep_results.csv")
-    #collect_hook_data(cfg)
+    collect_hook_data(cfg)
 
 @contextmanager
 def silence_logs():
@@ -49,71 +49,107 @@ def silence_logs():
         os.close(old_stderr_fd)
 
 def collect_hook_data(cfg: DictConfig):
+    # Initialize environment
+    # Ensure your 'ShelfEnv-v1' opens the h5file in 'a' (append) mode internally
     env = gym.make("ShelfEnv-v1", q0= cfg.q0, botop=cfg.botop, on_real=cfg.on_real, rotate_panda_base=cfg.rotate_panda_base, real_table=cfg.real_table, img_type="DEPTHRGB", robot_mode=cfg.robot_mode, end_effector="hook", path_mode=cfg.path_mode, shelf_pos_xyz=cfg.shelf_pos_xyz, shelf_quaternion=cfg.shelf_quaternion, shelf_floor_offsets=cfg.shelf_floor_offsets, camera_name=cfg.camera_name, simulate=True, seed=42, collect_data=True, box_size_ranges=cfg.box_size_ranges, allow_book_yaw=cfg.allow_book_yaw,  focal_length_range=cfg.focal_length_range, hook_base_length=cfg.hook_base_length, hook_tip_length=cfg.hook_tip_length, hook_width=cfg.get("hook_width", 0.02))
+    
     env.reset()
     env.unwrapped.C.view(True)
-    box_size = (cfg.box_size_ranges['x'][0], cfg.box_size_ranges['y'][0], cfg.box_size_ranges['z'][0])
-    margins = {'x_min': 0.05, 'x_max': 0.05, 'y_min': 0.02, 'y_max': 0.02}
 
-    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(2, 2), margins=margins)
+
+    box_size = (cfg.box_size_ranges['x'][0], cfg.box_size_ranges['y'][0], cfg.box_size_ranges['z'][0])
+    margins = {'x_min': 0.05, 'x_max': 0.05, 'y_min': 0.02, 'y_max': .19-cfg.box_size_ranges['y'][0]/2}
+
+    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(25, 8), margins=margins)
     print(f"Generated {len(uniform_samples)} uniform samples.")
     del env.unwrapped.bot
 
     RoboEnv = RobotEnviroment(env.unwrapped.C, sim=(not cfg.on_real), camera="cameraWrist", on_real=cfg.on_real)
 
-    success_count = 0
+    ee_pose_home = RoboEnv.C.eval(ry.FS.pose, ["l_gripper"])[0]
+
+
+    # Calculate initial success_count based on existing groups in the file (for restarting)
+    success_count = len(env.unwrapped.h5file.keys())
     
     C2 = ry.Config()
     C2.addConfigurationCopy(env.unwrapped.C)
     C2.delFrame("target_book_0")
-    
 
-    for sample in uniform_samples:
-        RoboEnv.bot.moveTo(env.unwrapped.q0)
+    for i, sample in enumerate(uniform_samples[25:], 25):
+        # --- RESTART CHECK ---
+        # If the specific demo group for this index already exists, skip it
+        # This allows you to pick up exactly where the loop crashed
+        if f"demo_idx_{i}" in env.unwrapped.h5file:
+            print(f"Skipping index {i}, already exists in file.")
+            continue
+
+        # --- YOUR ROBOT LOGIC ---
+        RoboEnv.bot.sync(env.unwrapped.C)
+        hook_tip_pos = RoboEnv.C.eval(ry.FS.position, ["hook_tip"])[0] + np.array([0,0,.05])
+
+        qHome = RoboEnv.bot.get_q().copy()
+        
+        # KOMO Solver
+        komo = ry.KOMO(RoboEnv.C, 1, 1, 0, False)
+        komo.addObjective(times=[], feature=ry.FS.jointState, frames=[], type=ry.OT.sos, scale=[1e-1], target=qHome)
+        komo.addObjective([], ry.FS.position, ['hook_tip'], ry.OT.eq, [1e1], hook_tip_pos)
+        ret = ry.NLP_Solver(komo.nlp(), verbose=0).solve()
+
+        q = komo.getPath()
+
+        # Movement Sequence
+        RoboEnv.bot.moveTo(q[0])
         while RoboEnv.bot.getTimeToEnd() > 0:
             RoboEnv.bot.wait(env.unwrapped.C)
+
+        
+        komo = ry.KOMO(RoboEnv.C, 1, 1, 0, True)
+        komo.addObjective(times=[], feature=ry.FS.jointState, frames=[], type=ry.OT.sos, scale=[1e-1], target=qHome)
+        komo.addObjective([], ry.FS.pose, ['l_gripper'], ry.OT.eq, [1e1], ee_pose_home)
+        ret = ry.NLP_Solver(komo.nlp(), verbose=0).solve()
+
+        q = komo.getPath()
+
+        # Movement Sequence
+        RoboEnv.bot.moveTo(q[0])
+        while RoboEnv.bot.getTimeToEnd() > 0:
+            RoboEnv.bot.wait(env.unwrapped.C)
+            
         env.unwrapped._spawn_book(sample[0])
-        # maybe here some kind of gripper at book?
-        env.unwrapped.C.view(True)
+        env.unwrapped.C.view(True, f"sampled: {int(i%25)}-{int(i/25)}")
         book_pos = env.unwrapped.C.getFrame("target_book_0").getPosition()
+        
+        # Action
         success = RoboEnv.hook_book("target_book_0")
+        
         if success:
             success_count += 1
-            C2.addFrame(f"book_{success_count}").setColor([0,1,0]).setPosition(book_pos).setShape(ry.ST.box, sample[0][:3] )
-    
+            C2.addFrame(f"book_{success_count}").setColor([0,1,0]).setPosition(book_pos).setShape(ry.ST.box, sample[0][:3])
+            
+            # Use index 'i' in the group name so it's unique and searchable on restart
+            demo_group = env.unwrapped.h5file.create_group(f"demo_idx_{i}")
 
-            demo_group = env.unwrapped.h5file.create_group(f"demo_{success_count}")
-
-            if env.unwrapped.path_mode == "taskspace":
-                pass
-            elif env.unwrapped.path_mode == "jointspace":
+            # Data Logging
+            if env.unwrapped.path_mode == "jointspace":
                 demo_group.create_dataset("path", data=RoboEnv.path)
-            if env.unwrapped.img_type.upper() == "DEPTHRGB":
-                demo_group.create_dataset(
-                "depth", 
-                data=RoboEnv.depth_image,
-                compression="gzip",
-                compression_opts=4
-                )
+            
+            img_type = env.unwrapped.img_type.upper()
+            if "DEPTH" in img_type:
+                demo_group.create_dataset("depth", data=RoboEnv.depth_image, compression="gzip", compression_opts=4)
+            if "RGB" in img_type:
+                demo_group.create_dataset("rgb", data=RoboEnv.rgb_image, compression="gzip", compression_opts=4)
 
-                demo_group.create_dataset(
-                "rgb", 
-                data=RoboEnv.rgb_image,
-                compression="gzip",
-                compression_opts=4
-                )
-            elif env.unwrapped.img_type.upper() == "RGB":
-                demo_group.create_dataset(
-                "rgb", 
-                data=RoboEnv.rgb_image,
-                compression="gzip",
-                compression_opts=4
-                )
+        # --- BACKUP/FLUSH LOGIC ---
+        # Every 10 iterations, force the HDF5 library to write the buffer to the physical disk
+        if i % 5 == 0:
+            env.unwrapped.h5file.flush()
+            print(f"--- Backup performed at index {i} ---")
 
     if cfg.on_real:
         RoboEnv._rs_shutdown()
+    
     env.unwrapped.h5file.close()
-
     print(f"Hooking success rate: {success_count}/{len(uniform_samples)}")
     C2.view(True)
 
@@ -122,9 +158,9 @@ def evaluate_hook_feasibility(cfg: DictConfig, visualize: bool = False):
     env = gym.make("ShelfEnv-v1", q0= cfg.q0, botop=False, on_real=False, rotate_panda_base=cfg.rotate_panda_base, real_table=cfg.real_table, img_type="DEPTH", robot_mode=cfg.robot_mode, end_effector="hook", path_mode=cfg.path_mode, shelf_pos_xyz=cfg.shelf_pos_xyz, shelf_quaternion=cfg.shelf_quaternion, shelf_floor_offsets=cfg.shelf_floor_offsets, camera_name=cfg.camera_name, simulate=True, seed=42, collect_data=False, box_size_ranges=cfg.box_size_ranges, allow_book_yaw=cfg.allow_book_yaw,  focal_length_range=cfg.focal_length_range, hook_base_length=cfg.hook_base_length, hook_tip_length=cfg.hook_tip_length, hook_width=cfg.get("hook_width", 0.02))
     env.reset()
     box_size = (cfg.box_size_ranges['x'][0], cfg.box_size_ranges['y'][0], cfg.box_size_ranges['z'][0])
-    margins = {'x_min': 0.05, 'x_max': 0.05, 'y_min': 0.02, 'y_max': 0.02}
+    margins = {'x_min': 0.05, 'x_max': 0.05, 'y_min': 0.02, 'y_max': .19-cfg.box_size_ranges['y'][0]/2}
 
-    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(3, 3))
+    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(25, 8), margins=margins)
     print(f"Generated {len(uniform_samples)} uniform samples.")
     RoboEnv = RobotEnviroment(env.unwrapped.C, sim=True, camera="cameraWrist", on_real=False, visualize=visualize)
 
@@ -133,7 +169,6 @@ def evaluate_hook_feasibility(cfg: DictConfig, visualize: bool = False):
     for sample in uniform_samples:
         env.reset()
         env.unwrapped._spawn_book(sample[0])
-        
         success = RoboEnv.hook_book("target_book_0")
         if success:
             success_count += 1
