@@ -137,7 +137,7 @@ class RobotEnviroment:
         theta_acute = min(theta, np.pi - theta)
         high_on_potenuse = self.C.getFrame(object_).getSize()[0]/(2 * np.sin(theta_acute))
         
-        self.C.addFrame("hook_point").setPosition(self.C.getFrame(object_).getPosition() + (high_on_potenuse+.03) * direction_vec).setShape(ry.ST.marker, [.05]).setQuaternion(ry.Quaternion().setEuler([0, 0, -theta]).asArr())
+        self.C.addFrame("hook_point").setPosition(self.C.getFrame(object_).getPosition() - np.array([0, 0, .01]) + (high_on_potenuse+.04) * direction_vec).setShape(ry.ST.marker, [.05]).setQuaternion(ry.Quaternion().setEuler([0, 0, -theta]).asArr())
         self.C.addFrame("end_point").setPosition(self.C.getFrame("target").getPosition() + (high_on_potenuse) * direction_vec).setShape(ry.ST.marker, [.2])
         self.C.addFrame("test_test", "hook_tip").setShape(ry.ST.marker, [1])
 
@@ -156,7 +156,7 @@ class RobotEnviroment:
         M.solve()
         if not M.feasible:
             print("INFEASIBLE AT M")
-            M.komo.view(True)
+            #M.komo.view(True)
             self.C.delFrame("hook_point")
             return False
 
@@ -168,7 +168,7 @@ class RobotEnviroment:
 
         path1 = M1.solve()
         if not M1.feasible:
-            M1.komo.view(True)
+            #M1.komo.view(True)
 
             print("INFEASIBLE AT M1")
             self.C.delFrame("hook_point")
@@ -176,14 +176,14 @@ class RobotEnviroment:
     
 
         M2 = M.sub_motion(1, accumulated_collisions=False)
-        M2.komo.addObjective([0,1], ry.FS.position, ["hook_tip"], ry.OT.eq, [0, 0, 1e1], [], 1)   
+        M2.komo.addObjective([0,1], ry.FS.positionDiff, ["hook_tip", "end_point"], ry.OT.eq, [0, 0, 1e1], [])   
 
         path2 = M2.solve()
 
         if not M2.feasible:
             print("INFEASIBLE AT M2")
             self.C.delFrame("hook_point")
-            M2.komo.view(True)
+            #M2.komo.view(True)
             return False
 
         if self.sim == True:

@@ -18,8 +18,8 @@ shelf_quaternion: [1, 0, 0, 1]
 shelf_floor_offsets: [0.35, 0.43, 0.28, 0.18, 0.15, 0.2, 0.15, 0.15, 0.15, 0.12]  # Last 2 entries TODO
 
 box_size_ranges:
-  x: [0.1285, 0.1285]
-  y: [0.197, 0.197]
+  x: [0.143, 0.143]
+  y: [0.212, 0.212]
   z: [0.04, 0.04] # 0.02 eig
 
 rotate_panda_base: false

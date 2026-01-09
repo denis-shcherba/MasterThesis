@@ -17,6 +17,8 @@ def main(cfg: DictConfig):
 
     for i in range(100):
         env.reset()
+        #env.unwrapped.C.addFrame("test_frame", "big_xy_bottom_0_1").setShape(ry.ST.box, [.38, .44, .1])
+        #env.unwrapped.C.view(True)
         env.unwrapped.pull_block()
 
 
