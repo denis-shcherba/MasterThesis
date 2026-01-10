@@ -6,7 +6,7 @@ import torchvision.transforms.functional as TF
 import random
 
 # --- Configuration ---
-H5_FILE_PATH = 'table_demo.h5'
+H5_FILE_PATH = 'shelf_demos/cleaned_data.h5'
 AUGMENTATION_FACTOR = 4  # Creates 4 new copies per demo
 IMG_KEY = 'rgb'          # The key in your H5 file for images
 

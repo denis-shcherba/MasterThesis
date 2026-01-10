@@ -225,7 +225,7 @@ class RobotEnviroment:
 
                 self.C.attach(base, object_)
 
-        if self.observation_mode == "POINTCLOUD" or self.observation_mode =="SAM_POINTS" or self.observation_mode =="BOX_POINTS":
+        if "POINTCLOUD" in self.observation_mode or "SAM_POINTS" in self.observation_mode or "BOX_POINTS" in self.observation_mode:
             self.points = sim.points[0]
             if self.points[0] is None:
                 return False
@@ -233,10 +233,10 @@ class RobotEnviroment:
                 if pc is None:
                     return False
 
-        elif self.observation_mode == "RGB":
+        if "RGB" in self.observation_mode:
             if self.sim:
                 self.rgb_image = sim.rgb
-        elif self.observation_mode == "DEPTH":
+        if "DEPTH" in self.observation_mode:
             if self.sim:
                 self.depth_image = sim.depth
 

@@ -68,14 +68,12 @@ def view_book_from_h5(env, view_in_between=False):
             env.unwrapped._spawn_book(list(book_params[0]), i)
             env.unwrapped.C.view(view_in_between, f"h5 data point {i}")
 
-    for i in range(len(book_params_list)):    
-        env.unwrapped.C.addFrame(f"test_book_{i}").setPosition(book_params_list[i]).setShape(ry.ST.cylinder, size=[0.03, 0.04]).setColor([0, 0, 0])
-
-    env.unwrapped.C.view(True, "All Book Positions, to close press q in the viewer")
+    env.unwrapped.C.view(True, "All Book Positions.")
 
     for i in range(len(book_params_list)):    
-        env.unwrapped.C.delFrame(f"test_book_{i}")
-    env.unwrapped.C.view(False, "All Book Positions, to close press q in the viewer")
+        env.unwrapped.C.addFrame(f"target_book_marker_{i}", f"target_book_{i}").setShape(ry.ST.marker, size=[0.02])
+        env.unwrapped.C.delFrame(f"target_book_{i}")
+    env.unwrapped.C.view(True, "All Book Positions as waypoints")
 
 
 

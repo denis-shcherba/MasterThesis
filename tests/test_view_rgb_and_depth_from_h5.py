@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
-def view_rgb_sequence_with_two_sliders(h5_path="table_demo.h5", rgb_keys=("rgb","color","image","images")):
+def view_rgb_sequence_with_two_sliders(h5_path="push_cylinder_demo_1000_rgb.h5", rgb_keys=("rgb","color","image","images")):
     
     # 1. First, scan the file to get all demo names sorted naturally
     with h5py.File(h5_path, 'r') as f:

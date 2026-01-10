@@ -26,7 +26,6 @@ class ShelfEnv(BaseRobotEnv):
     """
     def __init__(self,
                 path_type="SE39D",
-                img_type="DEPTH",
                 box_size_ranges= {'x': (.1, .15), 'y': (.14, .23), 'z': (.009, .045)},
                 box_offset_ranges= {'x': (-.05, .05), 'y': (-.05, .05)},
                 allow_book_yaw=False,
@@ -56,8 +55,7 @@ class ShelfEnv(BaseRobotEnv):
         self.num_boxes_per_sample = num_boxes_per_sample
         self.books = []
         self.task = task
-        self.path_type = path_type
-        self.img_type = img_type
+        self.path_type = path_type 
         self.q0 = q0
         self.extras = extras
         self.obj = "book"
@@ -107,12 +105,9 @@ class ShelfEnv(BaseRobotEnv):
             self.C.setJointState(self.q0)
             self.C.view(False)
 
-        if self.img_type.upper() == "BOX_POINTS":
-            raise NotImplementedError("BOX_POINTS img_type not implemented in ShelfEnv yet.")
-
-        self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
+        self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.obs_type.upper(), visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
         if collect_data: 
-            self.h5file = h5py.File("shelf_demo.h5", "w")
+            self.h5file = h5py.File("shelf_demo_2.h5", "w")
             self.demo_id = 0
             
         self._setup_scene()

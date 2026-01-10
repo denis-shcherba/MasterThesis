@@ -166,6 +166,12 @@ class Simulator:
                     rgb = self.getRGB(rescale=False)
                     self.rgb.append(rgb)
                 
+                elif self.observation_mode == "DEPTH_RGB" or self.observation_mode == "RGB_DEPTH" or self.observation_mode == "RGBDEPTH" or self.observation_mode == "DEPTHRGB":
+                    depth = self.getDepth(crop=False, rescale=False)
+                    rgb = self.getRGB(rescale=False)
+                    self.depth.append(depth)
+                    self.rgb.append(rgb)
+                
                 elif self.observation_mode == "POINTCLOUD":
                     points = self.getPoints(n_samples=4096, vis=visualize)
                     self.points.append(points)

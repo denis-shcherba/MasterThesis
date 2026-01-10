@@ -51,22 +51,24 @@ TODO maybe if time -->
 #### depth 1000 resnet 18 trained from scratch transformer
 **run**: experiment_20251222_161112 **val_loss**: 6e-5, **train_loss**: 1e-5 , **success**: 94% (100 evals)
 
-#### depth 1000 resnet 18 trained pretrained on imagenet transformer
+#### rgb 1000 resnet 18 trained from scratch rgb
+**run**: experiment_20260107_200958 **val_loss**: 9e-5, **train_loss**: 7e-5 , **success**: 60% (100 evals)
 
+
+#### depth 1000 resnet 18 trained pretrained on imagenet transformer
 **run**: experiment_20251222_184207 **val_loss**: 1e-4, **train_loss**: 1e-5 , **success**: TODO
 
 #### dino cls 1000 transformer
-
 **run**: experiment_20251222_171601 **val_loss**: 2e-4, **train_loss**: 7e-5 , **success**: TODO
 
-
 #### dino patch 1000 resnet 18 trained from scratch transformer
-
 TODO
 
 #### depth 1000 resnet 18 trained from scratch diffusion
 
 **run**: experiment_20260106_191304 **val_loss**: 2.8e-4, **train_loss**: 9.8e-5 , **success**: 60% (100 evals)
+
+
 
 
 ### real data:

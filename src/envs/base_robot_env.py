@@ -25,7 +25,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
     # metadata = {"render_modes": ["rgb_array"], "render_fps": 30}
 
     def __init__(self, 
-                 obs_type="depth_agent_pos",
+                 obs_type="depth",
                  robot_mode="floating",
                  path_mode="taskspace",
                  simulate=True,
@@ -46,7 +46,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         super().__init__()
         
         print(f"BaseRobotEnv __init__ for {self.__class__.__name__}")
-        self.obs_type = obs_type
+        self.obs_type = obs_type.lower()
         self.robot_mode = robot_mode
         self.path_mode = path_mode
         self.simulate = simulate
@@ -68,7 +68,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
         self.end_effector = end_effector
         
-        if self.obs_type == "rgb_agent_pos":
+        if self.obs_type == "rgb":
             self.use_opencv = True
         else:
             self.use_opencv = False
@@ -104,46 +104,32 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             for _ in range(5):
                 self._rs_pipeline.wait_for_frames()
 
-        if self.obs_type == "pixels_agent_pos":
-            self.observation_space = spaces.Dict(
-                {
-                    "pixels": spaces.Box(low=0, high=255, shape=(96, 96, 3), dtype=np.uint8),
-                    "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
-                }
-            )
-        elif self.obs_type == "points_agent_pos":
-            n_points = 4096
-            self.observation_space = spaces.Dict(
-                {
-                    "points": spaces.Box(low=-np.inf, high=np.inf, shape=(n_points, 3), dtype=np.float32),
-                    "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
-                }
-            )
-        elif self.obs_type == "depth_agent_pos":
-            self.observation_space = spaces.Dict(
-                {
-                    "depth": spaces.Box(low=-np.inf, high=np.inf, shape=(96, 96), dtype=np.float32),
-                    "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
-                }
-            )
-        elif self.obs_type == "depth_rgb_agent_pos":
-            self.observation_space = spaces.Dict(
-                {
-                    "depth": spaces.Box(low=-np.inf, high=np.inf, dtype=np.float32),
-                    "rgb": spaces.Box(low=0, high=255, dtype=np.uint8),
-                    "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
-                }
-            )
-        elif self.obs_type == "rgb_agent_pos":
-            self.observation_space = spaces.Dict(
-                {
-                    "rgb": spaces.Box(low=0, high=255, shape=(226, 226, 3), dtype=np.uint8),
-                    "raw_rgb": spaces.Box(low=0, high=255, shape=(480, 640, 3), dtype=np.uint8),
-                    "agent_pos": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
-                }
-            )
-        else:
-            raise ValueError(f"Unknown observation type: {obs_type}")
+        self.agent_pos_dim = 7
+
+        agent_pos_space = spaces.Box(
+                    low=-np.inf, high=np.inf, shape=(self.agent_pos_dim,), dtype=np.float32
+                )
+        
+        obs_dict = {}
+
+        if "rgb" in self.obs_type:
+            obs_dict["rgb"] = spaces.Box(low=0, high=255, shape=(226, 226, 3), dtype=np.uint8)
+            # Add raw_rgb only if specific to rgb-only mode or as needed
+            if self.obs_type == "rgb":
+                obs_dict["raw_rgb"] = spaces.Box(low=0, high=255, shape=(480, 640, 3), dtype=np.uint8)
+
+        if "depth" in self.obs_type:
+            obs_dict["depth"] = spaces.Box(low=-np.inf, high=np.inf, shape=(96, 96), dtype=np.float32)
+
+        if "points" in self.obs_type:
+            obs_dict["points"] = spaces.Box(low=-np.inf, high=np.inf, shape=(self.n_points, 3), dtype=np.float32)
+        
+        if not obs_dict:
+            raise ValueError(f"Unknown observation type: {self.obs_type}")
+
+        obs_dict["agent_pos"] = agent_pos_space
+
+        self.observation_space = spaces.Dict(obs_dict)
 
         self.action_space = self._define_action_space()
 
@@ -240,15 +226,13 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         agent_pos = np.array(agent_pos_raw, dtype=np.float32)
 
         observation = {}
-        if self.obs_type == "pixels_agent_pos":
-            pixels = self.sim.getRGB(rescale=True, rescale_size=96)
-            observation["pixels"] = pixels
-        elif self.obs_type == "points_agent_pos":
+
+        if "points" in self.obs_type:
             points = self.sim.getPoints(n_samples=4096, vis=True)
             observation["points"] = points
 
 
-        elif self.obs_type == "depth_agent_pos" or self.obs_type == "depth_rgb_agent_pos":
+        elif "depth" in self.obs_type:
             if self.botop:
                 if self.on_real:
                     rgb, depth = self.bot.getImageAndDepth(self.camera_name)
@@ -268,14 +252,18 @@ class BaseRobotEnv(gym.Env, abc.ABC):
 
 
             observation["depth"] = depth
-            if self.obs_type == "depth_rgb_agent_pos":
-                observation["rgb"] = rgb[:, :, :]
+            if "rgb" in self.obs_type:
+                observation["rgb"] = rescale_img_with_padding(rgb)
 
-        elif self.obs_type == "rgb_agent_pos":
+        elif "rgb" in self.obs_type:
             if self.botop:
                 if self.on_real:
                     observation["raw_rgb"] = self._rs_get_color()[:, :, :]
                     observation["rgb"] = rescale_img_with_padding(observation["raw_rgb"])
+            else:
+                observation["raw_rgb"] = self.sim.getRGB(rescale=False)
+                observation["rgb"] = rescale_img_with_padding(observation["raw_rgb"])
+
 
         observation["agent_pos"] = agent_pos
         return observation
@@ -382,7 +370,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             demo_group.create_dataset("path", data=self.roboenv.path)
         elif self.path_mode == "jointspace":
             demo_group.create_dataset("path", data=self.roboenv.path)
-        if self.img_type.upper() == "DEPTH":
+        if "DEPTH" in self.obs_type.upper():
             demo_group.create_dataset(
             "depth", 
             data=self.roboenv.depth_image,
@@ -390,7 +378,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             compression_opts=4
             )
 
-        elif self.img_type.upper() == "RGB":
+        if "RGB" in self.obs_type.upper():
             demo_group.create_dataset(
             "rgb", 
             data=self.roboenv.rgb_image,
@@ -398,14 +386,15 @@ class BaseRobotEnv(gym.Env, abc.ABC):
             compression_opts=4
             )
 
-        elif self.img_type.upper() == "SAM_POINTS":
+        if "SAM_POINTS" in self.obs_type.upper():
             demo_group.create_dataset(
             "points", 
             data=self.roboenv.points[0],
             compression="gzip",
             compression_opts=4
             )
-        elif self.img_type.upper() == "BOX_POINTS":
+
+        if "BOX_POINTS" in self.obs_type.upper():
             demo_group.create_dataset(
             "points", 
             data=self.roboenv.points,
