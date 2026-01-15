@@ -267,7 +267,27 @@ class ShelfEnv(BaseRobotEnv):
                 self.bot.gripperMove(ry._left, 0)
                 while not self.bot.gripperDone(ry._left):
                     self.bot.wait(self.C)
-                self.bot.home(self.C)
+                
+                    self.bot.sync(self.C)
+                    hook_tip_pos = self.C.eval(ry.FS.position, ["hook_tip"])[0] + np.array([0,0,.08])
+
+                    qHome = self.bot.get_q().copy()
+                    
+                    # KOMO Solver
+                    komo = ry.KOMO(self.C, 1, 1, 0, False)
+                    komo.addObjective(times=[], feature=ry.FS.jointState, frames=[], type=ry.OT.sos, scale=[1e-1], target=qHome)
+                    komo.addObjective([], ry.FS.position, ['hook_tip'], ry.OT.eq, [1e1], hook_tip_pos)
+                    ret = ry.NLP_Solver(komo.nlp(), verbose=0).solve()
+
+                    q = komo.getPath()
+
+                    # Movement Sequence
+                    self.bot.moveTo(q[0])
+                    while self.bot.getTimeToEnd() > 0:
+                        self.bot.wait(self.C)
+                        
+                #self.bot.home(self.C)
+
                 self.bot.moveTo(self.q0)
                 while self.bot.getTimeToEnd() > 0:
                     self.bot.wait(self.C)
@@ -304,8 +324,14 @@ class ShelfEnv(BaseRobotEnv):
                 self.C.view()
         elif self.robot_mode == "normal":
             if self.path_mode == "jointspace":
-                for _ in range(100):
-                    self.sim._sim.step(action, 0.01, ry.ControlMode.position)
+                if self.on_real and self.botop:
+                    self.bot.move([action], [.5])
+                    while self.bot.getTimeToEnd() > 0:
+                        self.bot.wait(self.C)
+                else:
+                    for _ in range(100):
+                        self.sim._sim.step(action, 0.01, ry.ControlMode.position)
+                
             if self.path_mode == "taskspace" or self.path_mode == "pos3d" or self.path_mode == "pos3d_delta" or self.path_mode == "pos3d_rel":
                 
                 # clip minimum height for z to avoid collisions with table

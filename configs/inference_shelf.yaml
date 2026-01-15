@@ -3,10 +3,10 @@ defaults:
   - model: transformer_depth
   - data: depth
   - inference: transformer_depth_shelf
-  - env: shelf_hook_panda
+  - env: shelf_hook_panda_real
 
 experiment_name: "Transformer 10 step input Inference"
-observation_mode: depth
+observation_mode: rgb
 output_subdir: null
 num_eval_episodes: 100
 simulate: True

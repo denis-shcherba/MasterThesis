@@ -36,11 +36,17 @@ TODO maybe if time -->
 
 #### minimax action normalization
 
-**run**: experiment_20251229_152111 **val_loss**:3.8e-3, **train_loss**:2e-3, **success**: 45% (100 evals)
+**run**: experiment_20251229_152111 **val_loss**:2.6e-4, **train_loss**:1e-5, **success**: 45% (100 evals)
 
 #### zscore action normalization
 
-**run**: experiment_20251228_232913 **val_loss**:1.6e-3, **train_loss**:1.1e-4, **success**: 53% (100 evals)
+**run**: experiment_20251229_152849 **val_loss**:1.6e-3, **train_loss**:1.1e-4, **success**: 53% (100 evals)
+
+
+### real data:
+
+**run**: experiment_20260111_222201 **val_loss**:7e-4, **train_loss**:1e-5, **success**: 40% (50 evals)
+
 
 # Table env
 
@@ -52,13 +58,13 @@ TODO maybe if time -->
 **run**: experiment_20251222_161112 **val_loss**: 6e-5, **train_loss**: 1e-5 , **success**: 94% (100 evals)
 
 #### rgb 1000 resnet 18 trained from scratch rgb
-**run**: experiment_20260107_200958 **val_loss**: 9e-5, **train_loss**: 7e-5 , **success**: 60% (100 evals)
+**run**: experiment_20260107_200958 **val_loss**: 9e-5, **train_loss**: 7e-5 , **success**: 99% (100 evals)
 
 
 #### depth 1000 resnet 18 trained pretrained on imagenet transformer
 **run**: experiment_20251222_184207 **val_loss**: 1e-4, **train_loss**: 1e-5 , **success**: TODO
 
-#### dino cls 1000 transformer
+#### dino cls depth 1000 transformer
 **run**: experiment_20251222_171601 **val_loss**: 2e-4, **train_loss**: 7e-5 , **success**: TODO
 
 #### dino patch 1000 resnet 18 trained from scratch transformer

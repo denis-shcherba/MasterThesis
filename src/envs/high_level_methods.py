@@ -198,25 +198,38 @@ class RobotEnviroment:
 
             imgs = []
             depth =[]
-            timings = np.linspace(.1, 10, 64)
+            qs = []
+            timings = np.linspace(.15, 9.6, 64)
             self.bot.move(path, timings)
             i = 0
+            self.bot.sync(self.C)
+
             t_start = self.bot.get_t()
-            while self.bot.getTimeToEnd() > 0:
+            t_now = t_start
+            t_last = 0
+            for i in range(64):
                 rgb, depth_data = self._rs_get_data()
+                actual_q = self.bot.get_q()
+
                 if rgb is not None:
                     imgs.append(rgb)
                 if depth_data is not None:
                     depth.append(depth_data)
-                print(i, self.bot.get_t() - t_start)
-                
-                i += 1
-                self.bot.sync(self.C, 0.15625)  # 10/64 hz
+                qs.append(actual_q)
+
+                t_now = self.bot.get_t() - t_start
+                print(i, t_now)
+                print("time since last frame:", t_now - t_last)
+                t_last = t_now
+                print(actual_q - path[i])
+                # Still sync the robot so it moves along the path
+                self.bot.sync(self.C, 0.15)
+
 
             print(timings)
-            self.rgb_image = np.array(imgs, dtype=np.uint8)[:, :260, 180:520, :]
-            self.depth_image = np.array(depth, dtype=np.uint16)
-
+            self.rgb_image = np.array(imgs, dtype=np.uint8)#[:, :260, 180:520, :]
+            self.depth_image = np.array(depth, dtype=np.int16)
+            self.captured_qs = np.array(qs, dtype=np.float32)
         else:
             if self.visuals:
                 M1.play(self.C, 1.)

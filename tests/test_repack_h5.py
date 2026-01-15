@@ -21,4 +21,4 @@ def repack_h5(src_path, dst_path):
     print(f"✅ Repacked file saved to: {dst_path}")
 
 # Example usage
-repack_h5("table_demo.h5", "table_demo_repacked.h5")
+repack_h5("shelf_demos/shelf_demo_rgb.h5", "shelf_demos/shelf_demo_rgb_repacked.h5")

@@ -258,7 +258,7 @@ class BaseRobotEnv(gym.Env, abc.ABC):
         elif "rgb" in self.obs_type:
             if self.botop:
                 if self.on_real:
-                    observation["raw_rgb"] = self._rs_get_color()[:, :, :]
+                    observation["raw_rgb"] = self._rs_get_color()#[260:, 180:520, :]
                     observation["rgb"] = rescale_img_with_padding(observation["raw_rgb"])
             else:
                 observation["raw_rgb"] = self.sim.getRGB(rescale=False)

@@ -6,7 +6,7 @@ import torchvision.transforms.functional as TF
 import random
 
 # --- Configuration ---
-H5_FILE_PATH = 'shelf_demos/cleaned_data.h5'
+H5_FILE_PATH = 'shelf_demos/shelf_demo_rgb2.h5'
 AUGMENTATION_FACTOR = 4  # Creates 4 new copies per demo
 IMG_KEY = 'rgb'          # The key in your H5 file for images
 
@@ -65,6 +65,7 @@ def apply_consistent_augmentation(images_np):
     aug_np = aug_tensor.permute(0, 2, 3, 1).cpu().numpy()
     
     return aug_np
+
 
 # --- Main Processing Loop ---
 def generate_augmented_h5(file_path):

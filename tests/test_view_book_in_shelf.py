@@ -24,7 +24,7 @@ def main(cfg: DictConfig):
     env = gym.make(cfg.env, save_obj_pos=True, img_type="DEPTH", robot_mode=cfg.robot_mode, end_effector=cfg.get("end_effector", None), task=cfg.task, obj=cfg.obj, path_mode=cfg.path_mode, q0=cfg.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), camera_name=cfg.camera_name, box_size_ranges=cfg.box_size_ranges, box_offset_ranges=cfg.get("box_offset_ranges", None), table_offset_ranges=cfg.get("table_offset_ranges", None), camera_offset_ranges=cfg.get("camera_offset_ranges", None), camera_rpy_ranges=cfg.get("camera_rpy_ranges", None), focal_length_range=cfg.get("focal_length_range", None), depth_noise_ranges = cfg.get("depth_noise_ranges", None), extras=cfg.get("extras", ""), shelf_pos_xyz=cfg.get("shelf_pos_xyz", None), shelf_quaternion=cfg.get("shelf_quaternion", None), shelf_floor_offsets=cfg.get("shelf_floor_offsets", None), collect_data=False)
 
     env.unwrapped.C.view(True, "Initial Environment View, to close press q in the viewer")
-    view_book_from_h5(env, view_in_between=True)    
+    view_book_from_h5(env, view_in_between=False)    
 
     #visit_arena_markers(env.unwrapped.C, on_real=True)    
     #test_env_puck_positions(env)
@@ -50,7 +50,7 @@ def test_env_puck_positions(env, iterations=50, view_in_between=False):
 
 def view_book_from_h5(env, view_in_between=False):
     book_params_list = []
-    with h5py.File("shelf_demo.h5", 'a') as f:
+    with h5py.File("shelf_demo_2.h5", 'a') as f:
         demo_groups = [name for name in f.keys() if name.startswith('demo_')]
         total_demos = len(demo_groups)
 

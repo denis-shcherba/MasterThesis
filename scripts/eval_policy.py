@@ -128,7 +128,7 @@ def preprocess_inference_input(raw_input_data: dict, cfg: DictConfig, device: to
     log.info(f"Preprocessing complete. Final keys: {list(processed_input.keys())}")
     return processed_input
 info_dicts =[]
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     if cfg.env.on_real:
         matplotlib.use("Agg")   # headless backend, no X11 required
@@ -154,9 +154,9 @@ def eval_policy(cfg: DictConfig) -> None:
             img_type = "DEPTH"
 
 
-        env = gym.make("TableEnv-v0", obs_type=obs_type, q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges, extras="WAYPOINTS")
+        env = gym.make("TableEnv-v0", obs_type=obs_type, q0=cfg.env.get("q0", [.0, .0, .0, -2., 0. ,2., -0.5]), obj=cfg.env.get("obj", "book"), img_type=img_type, robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.env.simulate, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), seed=cfg.seed, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, box_offset_ranges=cfg.env.box_offset_ranges, allow_book_yaw=cfg.env.get("allow_book_yaw", False), table_offset_ranges=cfg.env.table_offset_ranges, camera_offset_ranges=cfg.env.camera_offset_ranges, camera_rpy_ranges=cfg.env.camera_rpy_ranges, focal_length_range=cfg.env.focal_length_range, depth_noise_ranges=cfg.env.depth_noise_ranges,  extras="WAYPOINTS")
     else:
-        env = gym.make("ShelfEnv-v1", obs_type=obs_type, end_effector=cfg.env.get("end_effector", None), q0=cfg.env.get("q0", None), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion, shelf_floor_offsets=cfg.env.shelf_floor_offsets, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, allow_book_yaw=cfg.env.allow_book_yaw, focal_length_range=cfg.env.focal_length_range, extras="WAYPOINTS")
+        env = gym.make("ShelfEnv-v1", obs_type=obs_type, end_effector=cfg.env.get("end_effector", None), q0=cfg.env.get("q0", None), obj=cfg.env.get("obj", "book"), robot_mode=cfg.env.robot_mode, path_mode=cfg.env.path_mode, botop=cfg.env.get("botop", False), on_real=cfg.env.get("on_real", False), camera_name=cfg.env.camera_name, simulate=cfg.simulate, seed=cfg.seed, shelf_pos_xyz=cfg.env.shelf_pos_xyz, shelf_quaternion=cfg.env.shelf_quaternion, shelf_floor_offsets=cfg.env.shelf_floor_offsets, collect_data=False, box_size_ranges=cfg.env.box_size_ranges, allow_book_yaw=cfg.env.allow_book_yaw, focal_length_range=cfg.env.focal_length_range, hook_base_length=cfg.env.get("hook_base_length", 0.5), hook_tip_length=cfg.env.get("hook_tip_length", 0.5), hook_width=cfg.env.get("hook_width", .025), rotate_panda_base=cfg.env.get("rotate_panda_base", True), extras="WAYPOINTS")
 
     
     action_execution_horizon = cfg.get("action_execution_horizon")
@@ -209,22 +209,23 @@ def eval_policy(cfg: DictConfig) -> None:
     #     key = "rgb"
     # else:
     #     key = "depth"
-    key = "depth"
+    key = cfg.observation_mode
 
     tracker = MemoryTracker() # <-- Initialize here
     output_dir = HydraConfig.get().run.dir
 
     for evaluation in range(cfg.get("num_eval_episodes")):
-
-
+        
+        
         obs, info = env.reset()
+        env.unwrapped.C.view(True, f"evaluation {evaluation} start")
         # env.unwrapped.C.view(True, "new evaluation")
         # History lists
         depth_sequence = []
         state_sequence = []
         
         action_chunk = None
-        max_episode_length = 85
+        max_episode_length = 75
 
         dist_to_target = float('inf')
         success = False
@@ -257,6 +258,7 @@ def eval_policy(cfg: DictConfig) -> None:
                     # If your normalize_rgb did mean/std subtraction, this might look weird
                     frame = (frame * 255).astype(np.uint8)
                 
+                frame = np.rot90(frame, 2)
                 video_frames.append(frame)
 
             if i % action_execution_horizon == 0:
@@ -351,7 +353,7 @@ def eval_policy(cfg: DictConfig) -> None:
                 if info["distance_to_target"] < dist_to_target:
                     dist_to_target = info["distance_to_target"]
 
-                    rgb, _ = env.unwrapped.getImageDepth()
+                    #rgb, _ = env.unwrapped.getImageDepth()
 
             if info.get("success", None) is not None:
                 if info["success"]:
@@ -422,12 +424,12 @@ def eval_policy(cfg: DictConfig) -> None:
         info["success"] = success
         log.info(f"Evaluation {evaluation} finished with min dist to target {info.get('min_dist_to_target', 'N/A')}, last dist to target {info.get('distance_to_target', 'N/A')} and success {success}.")
         # rotate pi/2 negative as camera is rotated
-        rgb_rot = cv2.rotate(rgb, cv2.ROTATE_90_CLOCKWISE)
+        # rgb_rot = cv2.rotate(rgb, cv2.ROTATE_90_CLOCKWISE)
 
-        cv2.imwrite(
-            os.path.join(HydraConfig.get().run.dir, f"best_dist_to_target{evaluation}.png"),
-            cv2.cvtColor(rgb_rot, cv2.COLOR_RGB2BGR)
-        )
+        # cv2.imwrite(
+        #     os.path.join(HydraConfig.get().run.dir, f"best_dist_to_target{evaluation}.png"),
+        #     cv2.cvtColor(rgb_rot, cv2.COLOR_RGB2BGR)
+        # )
         info_dicts.append(info)
 
         with open(os.path.join(output_dir, "data.json"), "w") as f:

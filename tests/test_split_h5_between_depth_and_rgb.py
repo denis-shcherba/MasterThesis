@@ -29,4 +29,4 @@ def split_modalities(input_path, rgb_out_path, depth_out_path):
     print(f"File B (Depth + States): {depth_out_path}")
 
 # Usage
-split_modalities('original_data.h5', 'data_rgb_only.h5', 'data_depth_only.h5')
+split_modalities('shelf_demos/shelf_demo.h5', 'shelf_demos/shelf_demo_rgb.h5', 'shelf_demos/shelf_demo_depth.h5')

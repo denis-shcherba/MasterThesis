@@ -51,16 +51,16 @@ def silence_logs():
 def collect_hook_data(cfg: DictConfig):
     # Initialize environment
     # Ensure your 'ShelfEnv-v1' opens the h5file in 'a' (append) mode internally
-    env = gym.make("ShelfEnv-v1", q0= cfg.q0, botop=cfg.botop, on_real=cfg.on_real, rotate_panda_base=cfg.rotate_panda_base, real_table=cfg.real_table, img_type="DEPTHRGB", robot_mode=cfg.robot_mode, end_effector="hook", path_mode=cfg.path_mode, shelf_pos_xyz=cfg.shelf_pos_xyz, shelf_quaternion=cfg.shelf_quaternion, shelf_floor_offsets=cfg.shelf_floor_offsets, camera_name=cfg.camera_name, simulate=True, seed=42, collect_data=True, box_size_ranges=cfg.box_size_ranges, allow_book_yaw=cfg.allow_book_yaw,  focal_length_range=cfg.focal_length_range, hook_base_length=cfg.hook_base_length, hook_tip_length=cfg.hook_tip_length, hook_width=cfg.get("hook_width", 0.02))
+    env = gym.make("ShelfEnv-v1", q0= cfg.q0, botop=cfg.botop, on_real=cfg.on_real, rotate_panda_base=cfg.rotate_panda_base, real_table=cfg.real_table, obs_type="DEPTHRGB", robot_mode=cfg.robot_mode, end_effector="hook", path_mode=cfg.path_mode, shelf_pos_xyz=cfg.shelf_pos_xyz, shelf_quaternion=cfg.shelf_quaternion, shelf_floor_offsets=cfg.shelf_floor_offsets, camera_name=cfg.camera_name, simulate=True, seed=42, collect_data=True, box_size_ranges=cfg.box_size_ranges, allow_book_yaw=cfg.allow_book_yaw,  focal_length_range=cfg.focal_length_range, hook_base_length=cfg.hook_base_length, hook_tip_length=cfg.hook_tip_length, hook_width=cfg.get("hook_width", 0.02))
     
     env.reset()
     env.unwrapped.C.view(True)
 
 
     box_size = (cfg.box_size_ranges['x'][0], cfg.box_size_ranges['y'][0], cfg.box_size_ranges['z'][0])
-    margins = {'x_min': 0.05, 'x_max': 0.05, 'y_min': 0.02, 'y_max': .19-cfg.box_size_ranges['y'][0]/2}
+    margins = {'x_min': 0.05, 'x_max': 0.05+.0816, 'y_min': 0.02, 'y_max': .19-cfg.box_size_ranges['y'][0]/2+0.03264}
 
-    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(25, 8), margins=margins)
+    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(30, 8), margins=margins)
     print(f"Generated {len(uniform_samples)} uniform samples.")
     del env.unwrapped.bot
 
@@ -76,7 +76,7 @@ def collect_hook_data(cfg: DictConfig):
     C2.addConfigurationCopy(env.unwrapped.C)
     C2.delFrame("target_book_0")
 
-    for i, sample in enumerate(uniform_samples[25:], 25):
+    for i, sample in enumerate(uniform_samples):
         # --- RESTART CHECK ---
         # If the specific demo group for this index already exists, skip it
         # This allows you to pick up exactly where the loop crashed
@@ -117,7 +117,7 @@ def collect_hook_data(cfg: DictConfig):
             RoboEnv.bot.wait(env.unwrapped.C)
             
         env.unwrapped._spawn_book(sample[0])
-        env.unwrapped.C.view(True, f"sampled: {int(i%25)}-{int(i/25)}")
+        env.unwrapped.C.view(True, f"sampled: {int(i%30)}-{int(i/30)}")
         book_pos = env.unwrapped.C.getFrame("target_book_0").getPosition()
         
         # Action
@@ -134,12 +134,12 @@ def collect_hook_data(cfg: DictConfig):
             if env.unwrapped.path_mode == "jointspace":
                 demo_group.create_dataset("path", data=RoboEnv.path)
             
-            img_type = env.unwrapped.img_type.upper()
-            if "DEPTH" in img_type:
+            obs_type = env.unwrapped.obs_type.upper()
+            if "DEPTH" in obs_type:
                 demo_group.create_dataset("depth", data=RoboEnv.depth_image, compression="gzip", compression_opts=4)
-            if "RGB" in img_type:
+            if "RGB" in obs_type:
                 demo_group.create_dataset("rgb", data=RoboEnv.rgb_image, compression="gzip", compression_opts=4)
-
+            demo_group.create_dataset("qs", data=RoboEnv.captured_qs, compression="gzip", compression_opts=4)
         # --- BACKUP/FLUSH LOGIC ---
         # Every 10 iterations, force the HDF5 library to write the buffer to the physical disk
         if i % 5 == 0:
@@ -158,9 +158,9 @@ def evaluate_hook_feasibility(cfg: DictConfig, visualize: bool = False):
     env = gym.make("ShelfEnv-v1", q0= cfg.q0, botop=False, on_real=False, rotate_panda_base=cfg.rotate_panda_base, real_table=cfg.real_table, img_type="DEPTH", robot_mode=cfg.robot_mode, end_effector="hook", path_mode=cfg.path_mode, shelf_pos_xyz=cfg.shelf_pos_xyz, shelf_quaternion=cfg.shelf_quaternion, shelf_floor_offsets=cfg.shelf_floor_offsets, camera_name=cfg.camera_name, simulate=True, seed=42, collect_data=False, box_size_ranges=cfg.box_size_ranges, allow_book_yaw=cfg.allow_book_yaw,  focal_length_range=cfg.focal_length_range, hook_base_length=cfg.hook_base_length, hook_tip_length=cfg.hook_tip_length, hook_width=cfg.get("hook_width", 0.02))
     env.reset()
     box_size = (cfg.box_size_ranges['x'][0], cfg.box_size_ranges['y'][0], cfg.box_size_ranges['z'][0])
-    margins = {'x_min': 0.05, 'x_max': 0.05, 'y_min': 0.02, 'y_max': .19-cfg.box_size_ranges['y'][0]/2}
+    margins = {'x_min': 0.05, 'x_max': 0.05+.0816, 'y_min': 0.02, 'y_max': .19-cfg.box_size_ranges['y'][0]/2+0.03264}
 
-    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(25, 8), margins=margins)
+    uniform_samples = generate_uniform_box_params(env.unwrapped.shelf_dims_for_spawning, box_size=box_size, grid_size=(30, 8), margins=margins)
     print(f"Generated {len(uniform_samples)} uniform samples.")
     RoboEnv = RobotEnviroment(env.unwrapped.C, sim=True, camera="cameraWrist", on_real=False, visualize=visualize)
 

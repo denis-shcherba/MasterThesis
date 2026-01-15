@@ -134,7 +134,7 @@ def execute_single_episode(evaluation_idx, env, model, cfg, device, normalizatio
         "last_dist_to_target": float(info.get("distance_to_target", -1))
     }
 
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     device = torch.device(cfg.get("inference", {}).get("device", "cuda" if torch.cuda.is_available() else "cpu"))
     output_dir = HydraConfig.get().run.dir
@@ -166,7 +166,7 @@ def eval_policy(cfg: DictConfig) -> None:
 
         env = gym.make(
             "TableEnv-v0",
-            obs_type=f"{obs_type}_agent_pos",
+            obs_type=obs_type,
             q0=cfg.env.get("q0", [.0, .0, .0, -2., 0., 2., -0.5]),
             obj=cfg.env.get("obj", "book"),
             img_type=img_type,
