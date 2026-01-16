@@ -1,11 +1,11 @@
 # Base policy configuration
 type: multimodal
-action_dim: 9
+action_dim: 4
 dropout_rate: 0.2        # Still used by obs_encoder (PointNet), which is good!
 policy_head_type: diffusion
 
 # Multimodal policy specific settings
-state_dim: 9
+state_dim: 4
 fusion_method: concat
 
 time_encoding: none
@@ -13,6 +13,7 @@ max_timesteps: 64 # This might still be needed if your dataset processing uses i
 observation_mode: ${observation_mode}  # inherit from global config
 
 # Diffusion Head settings
+context_length: ${context_length} 
 prediction_length: ${prediction_length}       # length of the generated action trajectory.
 num_diffusion_iters: 100    #  Number of denoising steps. Controls the trade-off between sample quality and inference speed.
 down_dims: [128, 256, 512] #[256, 512, 1024]

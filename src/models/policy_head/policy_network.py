@@ -328,7 +328,7 @@ class MultiModalPolicy(nn.Module):
 
             # Option 1: Pass the full policy_input_dim (includes state if concat)
             self.policy_head = DiffusionHead(
-                input_dim=policy_input_dim,  # 512 for concat, 256 otherwise
+                input_dim=policy_input_dim * context_length,  # 512 for concat, 256 otherwise
                 action_dim=self.action_dim,
                 pred_horizon=self.prediction_length, 
                 num_diffusion_iters=num_diffusion_iters,
@@ -444,7 +444,9 @@ class MultiModalPolicy(nn.Module):
             # Prepare the conditioning vector. We'll use the feature from the
             # last observation step in the sequence as the condition.
             cond_features = fused_features.view(batch_size, seq_len, -1)[:, -1, :]
-            
+            cond_features = fused_features.view(batch_size, -1)
+
+
             return self.policy_head(global_cond=cond_features, true_actions=true_actions)
         else:
             raise ValueError(f"Unknown policy_head_type: {self.policy_head_type}")
