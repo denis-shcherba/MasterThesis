@@ -60,7 +60,7 @@ def execute_single_episode(evaluation_idx, env, model, cfg, device, normalizatio
                 curr_state_t = torch.tensor(obs["agent_pos"], dtype=torch.float32, device=device).unsqueeze(0)
 
                 if cfg.observation_mode == 'depth':
-                    depth_obs = normalize_depth(curr_obs_t, normalization_stats["depth_stats"])
+                    depth_obs = normalize_depth(curr_obs_t, normalization_stats["obs_stats"])
                 else:
                     depth_obs = normalize_rgb(curr_obs_t).permute(0, 3, 1, 2)
 
@@ -98,7 +98,7 @@ def execute_single_episode(evaluation_idx, env, model, cfg, device, normalizatio
         with torch.no_grad():
             obs_t = torch.from_numpy(obs[key]).float().unsqueeze(0)
             if cfg.observation_mode == 'depth':
-                d_obs = normalize_depth(obs_t, normalization_stats["depth_stats"])
+                d_obs = normalize_depth(obs_t, normalization_stats["obs_stats"])
             else:
                 d_obs = normalize_rgb(obs_t).permute(0, 3, 1, 2)
 
@@ -134,7 +134,7 @@ def execute_single_episode(evaluation_idx, env, model, cfg, device, normalizatio
         "last_dist_to_target": float(info.get("distance_to_target", -1))
     }
 
-@hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     device = torch.device(cfg.get("inference", {}).get("device", "cuda" if torch.cuda.is_available() else "cpu"))
     output_dir = HydraConfig.get().run.dir
@@ -169,7 +169,6 @@ def eval_policy(cfg: DictConfig) -> None:
             obs_type=obs_type,
             q0=cfg.env.get("q0", [.0, .0, .0, -2., 0., 2., -0.5]),
             obj=cfg.env.get("obj", "book"),
-            img_type=img_type,
             robot_mode=cfg.env.robot_mode,
             path_mode=cfg.env.path_mode,
             camera_name=cfg.env.camera_name,

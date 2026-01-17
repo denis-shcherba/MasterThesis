@@ -43,6 +43,13 @@ TODO maybe if time -->
 **run**: experiment_20251229_152849 **val_loss**:1.6e-3, **train_loss**:1.1e-4, **success**: 53% (100 evals)
 
 
+#### zscore action new
+TODO
+**run**: experiment_20251229_152849 **val_loss**:1.6e-3, **train_loss**:1.1e-4, **success**: 53% (100 evals)
+
+
+
+
 ### real data:
 
 **run**: experiment_20260111_222201 **val_loss**:7e-4, **train_loss**:1e-5, **success**: 40% (50 evals)

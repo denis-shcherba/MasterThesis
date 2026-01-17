@@ -87,11 +87,8 @@ def generate_uniform_box_params(shelf_size, box_size, grid_size=(10, 10), margin
     N_x, N_y = grid_size
 
     if isinstance(margins, (int, float)):
-        # If margins are uniform, no swap needed. 
-        # If margins were a dict like {'x_min':...}, you'd need to swap those keys too.
         m = {'x_min': margins, 'x_max': margins, 'y_min': margins, 'y_max': margins}
     else:
-        # Swap dict keys if they are passed in
         m = {'x_min': margins['x_min'], 'x_max': margins['x_max'], 
              'y_min': margins['y_min'], 'y_max': margins['y_max']}
 
@@ -119,33 +116,57 @@ def generate_uniform_box_params(shelf_size, box_size, grid_size=(10, 10), margin
 
     return all_samples
 
-def generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, num_boxes=1, allow_yaw=False, max_attempts=100):
+import numpy as np
+
+def generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, 
+                               num_boxes=1, allow_yaw=False, max_attempts=100, margins={}):
     """
-    Generates random sizes and positions x on a fixed-size shelf, allowing generation of an arbitrary yaw rotation as well.
-    Ensures that boxes do not collide with each other.
+    Generates random sizes and positions on a fixed-size shelf with safety margins.
+    Ensures that boxes do not collide and stay within the specified margins.
     """
+    # 1. Parse Margins (Standardize to a dictionary)
+    if isinstance(margins, (int, float)):
+        m = {'x_min': margins, 'x_max': margins, 'y_min': margins, 'y_max': margins}
+    else:
+        m = {
+            'x_min': margins.get('x_min', 0.0), 
+            'x_max': margins.get('x_max', 0.0), 
+            'y_min': margins.get('y_min', 0.0), 
+            'y_max': margins.get('y_max', 0.0)
+        }
+
     all_samples = []
 
     for _ in range(num_samples):
         boxes = []
         for box_idx in range(num_boxes):
             for attempt in range(max_attempts):
-                # Randomly select box dimensions within the given range
-                # X_b = np.random.uniform(*box_size_ranges['x'])
-                # Y_b = np.random.uniform(*box_size_ranges['y'])
-                # Z_b = np.random.uniform(*box_size_ranges['z'])
+                # Randomly select box dimensions
                 X_b, Y_b, Z_b = generate_random_box_sizes(box_size_ranges)[0]
 
                 yaw = 0  # Default yaw angle
                 if allow_yaw:
                     yaw = np.random.uniform(0, 2 * np.pi)
+                    # Calculate projected footprint after rotation (AABB)
                     X_b_rot = abs(X_b * np.cos(yaw)) + abs(Y_b * np.sin(yaw))
                     Y_b_rot = abs(X_b * np.sin(yaw)) + abs(Y_b * np.cos(yaw))
                 else:
                     X_b_rot, Y_b_rot = X_b, Y_b
 
-                x = np.random.uniform(X_b_rot / 2, shelf_size[0] - X_b_rot / 2)
-                y = np.random.uniform(Y_b_rot / 2, shelf_size[1] - Y_b_rot / 2)
+                # 2. Calculate Margins-aware Bounds
+                x_min_bound = m['x_min'] + (X_b_rot / 2)
+                x_max_bound = shelf_size[0] - m['x_max'] - (X_b_rot / 2)
+                
+                y_min_bound = m['y_min'] + (Y_b_rot / 2)
+                y_max_bound = shelf_size[1] - m['y_max'] - (Y_b_rot / 2)
+
+                # Check if the box can actually fit with these margins
+                if x_min_bound > x_max_bound or y_min_bound > y_max_bound:
+                    continue # Try another size or next attempt
+
+                # 3. Generate Random Coordinates within Bounds
+                x = np.random.uniform(x_min_bound, x_max_bound)
+                y = np.random.uniform(y_min_bound, y_max_bound)
                 z = np.random.uniform(Z_b / 2, shelf_size[2] - Z_b / 2)
 
                 new_box = (X_b, Y_b, Z_b, x, y, z, yaw)
@@ -158,14 +179,12 @@ def generate_random_box_params(shelf_size, box_size_ranges, num_samples=1000, nu
                             collision = True
                             break
                     except NotImplementedError:
-                        # If yaw != 0, skip collision check for now
                         collision = False
 
                 if not collision:
                     boxes.append(new_box)
                     break
             else:
-                # Could not place this box without collision after max_attempts
                 break
 
         if len(boxes) == num_boxes:

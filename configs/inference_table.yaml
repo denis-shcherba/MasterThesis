@@ -1,8 +1,8 @@
 defaults:
   - _self_  
-  - model: transformer_depth
+  - model: diffusion_depth
   - data: depth
-  - inference: transformer_depth_table
+  - inference: diffusion_depth_table
   - env: table_3d_abs_push_sim
 
 experiment_name: "Transformer 10 step input Inference"

@@ -37,6 +37,7 @@ class ShelfEnv(BaseRobotEnv):
                 camera_rpy_ranges = None,
                 focal_length_range = (1.5, 1.5),
                 depth_noise_ranges = None,
+                margins = {},
 
                 shelf_pos_xyz=None, # e.g. [.8, 0., .3]
                 shelf_quaternion=None, # e.g. [1, 0, 0, 1] (w,x,y,z) or as expected by generate_shelf
@@ -60,6 +61,7 @@ class ShelfEnv(BaseRobotEnv):
         self.extras = extras
         self.obj = "book"
         self.rotate_panda_base = rotate_panda_base
+        self.margins = margins
 
         self.camera_name = camera_name
         self.last_pos = np.array([0., 0., 0.])
@@ -173,7 +175,8 @@ class ShelfEnv(BaseRobotEnv):
             box_size_ranges=self.box_size_ranges,
             num_samples=1,
             num_boxes=self.num_boxes_per_sample,
-            allow_yaw=self.allow_book_yaw
+            allow_yaw=self.allow_book_yaw,
+            margins=self.margins
         )
 
         for i, book_params in enumerate(sample):
