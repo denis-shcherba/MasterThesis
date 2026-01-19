@@ -16,7 +16,6 @@ from training.trainer import ActionPolicyTrainer, create_trainer
 from training.losses import create_loss_function
 from training.optimizer import create_optimizer
 from models.policy_head.policy_network import MultiModalPolicy, SimplePCToPosRegressor, PositionalEncoding, WayPlusTimingsPolicy
-from utils.data_utils import numpy_to_python
 
 
 log = logging.getLogger(__name__)
