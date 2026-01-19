@@ -22,11 +22,11 @@
 
 #### rgb
 
-**run**: experiment_20260117_183558 **val_loss**: , **train_loss**: 9.8e-5 , **success**: 60% (100 evals)
+**run**: experiment_20260117_183558 **val_loss**: , **train_loss**: 9.8e-5 , **success**: % (100 evals)
 
 #### dino
 
-**run**: experiment_20260116_171037 **val_loss**: 2.6e-4, **train_loss**: 6e-5 , **success**: 60% (100 evals)
+**run**: experiment_20260116_171037 **val_loss**: 2.6e-4, **train_loss**: 6e-5 , **success**: % (100 evals)
 
 
 

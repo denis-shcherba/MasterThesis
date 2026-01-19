@@ -1,0 +1,24 @@
+defaults:
+  - _self_  
+  - model: diffusion_shelf
+  - data: depth
+  - env: shelf_hook_panda_2
+
+inference:
+  checkpoint_path: outputs/final_outputs/thesis_evals/shelf_diffusion_depth.pth
+  normalization_stats_path: outputs/final_outputs/thesis_evals/shelf_diffusion_depth.yaml
+
+experiment_name: "Diffusion 10 step input Inference"
+observation_mode: depth
+output_subdir: null
+num_eval_episodes: 10
+simulate: True
+is_waypointPlusTimings: False
+action_execution_horizon: 8
+seed: 1337
+context_length: 8
+prediction_length: 8
+
+hydra:
+  run:
+    dir: ./eval_outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

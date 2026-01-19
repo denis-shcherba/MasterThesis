@@ -1,3 +1,0 @@
-checkpoint_path: outputs/final_outputs/table_env/push/depth.pth
-normalization_stats_path: outputs/final_outputs/table_env/push/depth.yaml
-padding_strategy: zero

@@ -30,16 +30,16 @@ def seed_everything(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def execute_single_episode(evaluation_idx, env, model, cfg, device, normalization_stats, sequence_length, key, output_dir):
+def execute_single_episode(evaluation_idx, env, model, cfg, device, normalization_stats, sequence_length, key, max_episode_length, output_dir):
     obs, info = env.reset()
     
     depth_sequence = []
     state_sequence = []
     video_frames = []
     action_execution_horizon = cfg.get("action_execution_horizon")
-    max_episode_length = 130
     
     dist_to_target = float('inf')
+    shelf_over = float('-inf')
     success = False
     final_rgb = None
     action_chunk_np = None
@@ -90,7 +90,12 @@ def execute_single_episode(evaluation_idx, env, model, cfg, device, normalizatio
         if current_dist < dist_to_target:
             dist_to_target = current_dist
             final_rgb, _ = env.unwrapped.getImageDepth() 
-            
+        
+        current_over_shelf = info.get("over_shelf", -100)
+        if current_over_shelf > shelf_over:
+            shelf_over = current_over_shelf
+            final_rgb, _ = env.unwrapped.getImageDepth() 
+
         if info.get("success", False): 
             success = True
 
@@ -131,10 +136,12 @@ def execute_single_episode(evaluation_idx, env, model, cfg, device, normalizatio
         "episode": evaluation_idx,
         "min_dist_to_target": float(dist_to_target),
         "success": bool(success),
-        "last_dist_to_target": float(info.get("distance_to_target", -1))
+        "last_dist_to_target": float(info.get("distance_to_target", -1)),
+        "last_over_shelf": float(info.get("over_shelf", -1)),
+        "max_over_shelf": float(shelf_over)
     }
 
-@hydra.main(config_path="../configs", config_name="inference_table", version_base=None)
+@hydra.main(config_path="../configs", config_name="inference_shelf", version_base=None)
 def eval_policy(cfg: DictConfig) -> None:
     device = torch.device(cfg.get("inference", {}).get("device", "cuda" if torch.cuda.is_available() else "cpu"))
     output_dir = HydraConfig.get().run.dir
@@ -145,6 +152,7 @@ def eval_policy(cfg: DictConfig) -> None:
     state_dict = {k.replace('module.', '', 1): v for k, v in checkpoint['model_state_dict'].items()}
     model.load_state_dict(state_dict)
     model.eval()
+
 
     with open(cfg.inference.normalization_stats_path, 'r') as f:
         normalization_stats = yaml.safe_load(f)
@@ -164,43 +172,76 @@ def eval_policy(cfg: DictConfig) -> None:
         episode_seed = cfg.seed + evaluation
         seed_everything(episode_seed)
 
-        env = gym.make(
-            "TableEnv-v0",
-            obs_type=obs_type,
-            q0=cfg.env.get("q0", [.0, .0, .0, -2., 0., 2., -0.5]),
-            obj=cfg.env.get("obj", "book"),
-            robot_mode=cfg.env.robot_mode,
-            path_mode=cfg.env.path_mode,
-            camera_name=cfg.env.camera_name,
-            simulate=cfg.env.simulate,
-            botop=cfg.env.get("botop", False),
-            on_real=cfg.env.get("on_real", False),
-            seed=episode_seed,
-            collect_data=False,
-            box_size_ranges=cfg.env.box_size_ranges,
-            box_offset_ranges=cfg.env.box_offset_ranges,
-            allow_book_yaw=cfg.env.get("allow_book_yaw", False),
-            table_offset_ranges=cfg.env.table_offset_ranges,
-            camera_offset_ranges=cfg.env.camera_offset_ranges,
-            camera_rpy_ranges=cfg.env.camera_rpy_ranges,
-            focal_length_range=cfg.env.focal_length_range,
-            depth_noise_ranges=cfg.env.depth_noise_ranges,
-            extras="WAYPOINTS",
-        )
-
-        try:
-            ep_results = execute_single_episode(
-                evaluation, env, model, cfg, device, normalization_stats, 
-                sequence_length, key="depth", output_dir=output_dir
+        print(cfg.env.env)
+        if cfg.env.env == "TableEnv-v0":
+            max_episode_length = 130
+            env = gym.make(
+                "TableEnv-v0",
+                obs_type=obs_type,
+                q0=cfg.env.get("q0", [.0, .0, .0, -2., 0., 2., -0.5]),
+                obj=cfg.env.get("obj", "book"),
+                robot_mode=cfg.env.robot_mode,
+                path_mode=cfg.env.path_mode,
+                camera_name=cfg.env.camera_name,
+                simulate=cfg.env.simulate,
+                botop=cfg.env.get("botop", False),
+                on_real=cfg.env.get("on_real", False),
+                seed=episode_seed,
+                collect_data=False,
+                box_size_ranges=cfg.env.box_size_ranges,
+                box_offset_ranges=cfg.env.box_offset_ranges,
+                allow_book_yaw=cfg.env.get("allow_book_yaw", False),
+                table_offset_ranges=cfg.env.table_offset_ranges,
+                camera_offset_ranges=cfg.env.camera_offset_ranges,
+                camera_rpy_ranges=cfg.env.camera_rpy_ranges,
+                focal_length_range=cfg.env.focal_length_range,
+                depth_noise_ranges=cfg.env.depth_noise_ranges,
+                extras="WAYPOINTS",
             )
-            all_results.append(ep_results)
-            
-            with open(os.path.join(output_dir, "results.json"), "w") as f:
-                json.dump(all_results, f, indent=4)
+        elif cfg.env.env == "ShelfEnv-v1":
+            max_episode_length = 64
+            env = gym.make(
+                "ShelfEnv-v1", 
+                obs_type=obs_type,
+                end_effector=cfg.env.get("end_effector", None),
+                q0=cfg.env.get("q0", None),
+                obj=cfg.env.get("obj", "book"),
+                robot_mode=cfg.env.robot_mode, 
+                path_mode=cfg.env.path_mode, 
+                botop=cfg.env.get("botop", False),
+                on_real=cfg.env.get("on_real", False), 
+                camera_name=cfg.env.camera_name, 
+                simulate=cfg.simulate,
+                seed=episode_seed, 
+                shelf_pos_xyz=cfg.env.shelf_pos_xyz,
+                shelf_quaternion=cfg.env.shelf_quaternion,
+                shelf_floor_offsets=cfg.env.shelf_floor_offsets,
+                collect_data=False,
+                box_size_ranges=cfg.env.box_size_ranges,
+                allow_book_yaw=cfg.env.allow_book_yaw,
+                focal_length_range=cfg.env.focal_length_range,
+                hook_base_length=cfg.env.get("hook_base_length", 0.5),
+                hook_tip_length=cfg.env.get("hook_tip_length", 0.5),
+                hook_width=cfg.env.get("hook_width", .025),
+                rotate_panda_base=cfg.env.get("rotate_panda_base", True),
+                margins = cfg.env.get("margins", [0.0, 0.0, 0.0]),
+                extras="WAYPOINTS"
+            )
+        
+        if obs_type == "depth":
+            key = "depth"
+        elif obs_type == "rgb" or obs_type == "dino_patches":
+            key = "rgb"
                 
-        finally:
-            env.close()
-            del env
+        ep_results = execute_single_episode(
+            evaluation, env, model, cfg, device, normalization_stats, 
+            sequence_length, key=key, max_episode_length=max_episode_length, output_dir=output_dir
+        )
+        all_results.append(ep_results)
+        
+        with open(os.path.join(output_dir, "results.json"), "w") as f:
+            json.dump(all_results, f, indent=4)
+                
 
         plt.close('all')
         if torch.cuda.is_available():

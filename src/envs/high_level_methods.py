@@ -189,8 +189,8 @@ class RobotEnviroment:
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
 
-            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=True, visualize=self.visualize)
-            sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=True, visualize=self.visualize)
+            sim.run_trajectory_position_control(np.array(path1), n_steps=2, tau=0.01, capture_obs=True, visualize=True)
+            sim.run_trajectory_position_control(np.array(path2), n_steps=2,  tau=0.01, capture_obs=True, visualize=True)
 
         elif self.on_real:
             # Use RealSense color-only for raw RGB capture (no depth alignment)

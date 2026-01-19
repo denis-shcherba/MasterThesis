@@ -1,5 +1,5 @@
 defaults:
-  - env: shelf_hook_panda
+  - env: shelf_hook_panda_2
 
 num_samples: 1_000
 output_subdir: null

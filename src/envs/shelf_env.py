@@ -122,7 +122,7 @@ class ShelfEnv(BaseRobotEnv):
         _shelf_quaternion = shelf_quaternion if shelf_quaternion is not None else [1, 0, 0, 1]
         _shelf_floor_offsets = shelf_floor_offsets if shelf_floor_offsets is not None else [0.35, 0.43, 0.30, 0.18, 0.15, 0.2, 0.15, 0.15, 0.15, 0.12]
 
-        generate_shelf(self.C, self.shelf_pos, w=.38, d=.44, h=2, base_quaternion=_shelf_quaternion, floor_offsets=_shelf_floor_offsets)
+        generate_shelf(self.C, self.shelf_pos, w=.48, d=.44, h=2, base_quaternion=_shelf_quaternion, floor_offsets=_shelf_floor_offsets)
 
         self.C.addFrame("cameraWP", self.camera_name).setShape(ry.ST.marker, [.1])
 
@@ -167,6 +167,39 @@ class ShelfEnv(BaseRobotEnv):
             .setMass(.1) \
             .setAttributes({"friction": 1}) 
         
+        self.C.addFrame(f"corner_1")
+        self.C.getFrame(f"corner_1").setParent(self.C.getFrame(frame_name))
+        self.C.getFrame(f"corner_1", ) \
+            .setRelativePosition(np.array([-b_size_x/2, -b_size_y/2, -b_size_z/2])) \
+            .setShape(ry.ST.marker, [.1]) \
+            .setColor([0, 1, 0]) 
+        self.books.append("corner_1")
+            
+        self.C.addFrame(f"corner_2")
+        self.C.getFrame(f"corner_2").setParent(self.C.getFrame(frame_name))
+        self.C.getFrame(f"corner_2", ) \
+            .setRelativePosition(np.array([b_size_x/2, -b_size_y/2, -b_size_z/2])) \
+            .setShape(ry.ST.marker, [.1]) \
+            .setColor([0, 1, 0]) 
+        self.books.append("corner_2")
+
+        self.C.addFrame(f"corner_3")
+        self.C.getFrame(f"corner_3").setParent(self.C.getFrame(frame_name))
+        self.C.getFrame(f"corner_3", ) \
+            .setRelativePosition(np.array([-b_size_x/2, b_size_y/2, -b_size_z/2])) \
+            .setShape(ry.ST.marker, [.1]) \
+            .setColor([0, 1, 0]) 
+        self.books.append("corner_3")
+
+            
+        self.C.addFrame(f"corner_4")
+        self.C.getFrame(f"corner_4").setParent(self.C.getFrame(frame_name))
+        self.C.getFrame(f"corner_4", ) \
+            .setRelativePosition(np.array([b_size_x/2, b_size_y/2, -b_size_z/2])) \
+            .setShape(ry.ST.marker, [.1]) \
+            .setColor([0, 1, 0]) 
+        self.books.append("corner_4")
+
         self.C.view(False)
         
     def _spawn_books_scene(self):
@@ -219,10 +252,16 @@ class ShelfEnv(BaseRobotEnv):
     def _get_info(self):
         book_pos = self.C.getFrame("target_book_0").getPosition()
         target_pos = self.C.getFrame("target").getPosition()
-        
-        distance = np.linalg.norm(book_pos - target_pos)
-        success = distance < 0.05 # Tighter tolerance for reaching
-        return {"distance_to_target": distance, "success": success}
+
+        corner_diff_1 = self.C.getFrame("target").getPosition()[0] - self.C.getFrame("corner_1").getPosition()[0] 
+        corner_diff_2 = self.C.getFrame("target").getPosition()[0] - self.C.getFrame("corner_2").getPosition()[0]
+        corner_diff_3 = self.C.getFrame("target").getPosition()[0] - self.C.getFrame("corner_3").getPosition()[0]
+        corner_diff_4 = self.C.getFrame("target").getPosition()[0] - self.C.getFrame("corner_4").getPosition()[0]
+
+        over_shelf = max(corner_diff_1, corner_diff_2, corner_diff_3, corner_diff_4)
+
+        success = over_shelf > 0.025 
+        return {"over_shelf": over_shelf, "success": success}
 
     def hook_block(self):
         success = self.roboenv.hook_book("target_book_0")

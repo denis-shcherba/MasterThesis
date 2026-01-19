@@ -1,3 +1,0 @@
-checkpoint_path: outputs/final_outputs/table_env/push/diffusion.pth
-normalization_stats_path: outputs/final_outputs/table_env/push/diffusion.yaml
-padding_strategy: zero

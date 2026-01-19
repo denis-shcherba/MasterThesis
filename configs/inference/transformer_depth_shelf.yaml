@@ -1,2 +1,0 @@
-checkpoint_path: outputs/final_outputs/shelf_env/hook/real.pth
-normalization_stats_path: outputs/final_outputs/shelf_env/hook/real.yaml
