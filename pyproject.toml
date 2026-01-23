@@ -37,7 +37,8 @@ dependencies = [
     "pyrealsense2",
     "psutil",
     "objgraph",
-    "pandas"
+    "pandas",
+    "scienceplots"
 ]
 
 [project.urls]

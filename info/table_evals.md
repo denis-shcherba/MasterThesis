@@ -11,7 +11,7 @@
 **run**: experiment_20260107_200958 **val_loss**: 9e-5, **train_loss**: 7e-5 , **success**: 99% (100 evals)
 
 #### dino  
-**run**: experiment_20260107_200958 **val_loss**: 9e-5, **train_loss**: 7e-5 , **success**: 92% (100 evals)
+**run**:  **val_loss**: , **train_loss**:  , **success**: 
 
 
 ### diffusion:

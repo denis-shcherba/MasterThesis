@@ -97,6 +97,10 @@ class TableEnv(BaseRobotEnv):
             .setPosition(self.camera_base_pos) \
             .setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) \
 
+        self.C.addFrame("cameraStaticwp")
+        self.C.getFrame("cameraStaticwp").setParent(self.C.getFrame("cameraStaticTableTop"))
+        self.C.getFrame("cameraStaticwp").setShape(ry.ST.marker, [1]).setQuaternion(ry.Quaternion().setRollPitchYaw([0, np.pi, np.pi]).asArr()) # .02
+
         self.table_base_height = self.C.getFrame("table").getPosition()[2] + self.C.getFrame("table").getSize()[2]/2
 
 
@@ -223,7 +227,7 @@ class TableEnv(BaseRobotEnv):
         if self.save_obj_pos:
             self.cylinder_pos = self.C.getFrame("cylinder").getPosition()
 
-        self.C.addFrame("target").setPosition(np.concatenate((self.obj_center, np.array([.7])))).setShape(ry.ST.marker, [.2]).setColor([0, 1, 0, .9])
+        self.C.addFrame("target").setPosition(np.concatenate((self.obj_center, np.array([.68])))).setShape(ry.ST.marker, [.1]).setColor([0, 1, 0, .9])
 
         self.C.view(False)
 

@@ -959,6 +959,7 @@ dependencies = [
     { name = "pandas" },
     { name = "psutil" },
     { name = "pyrealsense2" },
+    { name = "scienceplots" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "tqdm" },
@@ -982,6 +983,7 @@ requires-dist = [
     { name = "pandas" },
     { name = "psutil" },
     { name = "pyrealsense2" },
+    { name = "scienceplots" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "tqdm" },
@@ -2043,6 +2045,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ad/fe/cad1d9762868c7c5dc70c8620074df28ebb1a8e4c17d4c0cb031889c457e/safetensors-0.6.2-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:d944cea65fad0ead848b6ec2c37cc0b197194bec228f8020054742190e9312ac", size = 655957, upload-time = "2025-08-08T13:13:57.029Z" },
     { url = "https://files.pythonhosted.org/packages/59/a7/e2158e17bbe57d104f0abbd95dff60dda916cf277c9f9663b4bf9bad8b6e/safetensors-0.6.2-cp38-abi3-win32.whl", hash = "sha256:cab75ca7c064d3911411461151cb69380c9225798a20e712b102edda2542ddb1", size = 308926, upload-time = "2025-08-08T13:14:01.095Z" },
     { url = "https://files.pythonhosted.org/packages/2c/c3/c0be1135726618dc1e28d181b8c442403d8dbb9e273fd791de2d4384bcdd/safetensors-0.6.2-cp38-abi3-win_amd64.whl", hash = "sha256:c7b214870df923cbc1593c3faee16bec59ea462758699bd3fee399d00aac072c", size = 320192, upload-time = "2025-08-08T13:13:59.467Z" },
+]
+
+[[package]]
+name = "scienceplots"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/5c/2617c08c046d9e5bd6034001efa0b58fcfa46fc8090c0c870370a63270e8/scienceplots-2.2.0.tar.gz", hash = "sha256:240bbc081fdf3a4025e0e4491c946b294ed5041f8c1c7f09f0e6071558aa59cc", size = 14375, upload-time = "2025-11-20T01:41:06.998Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0f/23/fbb25276057e99c25b9575df2b56698a68be28335b38fc81a63e3b82c638/scienceplots-2.2.0-py3-none-any.whl", hash = "sha256:ab0c0bec3096e1e16adb212d4752bbf624bd31e9d04191ea79de611d00ce88f0", size = 30341, upload-time = "2025-11-20T01:41:06.079Z" },
 ]
 
 [[package]]

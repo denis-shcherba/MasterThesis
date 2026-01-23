@@ -138,8 +138,7 @@ class RobotEnviroment:
         high_on_potenuse = self.C.getFrame(object_).getSize()[0]/(2 * np.sin(theta_acute))
         
         self.C.addFrame("hook_point").setPosition(self.C.getFrame(object_).getPosition() - np.array([0, 0, .01]) + (high_on_potenuse+.04) * direction_vec).setShape(ry.ST.marker, [.05]).setQuaternion(ry.Quaternion().setEuler([0, 0, -theta]).asArr())
-        self.C.addFrame("end_point").setPosition(self.C.getFrame("target").getPosition() + (high_on_potenuse) * direction_vec).setShape(ry.ST.marker, [.2])
-        self.C.addFrame("test_test", "hook_tip").setShape(ry.ST.marker, [1])
+        self.C.addFrame("end_point").setPosition(self.C.getFrame("target").getPosition() + (high_on_potenuse) * direction_vec)#.setShape(ry.ST.marker, [.2])
 
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=True)

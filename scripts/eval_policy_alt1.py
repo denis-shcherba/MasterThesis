@@ -32,7 +32,8 @@ def seed_everything(seed: int):
 
 def execute_single_episode(evaluation_idx, env, model, cfg, device, normalization_stats, sequence_length, key, max_episode_length, output_dir):
     obs, info = env.reset()
-    
+    #env.unwrapped.C.view(True)
+
     depth_sequence = []
     state_sequence = []
     video_frames = []
@@ -119,8 +120,22 @@ def execute_single_episode(evaluation_idx, env, model, cfg, device, normalizatio
 
         if terminated or truncated:
             break
+#     ry.params_add({"Render/floorColor": [.8, .8, .8]})
+
+# # [ 0.04778311  1.27737723  1.11723567  0.02290407 -0.02530759 -0.79485547
+# #   0.60583803]
+# # [2383.30175781 2383.30175781 1244.          688.        ]
+
+#     C2 = ry.Config()
+#     C2.addConfigurationCopy(env.unwrapped.C)
+#     C2.viewer().setCameraPose([0.04778311, 1.27737723, 1.11723567, 0.02290407, -0.02530759, -0.79485547, 0.60583803])
+#     if not success:
+#         C2.view(True)
+#     print(C2.get_viewer().getCamera_pose())
+#     print(C2.get_viewer().getCamera_fxycxy())
 
 
+#     ry.params_clear()
     if video_frames:
         v_path = os.path.join(output_dir, f"eval_ep_{evaluation_idx}.mp4")
         h, w, _ = video_frames[0].shape

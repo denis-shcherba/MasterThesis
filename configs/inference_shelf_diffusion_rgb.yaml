@@ -11,7 +11,7 @@ inference:
 experiment_name: "Diffusion 10 step input Inference"
 observation_mode: rgb
 output_subdir: null
-num_eval_episodes: 10
+num_eval_episodes: 100
 simulate: True
 is_waypointPlusTimings: False
 action_execution_horizon: 8

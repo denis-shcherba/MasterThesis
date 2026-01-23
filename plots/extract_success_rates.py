@@ -17,13 +17,13 @@ def calculate_stats(data_list):
     
     return mean, 1.96 * std_dev
 
-def analyze_eval_results(eval_dir, output_csv="evaluation_results.csv"):
+def analyze_eval_results(eval_dir, output_csv="evaluation_results.csv", limit_entries=None):
     results = []
 
     # Walk through the directory tree
     for root, dirs, files in os.walk(eval_dir):
-        if 'data.json' in files:
-            file_path = os.path.join(root, 'data.json')
+        if 'results.json' in files:
+            file_path = os.path.join(root, 'results.json')
             folder_name = os.path.basename(root)
             
             # Local metrics
@@ -36,7 +36,12 @@ def analyze_eval_results(eval_dir, output_csv="evaluation_results.csv"):
                 with open(file_path, 'r') as f:
                     data = json.load(f)
                 
-                items = data if isinstance(data, list) else data.values()
+                # Get items as a list
+                items = list(data if isinstance(data, list) else data.values())
+
+                # Apply the limit here if specified
+                if limit_entries is not None:
+                    items = items[:limit_entries]
 
                 for entry in items:
                     if not isinstance(entry, dict): continue
@@ -81,7 +86,7 @@ def analyze_eval_results(eval_dir, output_csv="evaluation_results.csv"):
             except (json.JSONDecodeError, IOError) as e:
                 print(f"Error processing {root}: {e}")
 
-    # --- 1. Print to Console (Formatted Table) ---
+    # --- 1. Print to Console ---
     print(f"\n{'Folder':<25} | {'Succ/Fail':<10} | {'Dist (Mean ± 1.96σ)':<25} | {'Min Dist (Mean ± 1.96σ)':<25}")
     print("-" * 95)
     for r in results:
@@ -89,7 +94,7 @@ def analyze_eval_results(eval_dir, output_csv="evaluation_results.csv"):
               f"{r['dist_mean']:.4f} ± {r['dist_196std']:.4f} | "
               f"{r['min_dist_mean']:.4f} ± {r['min_dist_196std']:.4f}")
 
-    # --- 2. Save to CSV for Plotting ---
+    # --- 2. Save to CSV ---
     if results:
         keys = results[0].keys()
         with open(output_csv, 'w', newline='') as f:
@@ -99,9 +104,10 @@ def analyze_eval_results(eval_dir, output_csv="evaluation_results.csv"):
         print(f"\n[✔] Data successfully exported to {output_csv}")
 
 if __name__ == "__main__":
-    EVAL_DIR = "final_evals" 
+    EVAL_DIR = "outputs/eval_sweep" 
     
     if os.path.exists(EVAL_DIR):
-        analyze_eval_results(EVAL_DIR)
+        # Pass the desired limit here (e.g., 100)
+        analyze_eval_results(EVAL_DIR, limit_entries=500)
     else:
         print(f"Error: Path '{EVAL_DIR}' not found.")
