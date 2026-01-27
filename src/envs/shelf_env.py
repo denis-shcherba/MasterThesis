@@ -45,7 +45,7 @@ class ShelfEnv(BaseRobotEnv):
                 q0=None,
                 rotate_panda_base=True,
                 task = "pull",
-
+                visualize = False,
                 num_boxes_per_sample=1,
                  **kwargs):
         super().__init__(**kwargs)
@@ -107,7 +107,7 @@ class ShelfEnv(BaseRobotEnv):
             self.C.setJointState(self.q0)
             self.C.view(False)
 
-        self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.obs_type.upper(), visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
+        self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.obs_type.upper(), visualize=visualize, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
         if collect_data: 
             self.h5file = h5py.File("shelf_demo_2.h5", "w")
             self.demo_id = 0
@@ -167,34 +167,34 @@ class ShelfEnv(BaseRobotEnv):
             .setMass(.1) \
             .setAttributes({"friction": 1}) 
         
-        self.C.addFrame(f"corner_1")
-        self.C.getFrame(f"corner_1").setParent(self.C.getFrame(frame_name))
-        self.C.getFrame(f"corner_1", ) \
-            .setRelativePosition(np.array([-b_size_x/2, -b_size_y/2, -b_size_z/2])) \
-            # .setShape(ry.ST.marker, [.1]) 
-        self.books.append("corner_1")
+        # self.C.addFrame(f"corner_1")
+        # self.C.getFrame(f"corner_1").setParent(self.C.getFrame(frame_name))
+        # self.C.getFrame(f"corner_1", ) \
+        #     .setRelativePosition(np.array([-b_size_x/2, -b_size_y/2, -b_size_z/2])) \
+        #     # .setShape(ry.ST.marker, [.1]) 
+        # self.books.append("corner_1")
             
-        self.C.addFrame(f"corner_2")
-        self.C.getFrame(f"corner_2").setParent(self.C.getFrame(frame_name))
-        self.C.getFrame(f"corner_2", ) \
-            .setRelativePosition(np.array([b_size_x/2, -b_size_y/2, -b_size_z/2])) \
-            # .setShape(ry.ST.marker, [.1]) 
-        self.books.append("corner_2")
+        # self.C.addFrame(f"corner_2")
+        # self.C.getFrame(f"corner_2").setParent(self.C.getFrame(frame_name))
+        # self.C.getFrame(f"corner_2", ) \
+        #     .setRelativePosition(np.array([b_size_x/2, -b_size_y/2, -b_size_z/2])) \
+        #     # .setShape(ry.ST.marker, [.1]) 
+        # self.books.append("corner_2")
 
-        self.C.addFrame(f"corner_3")
-        self.C.getFrame(f"corner_3").setParent(self.C.getFrame(frame_name))
-        self.C.getFrame(f"corner_3", ) \
-            .setRelativePosition(np.array([-b_size_x/2, b_size_y/2, -b_size_z/2])) \
-            # .setShape(ry.ST.marker, [.1]) 
-        self.books.append("corner_3")
+        # self.C.addFrame(f"corner_3")
+        # self.C.getFrame(f"corner_3").setParent(self.C.getFrame(frame_name))
+        # self.C.getFrame(f"corner_3", ) \
+        #     .setRelativePosition(np.array([-b_size_x/2, b_size_y/2, -b_size_z/2])) \
+        #     # .setShape(ry.ST.marker, [.1]) 
+        # self.books.append("corner_3")
 
             
-        self.C.addFrame(f"corner_4")
-        self.C.getFrame(f"corner_4").setParent(self.C.getFrame(frame_name))
-        self.C.getFrame(f"corner_4", ) \
-            .setRelativePosition(np.array([b_size_x/2, b_size_y/2, -b_size_z/2])) \
-            # .setShape(ry.ST.marker, [.1]) \
-        self.books.append("corner_4")
+        # self.C.addFrame(f"corner_4")
+        # self.C.getFrame(f"corner_4").setParent(self.C.getFrame(frame_name))
+        # self.C.getFrame(f"corner_4", ) \
+        #     .setRelativePosition(np.array([b_size_x/2, b_size_y/2, -b_size_z/2])) \
+        #     # .setShape(ry.ST.marker, [.1]) \
+        # self.books.append("corner_4")
 
         self.C.view(False)
         
@@ -220,7 +220,7 @@ class ShelfEnv(BaseRobotEnv):
             ])
             target = np.append(target, self.C.getFrame("target_book_0").getPosition()[2])
 
-            self.C.addFrame("target")#.setShape(ry.ST.marker, .1).setPosition(target)
+            self.C.addFrame("target").setShape(ry.ST.marker, .1).setPosition(target)
 
     def _delete_books(self):
         for book in self.books:

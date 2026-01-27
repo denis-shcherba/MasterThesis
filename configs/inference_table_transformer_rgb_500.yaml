@@ -1,0 +1,24 @@
+defaults:
+  - _self_  
+  - model: transformer_table
+  - data: depth
+  - env: table_3d_abs_push_sim
+
+inference:
+  checkpoint_path: outputs/final_outputs/thesis_evals/table_transformer_rgb_500.pth
+  normalization_stats_path: outputs/final_outputs/thesis_evals/table_transformer_rgb_500.yaml
+
+experiment_name: "Transformer 10 step input Inference"
+observation_mode: rgb
+output_subdir: null
+num_eval_episodes: 100
+simulate: True
+is_waypointPlusTimings: False
+action_execution_horizon: 8
+seed: 1337
+context_length: 8
+prediction_length: 8
+
+hydra:
+  run:
+    dir: ./eval_outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

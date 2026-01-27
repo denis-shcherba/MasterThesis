@@ -3,19 +3,28 @@
 # Array of config names you want to evaluate
 # Add or remove names based on your .yaml files in ../configs
 CONFIGS=(
-    # "inference_table_transformer_depth"
-    # "inference_table_transformer_rgb"
+    "inference_table_transformer_depth"
+    "inference_table_transformer_rgb"
     # "inference_table_transformer_dino"
-    # "inference_table_diffusion_depth"
-    # "inference_table_diffusion_rgb"
+    "inference_table_diffusion_depth"
+    "inference_table_diffusion_rgb"
     # "inference_table_diffusion_dino"
 
-    "inference_shelf_transformer_depth"
+    # "inference_shelf_transformer_depth"
     # "inference_shelf_transformer_rgb"
     # "inference_shelf_transformer_dino"
     # "inference_shelf_diffusion_depth"
     # "inference_shelf_diffusion_rgb"
     # "inference_shelf_diffusion_dino"
+
+
+    # ---- other ablation ----
+
+    # "inference_table_transformer_rgb_100"
+    # "inference_table_transformer_rgb_250"
+    #"inference_table_transformer_rgb_500"
+    # "inference_table_transformer_rgb"
+    #"inference_table_transformer_rgb_2500"
 )
 
 

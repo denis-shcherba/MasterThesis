@@ -142,28 +142,23 @@ class RobotEnviroment:
 
         M = manip.ManipulationModelling()
         M.setup_pick_and_place_waypoints(self.C, self.gripper, object_, 1e-1, accumulated_collisions=True)
-        M.add_stable_frame(ry.JT.transXYPhi, "big_xy_bottom_0_1", '_pull_end', object_)
 
         M.komo.addObjective([1], ry.FS.positionDiff, ['hook_tip', "hook_point"], ry.OT.eq, [1e2])
-        if self.C.getJointDimension() > 3:
-            M.komo.addObjective([1], ry.FS.scalarProductYX, [self.gripper, "hook_point"], ry.OT.eq)
+        # if self.C.getJointDimension() > 3:
+        #     M.komo.addObjective([1], ry.FS.scalarProductYX, [self.gripper, "hook_point"], ry.OT.eq)
 
-        # M.komo.addObjective([2.], ry.FS.positionDiff, ["hook_tip", "target"], ry.OT.eq, 1e1)
-        #M.komo.addObjective([2], ry.FS.positionDiff, [object_, '_pull_end'], ry.OT.eq, [1e1, 1e1, 0])
         M.komo.addObjective([2.], ry.FS.positionDiff, ["hook_tip", "end_point"], ry.OT.eq, [1, 1, 1])
 
         M.solve()
         if not M.feasible:
             print("INFEASIBLE AT M")
-            #M.komo.view(True)
             self.C.delFrame("hook_point")
             return False
+        M.komo.view(True)
 
         M1 = M.sub_motion(0, accumulated_collisions=True)
         M1.retractPush([.0, .15], self.gripper, .03)
         M1.approachPush([.85, 1.], self.gripper, .03)
-        #M1.komo.addObjective([0,1], ry.FS.angularVel, ["rotation_frame_gripper"], ry.OT.eq, [1, 1, 0])   
-        # M1.komo.addObjective([0,1], ry.FS.vectorZ, ["rotation_frame_gripper"], ry.OT.sos, 1, [0, 0, 1])   
 
         path1 = M1.solve()
         if not M1.feasible:
@@ -182,8 +177,8 @@ class RobotEnviroment:
         if not M2.feasible:
             print("INFEASIBLE AT M2")
             self.C.delFrame("hook_point")
-            #M2.komo.view(True)
             return False
+        M2.komo.view(True)
 
         if self.sim == True:
             sim = Simulator(self.C, verbose=self.verbose, base_removal=self.base_removal, camera=self.camera, observation_mode=self.observation_mode, depth_noise=self.depth_noise)
