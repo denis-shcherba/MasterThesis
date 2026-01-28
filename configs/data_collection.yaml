@@ -1,7 +1,7 @@
 defaults:
-  - env: shelf_hook_panda_2
+  - env: table_3d_abs_push_sim_augmented
 
-num_samples: 1_000
+num_samples: 5
 output_subdir: null
 seed: 42
 

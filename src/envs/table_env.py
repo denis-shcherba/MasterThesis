@@ -17,7 +17,6 @@ class TableEnv(BaseRobotEnv):
     """
     def __init__(self,
                 path_type="SE39D",
-                img_type="DEPTH",
                 box_size_ranges= {'x': (.1, .15), 'y': (.14, .23), 'z': (.009, .045)},
                 box_offset_ranges= {'x': (-.05, .05), 'y': (-.05, .05)},
                 allow_book_yaw=False,
@@ -43,7 +42,6 @@ class TableEnv(BaseRobotEnv):
         self.books = []
 
         self.path_type = path_type
-        self.img_type = img_type
         self.extras = extras
         self.q0 = np.array(q0)
         self.obj = obj
@@ -104,7 +102,7 @@ class TableEnv(BaseRobotEnv):
         self.table_base_height = self.C.getFrame("table").getPosition()[2] + self.C.getFrame("table").getSize()[2]/2
 
 
-        if self.img_type.upper() == "BOX_POINTS":
+        if self.obs_type.upper() == "BOX_POINTS":
             box_mask_height = .2
             box_mask_width = 1.2
             box_mask_depth = 1.75
@@ -122,7 +120,7 @@ class TableEnv(BaseRobotEnv):
                 
         if collect_data:    # TODO parameters
             self.h5file = h5py.File("table_demo.h5", "w")
-            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.img_type, visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
+            self.roboenv = RobotEnviroment(self.C, sim=self.simulate, gripper=self.gripper, observation_mode=self.obs_type.upper(), visualize=False, path_mode="SE39D", camera=self.camera_name, depth_noise=self.depth_noise_active)
             self.demo_id = 0
             
         self._setup_scene()
@@ -332,7 +330,20 @@ class TableEnv(BaseRobotEnv):
                     cos_comp = C2.eval(ry.FS.scalarProductXX, ["l_gripper", "table"])[0]
                     yaw_path[i] = np.arctan2(sin_comp, cos_comp)
                 demo_group.create_dataset("path", data=np.hstack((se3_path[:, :3], yaw_path)))
-            if self.img_type.upper() == "DEPTH":
+            if self.obs_type.upper() == "DEPTHRGB":
+                demo_group.create_dataset(
+                "rgb", 
+                data=self.roboenv.rgb_image,
+                compression="gzip",
+                compression_opts=4
+                )
+                demo_group.create_dataset(
+                "depth", 
+                data=self.roboenv.depth_image,
+                compression="gzip",
+                compression_opts=4
+                )
+            elif self.obs_type.upper() == "DEPTH":
                 demo_group.create_dataset(
                 "depth", 
                 data=self.roboenv.depth_image,
@@ -340,7 +351,7 @@ class TableEnv(BaseRobotEnv):
                 compression_opts=4
                 )
 
-            elif self.img_type.upper() == "RGB":
+            elif self.obs_type.upper() == "RGB":
                 demo_group.create_dataset(
                 "rgb", 
                 data=self.roboenv.rgb_image,
@@ -348,14 +359,14 @@ class TableEnv(BaseRobotEnv):
                 compression_opts=4
                 )
 
-            elif self.img_type.upper() == "SAM_POINTS":
+            elif self.obs_type.upper() == "SAM_POINTS":
                 demo_group.create_dataset(
                 "points", 
                 data=self.roboenv.points[0],
                 compression="gzip",
                 compression_opts=4
                 )
-            elif self.img_type.upper() == "BOX_POINTS":
+            elif self.obs_type.upper() == "BOX_POINTS":
                 demo_group.create_dataset(
                 "points", 
                 data=self.roboenv.points,

@@ -468,19 +468,12 @@ class RobotEnviroment:
                 if pc is None:
                     return False
 
-        elif self.observation_mode == "RGB":
-            if self.sim == True:
+        if "RGB" in self.observation_mode:
+            if self.sim:
                 self.rgb_image = sim.rgb
-        elif self.observation_mode == "DEPTH":
-            if self.sim == True:
+        if "DEPTH" in self.observation_mode:
+            if self.sim:
                 self.depth_image = sim.depth
-                # self.C.addFrame("camera_marker", "cameraStaticTableTripod").setShape(ry.ST.marker, [.3])
-                # self.C.view(True)
-                # import matplotlib.pyplot as plt
-                # plt.imshow(self.depth_image[0], cmap='gray')
-                # plt.show()
-                # plt.close()
-
 
         self.ways = []
         C2 = ry.Config()
