@@ -5,8 +5,8 @@ defaults:
   - env: table_3d_abs_push_sim
 
 inference:
-  checkpoint_path: outputs/final_outputs/thesis_evals/table_transformer_rgb_100.pth
-  normalization_stats_path: outputs/final_outputs/thesis_evals/table_transformer_rgb_100.yaml
+  checkpoint_path: outputs/final_outputs/thesis_evals/table_transformer_rgb_10000.pth
+  normalization_stats_path: outputs/final_outputs/thesis_evals/table_transformer_rgb_10000.yaml
 
 experiment_name: "Transformer 10 step input Inference"
 observation_mode: rgb
